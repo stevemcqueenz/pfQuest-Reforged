@@ -2031,6 +2031,13 @@ function pfDatabase:AddCustomIcon(id, img, root)
 end
 
 function pfDatabase:FormatQuestText(questText)
+  -- Reforged: nil-safe. The converted WotLK overlay quests carry no quest
+  -- DESCRIPTION text (loc["D"] is nil); an unguarded gsub(nil) here threw in
+  -- GetQuestIDs' scoring loop and KILLED the whole quest OnUpdate pass --
+  -- after a node delete the re-add never ran, so quest pins vanished on the
+  -- next kill/loot until a settings change forced a full rebuild (QA:
+  -- Battle of Hillsbrad + Souvenirs of Death dots gone mid-progress).
+  if not questText then return "" end
   questText = string.gsub(questText, "$[Nn]", UnitName("player"))
   questText = string.gsub(questText, "$[Cc]", strlower(UnitClass("player")))
   questText = string.gsub(questText, "$[Rr]", strlower(UnitRace("player")))
