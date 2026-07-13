@@ -1,5 +1,9 @@
 # pfQuest Reforged — UX modernization
 
+> Versioning: from **v1.0.0** on, releases are numbered vMAJOR.MINOR.PATCH,
+> auto-computed by CI on every push to main (release notes come from the
+> commit log). The 8.1.0-reforged.N entries below are the pre-v1 history.
+
 Built on pfQuest-wotlk (Shagu, txtsd — GPLv3). The battle-tested engine
 (database, query, routing, map pin math) is untouched; this pass modernizes
 the experience layer.
