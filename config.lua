@@ -311,7 +311,11 @@ function pfQuestConfig:CreateConfigEntries(config)
       -- header
       if data.type == "header" then
         frame.caption:SetPoint("LEFT", 10, 0)
-        frame.caption:SetTextColor(0.3, 1, 0.8)
+        -- Reforged: read the shared theme accent (gold under GW2 UI, teal
+        -- standalone) instead of a hardcoded teal, so the config matches the
+        -- rest of the addon's palette.
+        local a = pfQuestTheme and pfQuestTheme.accent or { 0.3, 1, 0.8 }
+        frame.caption:SetTextColor(a[1], a[2], a[3])
         frame.caption:SetFont(pfUI.font_default, pfUI_config.global.font_size + 2, "OUTLINE")
 
       -- checkbox
@@ -343,7 +347,7 @@ function pfQuestConfig:CreateConfigEntries(config)
       elseif data.type == "text" then
         -- input field
         frame.input = CreateFrame("EditBox", nil, frame)
-        frame.input:SetTextColor(0.2, 1, 0.8, 1)
+        local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }; frame.input:SetTextColor(a[1], a[2], a[3], 1)
         frame.input:SetJustifyH("RIGHT")
         frame.input:SetTextInsets(5, 5, 5, 5)
         frame.input:SetWidth(32)
@@ -394,7 +398,7 @@ function pfQuestConfig:CreateConfigEntries(config)
         frame.value = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
         frame.value:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
         frame.value:SetPoint("RIGHT", frame.input, "LEFT", -4, 0)
-        frame.value:SetTextColor(0.2, 1, 0.8, 1)
+        local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }; frame.value:SetTextColor(a[1], a[2], a[3], 1)
 
         local val = tonumber(pfQuest_config[config]) or tonumber(default) or 1
         frame.input:SetValue(val)

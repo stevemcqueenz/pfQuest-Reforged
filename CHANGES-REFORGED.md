@@ -35,6 +35,16 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.0.7
+
+- Theming follow-up: the config window's section headers and input/value
+  text were hardcoded teal and never followed the accent, so they stayed
+  teal even under GW2 UI. They now read pfQuestTheme.accent (gold under
+  GW2, teal standalone).
+- GW2 UI added to OptionalDeps so it loads BEFORE pfQuest -- the palette
+  detection (IsAddOnLoaded at theme-load time) was losing a load-order
+  race and missing GW2, leaving the whole addon teal. Now reliable.
+
 ## v1.0.6
 
 - Theming: pfQuest now adopts the GW2 UI look when GW2 UI (WotLK Reforged)
