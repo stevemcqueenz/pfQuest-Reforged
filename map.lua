@@ -761,17 +761,6 @@ function pfMap:GetNodes(addon, title)
 end
 
 function pfMap:DeleteNode(addon, title)
-  -- Reforged trap: the "dots vanish" logs show PFQUEST node counts collapsing
-  -- with no DeleteNode logged at the queue call sites and SearchQuests
-  -- remove=0. Log EVERY DeleteNode here (top of the one choke point, all
-  -- callers) with a short stack so the actual deleter is named. Debug-gated.
-  if pfQuest_config and pfQuest_config.debug and addon == "PFQUEST" then
-    local who = debugstack and debugstack(2, 1, 0) or ""
-    who = string.gsub(who or "", ".*\\", "")
-    who = string.gsub(who, "\n.*", "")
-    pfQuest:Debug(format("|cffff66ccDELNODE title=%s by=%s|r", tostring(title), who))
-  end
-
   if not addon then
     -- wipe everything
     pfMap.tooltips = {}
@@ -1163,20 +1152,6 @@ function pfMap:UpdateNodes()
 
   local color = pfQuest_config["spawncolors"] == "1" and "spawn" or "title"
   local map = pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
-
-  -- Reforged diagnostic: the "dots vanish on kill/loot" reports show the pin
-  -- count collapsing with no DeleteNode logged. Log the resolved map id and
-  -- the raw zone/continent plus the stored node count for that map, so we can
-  -- tell a map-id FLIP (view jumped to continent) from a DATA wipe (the map's
-  -- node table actually shrank). Debug-gated -> zero cost in normal play.
-  if pfQuest_config and pfQuest_config.debug then
-    local zn = 0
-    if map and pfMap.nodes["PFQUEST"] and pfMap.nodes["PFQUEST"][map] then
-      for _ in pairs(pfMap.nodes["PFQUEST"][map]) do zn = zn + 1 end
-    end
-    pfQuest:Debug(format("|cff00ccffDIAG map=%s cont=%s zone=%s pfqNodesForMap=%d|r",
-      tostring(map), tostring(GetCurrentMapContinent()), tostring(GetCurrentMapZone()), zn))
-  end
 
   -- reset tracker and route before the map check so the tracker is always
   -- updated from questlog even when the current zone is not in the database

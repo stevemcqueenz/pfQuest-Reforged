@@ -939,9 +939,8 @@ RemoveQuestWatch = function(questIndex)
   -- unconditional DeleteNode wiped the quest's map+minimap nodes on that
   -- churn; because the watch state round-tripped to UNCHANGED, the next
   -- UpdateQuestlog saw no state change, queued no RELOAD, and never
-  -- re-added them -- so the dots stayed gone until a settings reset
-  -- (QA, confirmed by the DELNODE trap: quest.lua RemoveQuestWatch hook
-  -- deleting active quests' nodes on kill/loot). Node visibility already
+  -- re-added them -- so the dots stayed gone until a settings reset.
+  -- Node visibility already
   -- follows the watch state correctly through the normal queue path (the
   -- state string includes the watched flag, and tracked-only mode hides
   -- un-watched quests there), so flagging a refresh is all that's needed.
