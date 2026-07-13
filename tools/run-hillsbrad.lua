@@ -85,7 +85,14 @@ if os.getenv("PFQ_HILLSBRAD") == "1" then
     FAKE_QUESTLOG[3].objectives[1][3] = 1
   end
   FireEvent("QUEST_WATCH_UPDATE", 2)
-  if os.getenv("PFQ_COUNTDROP") == "1" then
+  if os.getenv("PFQ_WATCHCHURN") == "1" then
+    -- WotLK autoQuestWatch churn: client unwatches then re-watches on the
+    -- objective tick. Fire the hooked RemoveQuestWatch for the active quests.
+    if _G.RemoveQuestWatch then _G.RemoveQuestWatch(2); _G.RemoveQuestWatch(3) end
+    if _G.AddQuestWatch then _G.AddQuestWatch(2); _G.AddQuestWatch(3) end
+    FireEvent("QUEST_LOG_UPDATE")
+    FireEvent("QUEST_LOG_UPDATE")
+  elseif os.getenv("PFQ_COUNTDROP") == "1" then
     -- core under-reports the quest count for a few ticks during the burst
     _G.FAKE_NUMQUESTS_OVERRIDE = 1
     FireEvent("QUEST_LOG_UPDATE")

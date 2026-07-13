@@ -35,6 +35,23 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.0.5
+
+- THE kill/loot dot-vanish fix (the real one). Caught with a DeleteNode
+  trap: the culprit was pfQuest's RemoveQuestWatch hook, which deleted a
+  quest's map + minimap nodes by title whenever the client unwatched it.
+  On WotLK, autoQuestWatch churns the watch list on every objective tick,
+  so killing a mob or looting a quest item fires RemoveQuestWatch (then
+  re-adds the watch). The hook wiped the quest's nodes on that churn, and
+  because the watched state round-tripped to unchanged, UpdateQuestlog saw
+  no state change, queued no RELOAD, and never re-added them -- the dots
+  stayed gone until a settings reset. The hook no longer deletes nodes;
+  visibility already follows the watch state through the normal queue path
+  (the state string carries the watched flag, and tracked-only mode hides
+  un-watched quests there). Harness-proven: the auto-watch churn wiped a
+  quest's 295 nodes with the old hook and preserves all 295 with the fix.
+- (v1.0.2/v1.0.4 diagnostics for this hunt are retained but debug-gated.)
+
 ## v1.0.3
 
 - CRITICAL FIX: killing a mob or looting a quest item wiped the objective

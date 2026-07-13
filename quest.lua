@@ -932,11 +932,19 @@ local pfHookRemoveQuestWatch = RemoveQuestWatch
 RemoveQuestWatch = function(questIndex)
   local ret = pfHookRemoveQuestWatch(questIndex)
 
-  if questIndex then
-    local title, _, _, header, _, complete = compat.GetQuestLogTitle(questIndex)
-    pfMap:DeleteNode("PFQUEST", title)
-  end
-
+  -- Reforged: do NOT delete the quest's nodes here. On WotLK the client's
+  -- auto-quest-watch (autoQuestWatch=1) churns the watch list on every
+  -- objective tick -- killing a mob or looting a quest item fires
+  -- RemoveQuestWatch and then immediately re-adds the watch. The old
+  -- unconditional DeleteNode wiped the quest's map+minimap nodes on that
+  -- churn; because the watch state round-tripped to UNCHANGED, the next
+  -- UpdateQuestlog saw no state change, queued no RELOAD, and never
+  -- re-added them -- so the dots stayed gone until a settings reset
+  -- (QA, confirmed by the DELNODE trap: quest.lua RemoveQuestWatch hook
+  -- deleting active quests' nodes on kill/loot). Node visibility already
+  -- follows the watch state correctly through the normal queue path (the
+  -- state string includes the watched flag, and tracked-only mode hides
+  -- un-watched quests there), so flagging a refresh is all that's needed.
   pfQuest.updateQuestLog = true
   pfQuest.updateQuestGivers = true
 
