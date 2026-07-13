@@ -1153,6 +1153,20 @@ function pfMap:UpdateNodes()
   local color = pfQuest_config["spawncolors"] == "1" and "spawn" or "title"
   local map = pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
 
+  -- Reforged diagnostic: the "dots vanish on kill/loot" reports show the pin
+  -- count collapsing with no DeleteNode logged. Log the resolved map id and
+  -- the raw zone/continent plus the stored node count for that map, so we can
+  -- tell a map-id FLIP (view jumped to continent) from a DATA wipe (the map's
+  -- node table actually shrank). Debug-gated -> zero cost in normal play.
+  if pfQuest_config and pfQuest_config.debug then
+    local zn = 0
+    if map and pfMap.nodes["PFQUEST"] and pfMap.nodes["PFQUEST"][map] then
+      for _ in pairs(pfMap.nodes["PFQUEST"][map]) do zn = zn + 1 end
+    end
+    pfQuest:Debug(format("|cff00ccffDIAG map=%s cont=%s zone=%s pfqNodesForMap=%d|r",
+      tostring(map), tostring(GetCurrentMapContinent()), tostring(GetCurrentMapZone()), zn))
+  end
+
   -- reset tracker and route before the map check so the tracker is always
   -- updated from questlog even when the current zone is not in the database
   -- (e.g. unknown zone, continent view). Without this the tracker frame

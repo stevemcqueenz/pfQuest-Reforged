@@ -35,6 +35,15 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.0.2
+
+- DIAGNOSTIC: `UpdateNodes` now logs the resolved map id, raw
+  continent/zone, and the stored node count for that map when debug is on
+  (`/run pfQuest_config.debug = true`). Added to pin down the "dots vanish
+  on kill/loot" report, whose logs show the pin count collapsing with no
+  node deletion -- this distinguishes a map-id view flip from an actual
+  data wipe. No behavior change in normal play.
+
 ## 8.1.0-reforged.12
 
 - CRITICAL FIX: installing into the canonical `pfQuest-Reforged` folder left
