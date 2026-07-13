@@ -102,7 +102,13 @@ do -- tracking menu
     frame:SetClampedToScreen(true)
     frame:Hide()
 
-    pfUI.api.CreateBackdrop(frame, nil, nil, 0.75)
+    -- Reforged: shared theme panel so the world-map/minimap menu matches the
+    -- rest of the addon (GW2-gold accent under GW2 UI, teal standalone).
+    if pfQuestTheme and pfQuestTheme.SkinPanel then
+      pfQuestTheme.SkinPanel(frame)
+    else
+      pfUI.api.CreateBackdrop(frame, nil, nil, 0.75)
+    end
 
     for id, tracking in pairs(data) do
       -- data shortcuts

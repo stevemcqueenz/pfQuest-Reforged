@@ -35,6 +35,16 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.0.8
+
+- Default the pfQuest quest tracker OFF when GW2 UI is installed -- GW2 UI
+  provides its own quest tracker (existing saved configs keep their choice;
+  standalone installs still default it on).
+- Route the remaining windows through the shared theme so the whole addon
+  is consistently styled and GW2-palette-aware: the Journal, the Welcome
+  screen, and the world-map/minimap tracking menu (previously on the bare
+  pfUI backdrop). Config + browser were already themed.
+
 ## v1.0.7
 
 - Theming follow-up: the config window's section headers and input/value

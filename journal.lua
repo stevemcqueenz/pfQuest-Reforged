@@ -192,7 +192,14 @@ pfJournal:SetScript("OnMouseUp", function()
   this:StopMovingOrSizing()
 end)
 
-pfUI.api.CreateBackdrop(pfJournal, nil, true, 0.75)
+-- Reforged: shared theme panel (GW2-gold under GW2 UI, teal standalone)
+-- instead of the bare pfUI backdrop, so the journal matches the browser/config.
+if pfQuestTheme and pfQuestTheme.SkinPanel then
+  pfQuestTheme.SkinPanel(pfJournal)
+  pfQuestTheme.HeaderStrip(pfJournal, 26)
+else
+  pfUI.api.CreateBackdrop(pfJournal, nil, true, 0.75)
+end
 table.insert(UISpecialFrames, "pfQuestJournal")
 
 pfJournal.title = pfJournal:CreateFontString("Status", "LOW", "GameFontNormal")

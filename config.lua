@@ -71,7 +71,11 @@ pfQuest_defconfig = {
   { text = L["General"], default = nil, type = "header" },
   { text = L["Enable World Map Menu"], default = "1", type = "checkbox", config = "worldmapmenu" },
   { text = L["Enable Minimap Button"], default = "1", type = "checkbox", config = "minimapbutton" },
-  { text = L["Enable Quest Tracker"], default = "1", type = "checkbox", config = "showtracker" },
+  -- Default the pfQuest tracker OFF when GW2 UI is present -- GW2 UI has its
+  -- own quest tracker and the maintainer wants that one used instead. Only a
+  -- NEW/never-set value picks this up (existing saved configs keep their
+  -- choice), and standalone installs still default it ON.
+  { text = L["Enable Quest Tracker"], default = (pfQuestTheme and pfQuestTheme.gw2) and "0" or "1", type = "checkbox", config = "showtracker" },
   { text = L["Enable Quest Log Buttons"], default = "1", type = "checkbox", config = "questlogbuttons" },
   { text = L["Enable Quest Link Support"], default = "1", type = "checkbox", config = "questlinks" },
   { text = L["Show Database IDs"], default = "0", type = "checkbox", config = "showids" },
@@ -611,7 +615,11 @@ do -- welcome/init popup dialog
     pfQuestInit.checkbox:SetChecked(config_stage.arrow)
   end)
 
-  pfUI.api.CreateBackdrop(pfQuestInit, nil, true, 0.85)
+  if pfQuestTheme and pfQuestTheme.SkinPanel then
+    pfQuestTheme.SkinPanel(pfQuestInit)
+  else
+    pfUI.api.CreateBackdrop(pfQuestInit, nil, true, 0.85)
+  end
 
   -- welcome title
   pfQuestInit.title = pfQuestInit:CreateFontString("Status", "LOW", "GameFontWhite")
