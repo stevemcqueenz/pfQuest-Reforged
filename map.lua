@@ -761,6 +761,17 @@ function pfMap:GetNodes(addon, title)
 end
 
 function pfMap:DeleteNode(addon, title)
+  -- Reforged trap: the "dots vanish" logs show PFQUEST node counts collapsing
+  -- with no DeleteNode logged at the queue call sites and SearchQuests
+  -- remove=0. Log EVERY DeleteNode here (top of the one choke point, all
+  -- callers) with a short stack so the actual deleter is named. Debug-gated.
+  if pfQuest_config and pfQuest_config.debug and addon == "PFQUEST" then
+    local who = debugstack and debugstack(2, 1, 0) or ""
+    who = string.gsub(who or "", ".*\\", "")
+    who = string.gsub(who, "\n.*", "")
+    pfQuest:Debug(format("|cffff66ccDELNODE title=%s by=%s|r", tostring(title), who))
+  end
+
   if not addon then
     -- wipe everything
     pfMap.tooltips = {}
