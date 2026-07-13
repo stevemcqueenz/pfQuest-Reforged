@@ -92,6 +92,7 @@ function CreateFrame(ftype, name, parent, template)
     elseif k == "GetAlpha" then fn = function() return t.__alpha or 1 end
     elseif k == "GetFontString" then fn = function() return mkTexture() end
     elseif k == "GetNormalTexture" or k == "GetHighlightTexture" or k == "GetPushedTexture" or k == "GetCheckedTexture" then fn = function() return mkTexture() end
+    elseif k == "AddMessage" then fn = function(_, msg) if _G.PRINT_ADDMSG then print("DBG:", (tostring(msg):gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""))) end end
     elseif type(k) == "string" and string.find(k, "^%u") then fn = function() end
     else return nil end
     rawset(t, k, fn)
@@ -217,6 +218,9 @@ FAKE_QUESTLOG = {}
 function GetNumQuestLogEntries()
   local total, quests = 0, 0
   for _, e in ipairs(FAKE_QUESTLOG) do total = total + 1 if not e[5] then quests = quests + 1 end end
+  -- harness knob: simulate a core transiently under-reporting the count
+  -- during a QUEST_LOG_UPDATE burst (real 3.3.5a private-server quirk)
+  if _G.FAKE_NUMQUESTS_OVERRIDE then return total, _G.FAKE_NUMQUESTS_OVERRIDE end
   return total, quests
 end
 function GetQuestLogTitle(i)
@@ -298,3 +302,4 @@ function ShiftQuestWatches() end
 function SortQuestWatches() end
 
 function GetMapInfo() return "Ashenvale" end
+function UnitSex() return 2 end

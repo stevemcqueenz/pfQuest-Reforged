@@ -48,6 +48,10 @@ if os.getenv("PFQ_HILLSBRAD") == "1" then
   }
   FireEvent("ADDON_LOADED", os.getenv("PFQ_ADDONNAME") or "pfQuest-Reforged")
   FireEvent("VARIABLES_LOADED")
+  if os.getenv("PFQ_DEBUG") == "1" then
+    pfQuest_config.debug = true; _G.PRINT_ADDMSG = true
+    DEFAULT_CHAT_FRAME.AddMessage = function(_, msg) print("CHAT:", (tostring(msg):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
+  end
   if os.getenv("PFQ_HISTORY") == "1" then
     -- /db query import artifact: unrelated completed quests in history
     for _, id in ipairs({742, 11852, 1150, 494, 5052, 764}) do
@@ -81,8 +85,17 @@ if os.getenv("PFQ_HILLSBRAD") == "1" then
     FAKE_QUESTLOG[3].objectives[1][3] = 1
   end
   FireEvent("QUEST_WATCH_UPDATE", 2)
-  FireEvent("QUEST_LOG_UPDATE")
-  FireEvent("QUEST_LOG_UPDATE")
+  if os.getenv("PFQ_COUNTDROP") == "1" then
+    -- core under-reports the quest count for a few ticks during the burst
+    _G.FAKE_NUMQUESTS_OVERRIDE = 1
+    FireEvent("QUEST_LOG_UPDATE")
+    for i = 1, 30 do TickFrames(0.05) end
+    _G.FAKE_NUMQUESTS_OVERRIDE = nil
+    FireEvent("QUEST_LOG_UPDATE")
+  else
+    FireEvent("QUEST_LOG_UPDATE")
+    FireEvent("QUEST_LOG_UPDATE")
+  end
   for i = 1, 400 do TickFrames(0.05) end
   print("kill: battle=" .. Count("Battle of Hillsbrad") .. " souvenirs=" .. Count("Souvenirs of Death") .. " totalcoords=" .. Total())
   os.exit(0)
@@ -138,7 +151,7 @@ FireEvent("ADDON_LOADED", os.getenv("PFQ_ADDONNAME") or "pfQuest")
 FireEvent("VARIABLES_LOADED")
 if MODE > 0 then pfQuest_config["trackingmethod"] = MODESTR and tostring(MODE) or MODE end
 if os.getenv("PFQ_DEBUG") == "1" then
-  pfQuest_config.debug = true
+  pfQuest_config.debug = true; _G.PRINT_ADDMSG = true
   DEFAULT_CHAT_FRAME.AddMessage = function(_, msg) print("CHAT:", (msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
 end
 print("trackingmethod:", tostring(pfQuest_config["trackingmethod"]), type(pfQuest_config["trackingmethod"]))

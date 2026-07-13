@@ -35,6 +35,22 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.0.3
+
+- CRITICAL FIX: killing a mob or looting a quest item wiped the objective
+  dots for ALL active quests off the map + minimap, permanently (only a
+  settings reset brought them back). Root cause: `GetNumQuestLogEntries()`
+  transiently under-reports the quest count during the QUEST_LOG_UPDATE
+  burst on some cores; the questlog scan broke early at that bogus count,
+  so every not-yet-scanned quest looked "gone" and was REMOVED -- which
+  deleted its nodes AND wrote it into pfQuest_history as completed, and the
+  false completed flag then suppressed the re-add. The scan now reads all
+  quest slots regardless of the reported count, and a quest must be absent
+  for TWO consecutive scans before it is removed, so a one-frame burst
+  hiccup can no longer delete nodes or poison history. Reproduced and
+  verified in the offline harness (new tools/run-hillsbrad.lua count-drop
+  case); genuine turn-ins still clear correctly.
+
 ## v1.0.2
 
 - DIAGNOSTIC: `UpdateNodes` now logs the resolved map id, raw

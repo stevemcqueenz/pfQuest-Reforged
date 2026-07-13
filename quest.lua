@@ -540,28 +540,36 @@ function pfQuest:UpdateQuestlog()
       else
         pfQuest.questlog_tmp[questid] = pfQuest.questlog[questid]
       end
+      -- seen this scan -> reset the consecutive-miss counter used by the
+      -- removal loop below
+      if pfQuest.questlog_tmp[questid] then pfQuest.questlog_tmp[questid].gwMiss335 = nil end
 
       found = found + 1
-      if found >= numQuests then
-        break
-      end
+      -- Reforged: do NOT break at `found >= numQuests`. GetNumQuestLogEntries()
+      -- transiently UNDER-reports during a QUEST_LOG_UPDATE burst on some cores
+      -- (QA: kill/loot); breaking early left every not-yet-scanned quest out of
+      -- questlog_tmp, and the removal loop below then wrote them all to
+      -- pfQuest_history (marked complete) and deleted their nodes -- a wipe that
+      -- never recovered because the false "completed" flag suppresses the re-add.
+      -- Scanning all 40 slots is cheap (empty slots short-circuit on nil title)
+      -- and makes the rebuild independent of the unreliable count.
     end
   end
 
-  -- quest removal events
+  -- quest removal events. A quest present last scan but absent from this
+  -- rebuild is only a REMOVE candidate; a SINGLE absence is almost always a
+  -- transient burst hiccup (unreadable slot, or the count under-report above),
+  -- not a real turn-in. Require TWO consecutive misses before removing, so a
+  -- one-scan flicker never deletes nodes or poisons pfQuest_history.
   for questid, data in pairs(pfQuest.questlog) do
     if not pfQuest.questlog_tmp[questid] then
-      if found >= numQuests and not pfQuest.collapsedQuestIDs[questid] then
-        -- We found all expected quests; this one is truly gone (turned in,
-        -- abandoned, etc.).
+      data.gwMiss335 = (data.gwMiss335 or 0) + 1
+      if data.gwMiss335 >= 2 and not pfQuest.collapsedQuestIDs[questid] then
         queueAdd({ data.title, questid, nil, "REMOVE" })
         change = true
       else
-        -- found < numQuests: some quests are inaccessible (API hasn't reverted
-        -- yet), OR the quest is hidden under a collapsed zone header. Preserve
-        -- to avoid a spurious REMOVE+NEW flicker and to keep the collapsed state.
-        -- Do NOT override collapsed state; OnEvent has already set it correctly.
-        pfQuest.questlog_tmp[questid] = pfQuest.questlog[questid]
+        -- transient miss (or collapsed): preserve, nodes untouched
+        pfQuest.questlog_tmp[questid] = data
       end
     end
   end
