@@ -16,6 +16,20 @@ pfQuestTheme = {
 
 local T = pfQuestTheme
 
+-- When GW2 UI (WotLK Reforged) is installed, adopt its look instead of the
+-- standalone teal: GW2's warm parchment-gold accent and its darker, more
+-- opaque panel body, so every pfQuest window (tracker, browser, journal,
+-- config, welcome) reads as part of the GW2 UI rather than a foreign teal
+-- box. Standalone (no GW2) keeps the teal identity. Detection is a plain
+-- addon-loaded check -- no dependency, no coupling to GW2 internals.
+if IsAddOnLoaded and (IsAddOnLoaded("GW2_UI") or IsAddOnLoaded("GW2-UI")) then
+  T.accent   = { 1.0, 0.93, 0.73 } -- GW2 parchment gold
+  T.bg       = { 0.04, 0.04, 0.045 }
+  T.gw2       = true
+  T.panelAlpha = 0.92             -- GW2 panels are near-opaque
+end
+T.panelAlpha = T.panelAlpha or 0.85
+
 -- 1px flat border + dark body. `alpha` is the BODY alpha (border stays solid).
 function T.SkinPanel(frame, alpha)
   frame:SetBackdrop({
@@ -24,7 +38,7 @@ function T.SkinPanel(frame, alpha)
     edgeSize = 1,
     insets = { left = 1, right = 1, top = 1, bottom = 1 },
   })
-  frame:SetBackdropColor(T.bg[1], T.bg[2], T.bg[3], alpha or 0.85)
+  frame:SetBackdropColor(T.bg[1], T.bg[2], T.bg[3], alpha or T.panelAlpha)
   frame:SetBackdropBorderColor(T.border[1], T.border[2], T.border[3], 0.9)
 end
 

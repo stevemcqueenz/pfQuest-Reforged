@@ -35,6 +35,19 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## v1.1.0
+
+- Theming: pfQuest now adopts the GW2 UI look when GW2 UI (WotLK Reforged)
+  is installed -- warm parchment-gold accent and a darker, near-opaque
+  panel body across every window (tracker, browser, journal, config,
+  welcome), so it reads as part of GW2 UI instead of a foreign teal box.
+  Standalone (no GW2 UI) keeps the teal identity. Detection is a plain
+  addon-loaded check with no dependency on GW2 internals.
+- FIX: the Config/Settings window was unstyled -- it used a bare pfUI
+  backdrop and rendered nearly transparent (the game world showed through
+  it), unlike the themed browser/journal. It now goes through the shared
+  theme panel + accent header strip like the other windows.
+
 ## v1.0.5
 
 - THE kill/loot dot-vanish fix (the real one). Caught with a DeleteNode

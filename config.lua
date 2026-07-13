@@ -163,7 +163,17 @@ end)
 
 pfQuestConfig.vpos = 40
 
-pfUI.api.CreateBackdrop(pfQuestConfig, nil, true, 0.75)
+-- Reforged: route the config window through the shared theme (flat panel +
+-- accent header strip) like the browser/journal, instead of the bare pfUI
+-- backdrop that left it looking unstyled and near-transparent (QA: the
+-- settings window showed the game world through it). Picks up the GW2
+-- palette automatically when GW2 UI is installed.
+if pfQuestTheme and pfQuestTheme.SkinPanel then
+  pfQuestTheme.SkinPanel(pfQuestConfig)
+  pfQuestTheme.HeaderStrip(pfQuestConfig, 26)
+else
+  pfUI.api.CreateBackdrop(pfQuestConfig, nil, true, 0.75)
+end
 table.insert(UISpecialFrames, "pfQuestConfig")
 
 -- detect current addon path. Reforged: try the REAL folder name first,
