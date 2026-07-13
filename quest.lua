@@ -219,7 +219,7 @@ pfQuest:RegisterEvent("SKILL_LINES_CHANGED")
 pfQuest:RegisterEvent("ADDON_LOADED")
 pfQuest:SetScript("OnEvent", function()
   if event == "ADDON_LOADED" then
-    if arg1 == "pfQuest" or arg1 == "pfQuest-tbc" or arg1 == "pfQuest-wotlk" then
+    if strsub(tostring(arg1), 1, 7) == "pfQuest" then
       -- Clean up legacy SavedVariable from an earlier version of this fix that
       -- accidentally stored collapsedZones in pfQuest_track, causing database.lua
       -- to crash when iterating that table as {query, meta} tracking pairs.

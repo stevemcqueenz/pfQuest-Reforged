@@ -31,6 +31,20 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
+## 8.1.0-reforged.12
+
+- CRITICAL FIX: installing into the canonical `pfQuest-Reforged` folder left
+  half the addon dead -- empty settings window, disabled navigation arrow,
+  and a `menu.lua` crash on opening the minimap menu. The ADDON_LOADED
+  initialization gates (config defaults, settings entries, SavedVariables
+  like `pfQuest_track`) compared the install folder name against a hardcoded
+  list (`pfQuest`/`pfQuest-tbc`/`pfQuest-wotlk`) that predates the rename;
+  any other folder name skipped ALL of it. The gates now prefix-match any
+  `pfQuest*` folder (with a run-once guard), and the texture-path probe
+  additionally parses the REAL folder name from the load path, so even
+  version-suffixed folders from zip extractors work.
+- Every earlier install folder name keeps working unchanged.
+
 ## 8.1.0-reforged.11
 
 - Out of beta: all "Beta" labels dropped (README rewritten for the Reforged

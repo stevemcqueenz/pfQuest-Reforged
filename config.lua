@@ -166,10 +166,17 @@ pfQuestConfig.vpos = 40
 pfUI.api.CreateBackdrop(pfQuestConfig, nil, true, 0.75)
 table.insert(UISpecialFrames, "pfQuestConfig")
 
--- detect current addon path
-local tocs = { "", "-master", "-tbc", "-wotlk", "-turtle", "-Reforged" }
-for _, name in pairs(tocs) do
-  local current = string.format("pfQuest%s", name)
+-- detect current addon path. Reforged: try the REAL folder name first,
+-- parsed from this file's load path -- it works for ANY folder name (zip
+-- extractors love to append version suffixes); the known-name probe stays
+-- as the fallback.
+local candidates = {}
+local real = debugstack and string.match(debugstack(1) or "", "AddOns\\(.-)\\")
+if real then table.insert(candidates, real) end
+for _, name in pairs({ "", "-Reforged", "-master", "-tbc", "-wotlk", "-turtle" }) do
+  table.insert(candidates, string.format("pfQuest%s", name))
+end
+for _, current in pairs(candidates) do
   local _, title = GetAddOnInfo(current)
   if title then
     pfQuestConfig.path = "Interface\\AddOns\\" .. current
@@ -494,7 +501,15 @@ end
 -- This ensures LoadConfig, MigrateHistory, CreateConfigEntries exist when called
 pfQuestConfig:RegisterEvent("ADDON_LOADED")
 pfQuestConfig:SetScript("OnEvent", function()
-  if arg1 == "pfQuest" or arg1 == "pfQuest-tbc" or arg1 == "pfQuest-wotlk" then
+  -- Reforged: prefix-match the addon folder name. The old equality list
+  -- (pfQuest/-tbc/-wotlk) silently skipped ALL of this init for any other
+  -- install folder -- the canonical pfQuest-Reforged folder loaded with no
+  -- config defaults, no settings entries and a nil pfQuest_track (QA: empty
+  -- config window, dead arrow, menu.lua crash on fresh installs). The
+  -- run-once flag keeps a second pfQuest*-named addon from double-building
+  -- the settings entries.
+  if not pfQuestConfig.initialized and strsub(tostring(arg1), 1, 7) == "pfQuest" then
+    pfQuestConfig.initialized = true
     pfQuestConfig:LoadConfig()
     pfQuestConfig:MigrateHistory()
     pfQuestConfig:CreateConfigEntries(pfQuest_defconfig)
