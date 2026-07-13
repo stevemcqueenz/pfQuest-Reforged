@@ -35,7 +35,7 @@ the experience layer.
   per-tab search (currently all four tabs rebuild per search), memoized
   map-pin tooltips.
 
-## v1.1.0
+## v1.0.6
 
 - Theming: pfQuest now adopts the GW2 UI look when GW2 UI (WotLK Reforged)
   is installed -- warm parchment-gold accent and a darker, near-opaque
