@@ -1,0 +1,99 @@
+name: Release
+
+# SINGLE RELEASE AUTHORITY.
+#
+# A release is cut automatically when a push to `main` carries a NEW version in
+# pfQuest.toc (## Version: 8.1.0-reforged.N). The toc is the source of truth --
+# no human or agent picks tag numbers by hand. Pushes that do not bump the toc
+# version (docs, tools) simply skip the publish steps. A `concurrency` group
+# serializes runs so back-to-back pushes cannot race on the same tag.
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse check (Lua 5.1, the 3.3.5a client's Lua)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends lua5.1
+          find . -name '*.lua' -not -path './.git/*' -print0 | xargs -0 -n1 luac5.1 -p
+
+      - name: Resolve version from the toc
+        id: ver
+        run: |
+          VERSION="$(sed -n 's/^## Version:[[:space:]]*//p' pfQuest.toc | head -1 | tr -d '\r')"
+          if [ -z "$VERSION" ]; then
+            echo "::error::No ## Version: line in pfQuest.toc"
+            exit 1
+          fi
+          TAG="v$VERSION"
+          git fetch --tags --force --quiet || true
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists -- nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stage addon as pfQuest-Reforged/
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          mkdir -p dist/pfQuest-Reforged
+          # Export only tracked files (auto-excludes .git and untracked).
+          git archive HEAD | tar -x -C dist/pfQuest-Reforged
+          # Drop dev-only files from the shipped addon.
+          rm -rf dist/pfQuest-Reforged/.github dist/pfQuest-Reforged/tools
+          rm -f  dist/pfQuest-Reforged/.gitignore
+
+      - name: Zip
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          cd dist
+          zip -r -q "pfQuest-Reforged-${{ steps.ver.outputs.version }}.zip" pfQuest-Reforged
+          ls -la
+
+      - name: Build release notes
+        id: notes
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          PREV="$(git describe --tags --abbrev=0 --exclude "$TAG" HEAD 2>/dev/null || true)"
+          {
+            echo "notes<<__NOTES_EOF__"
+            if [ -n "$PREV" ]; then
+              echo "## Changes since $PREV"
+              echo
+              git log --no-merges --pretty='- %s' "$PREV"..HEAD
+            else
+              echo "See CHANGES-REFORGED.md for the full history."
+            fi
+            echo "__NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        if: steps.ver.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: pfQuest Reforged ${{ steps.ver.outputs.version }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: dist/pfQuest-Reforged-${{ steps.ver.outputs.version }}.zip
