@@ -442,7 +442,13 @@ CreateFrame("Frame", "pfQuestLocaleCheck", UIParent):SetScript("OnUpdate", funct
   end
 
   -- set a detection timeout to 15 seconds
-  if GetTime() > 15 then
+  -- Reforged: GetTime() is session uptime, not time-since-login, so upstream's
+  -- absolute `GetTime() > 15` is already true for anyone logged in longer than
+  -- 15s -- it fired on the second tick and abandoned locale detection before a
+  -- clean-WDB client could populate the item tooltip (the exact case the grace
+  -- window at the top of this handler exists for). Capture a relative deadline.
+  this.timeout = this.timeout or (GetTime() + 15)
+  if GetTime() > this.timeout then
     pfDatabase.localized = true
     pfDatabase:BuildNameIndex()
     pfDatabase:BuildStaticRejectSet()
@@ -453,7 +459,13 @@ end)
 -- sanity check the databases
 if isempty(pfDB["quests"]["loc"]) then
   CreateFrame("Frame"):SetScript("OnUpdate", function()
-    if GetTime() < 3 then
+    -- Reforged: GetTime() is session uptime; upstream's absolute `GetTime() < 3`
+    -- only held during the first 3s of the client session, so for anyone already
+    -- logged in the "wrong version" warning printed on the first tick instead of
+    -- after a 3s settle. Gate on a captured relative delay so the databases have
+    -- a moment to finish loading before we decide they are genuinely empty.
+    this.started = this.started or GetTime()
+    if GetTime() < this.started + 3 then
       return
     end
     DEFAULT_CHAT_FRAME:AddMessage(
