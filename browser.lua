@@ -7,6 +7,11 @@ local format = string.format
 local getn = table.getn
 local GetTime = GetTime
 
+-- Reforged perf: hoisted constant lists so the per-item / per-search loops below
+-- iterate a shared table instead of allocating a fresh one each time.
+local ITEM_SOURCE_KEYS = { "U", "O", "V" }
+local SEARCH_TABS = { "Units", "Objects", "Items", "Quests" }
+
 -- default config
 pfBrowser_fav = { ["units"] = {}, ["objects"] = {}, ["items"] = {}, ["quests"] = {} }
 
@@ -425,7 +430,7 @@ local function ResultButtonReload(self)
       self.text:SetTextColor(0.5, 0.5, 0.5)
     end
   elseif self.btype == "items" then
-    for _, key in ipairs({ "U", "O", "V" }) do
+    for _, key in ipairs(ITEM_SOURCE_KEYS) do
       if items[self.id] and items[self.id][key] then
         self[key]:Show()
       else
@@ -918,7 +923,7 @@ pfBrowser:SetScript("OnUpdate", function()
       local custom = string.find(text, "^custom:")
       text = string.gsub(text, "^custom:", "")
 
-      for _, caption in ipairs({ "Units", "Objects", "Items", "Quests" }) do
+      for _, caption in ipairs(SEARCH_TABS) do
         local searchType = strlower(caption)
         local data = (strlen(text) >= 3 or custom) and pfDatabase:GetIDByName(text, searchType, true, custom)
           or pfBrowser_fav[searchType]

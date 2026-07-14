@@ -1889,6 +1889,10 @@ function pfDatabase:SearchQuests(meta, maps)
   -- build skill cache once for this scan (used by QuestFilter / GetPlayerSkillCached)
   pfDatabase:BuildSkillCache()
 
+  -- Reforged perf: the per-quest / per-node timers below are debug-only
+  -- instrumentation. Gate them so a normal (non-debug) SearchQuests does not pay
+  -- ~2x GetTime() for every quest in the DB on every questlog change.
+  local debug = pfQuest_config and pfQuest_config.debug
   local t_filter, t_nodes, t_start = 0, 0, GetTime()
 
   -- Phase 1: build the full set of quests that currently pass the filter.
@@ -1899,9 +1903,9 @@ function pfDatabase:SearchQuests(meta, maps)
   local staticReject = self.staticRejectSet
   for id in pairs(quests) do
     if not staticReject[id] then
-      local tf0 = GetTime()
+      local tf0 = debug and GetTime()
       local pass = pfDatabase:QuestFilter(id, plevel, pclass, prace)
-      t_filter = t_filter + (GetTime() - tf0)
+      if debug then t_filter = t_filter + (GetTime() - tf0) end
       if pass then
         currentSet[id] = true
       end
@@ -1911,7 +1915,7 @@ function pfDatabase:SearchQuests(meta, maps)
   -- Phase 2: remove nodes for quests that left the passing set.
   -- Skip quests that are now active: their nodes were just refreshed by
   -- SearchQuestID during queue processing and must not be wiped here.
-  local t_rm0 = GetTime()
+  local t_rm0 = debug and GetTime()
   local removed = 0
   for id in pairs(self.lastQuestGiversSet) do
     if not currentSet[id] and not (pfQuest and pfQuest.questlog and pfQuest.questlog[id]) then
@@ -1920,7 +1924,7 @@ function pfDatabase:SearchQuests(meta, maps)
       removed = removed + 1
     end
   end
-  local t_rm = GetTime() - t_rm0
+  local t_rm = debug and (GetTime() - t_rm0) or 0
 
   -- Phase 3: add nodes only for quests newly entering the passing set.
   -- Quests already in lastQuestGiversSet are skipped — their nodes exist.
@@ -1965,9 +1969,9 @@ function pfDatabase:SearchQuests(meta, maps)
           meta["QTYPE"] = "NPC_START"
           for _, unit in pairs(quests[id]["start"]["U"]) do
             if units[unit] and strfind(units[unit]["fac"] or pfaction, pfaction) then
-              local tn0 = GetTime()
+              local tn0 = debug and GetTime()
               maps = pfDatabase:SearchMobID(unit, meta, maps)
-              t_nodes = t_nodes + (GetTime() - tn0)
+              if debug then t_nodes = t_nodes + (GetTime() - tn0) end
             end
           end
         end
@@ -1977,9 +1981,9 @@ function pfDatabase:SearchQuests(meta, maps)
           meta["QTYPE"] = "OBJECT_START"
           for _, object in pairs(quests[id]["start"]["O"]) do
             if objects[object] and strfind(objects[object]["fac"] or pfaction, pfaction) then
-              local tn0 = GetTime()
+              local tn0 = debug and GetTime()
               maps = pfDatabase:SearchObjectID(object, meta, maps)
-              t_nodes = t_nodes + (GetTime() - tn0)
+              if debug then t_nodes = t_nodes + (GetTime() - tn0) end
             end
           end
         end
@@ -1996,16 +2000,18 @@ function pfDatabase:SearchQuests(meta, maps)
     self.lastQuestGiversSet[id] = true
   end
 
-  pfQuest:Debug(
-    format(
-      "|cffff3333TIMER SearchQuests total=%.4fs  filter=%.4fs  remove=%d(%.4fs)  nodes=%.4fs",
-      GetTime() - t_start,
-      t_filter,
-      removed,
-      t_rm,
-      t_nodes
+  if debug then
+    pfQuest:Debug(
+      format(
+        "|cffff3333TIMER SearchQuests total=%.4fs  filter=%.4fs  remove=%d(%.4fs)  nodes=%.4fs",
+        GetTime() - t_start,
+        t_filter,
+        removed,
+        t_rm,
+        t_nodes
+      )
     )
-  )
+  end
 end
 
 -- AddCustomIcon

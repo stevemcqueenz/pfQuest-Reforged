@@ -357,9 +357,11 @@ pfQuest.route:SetScript("OnUpdate", function()
     return
   end
 
-  -- check first node for changes
-  if this.firstnode ~= tostring(this.coords[1][1] .. this.coords[1][2]) then
-    this.firstnode = tostring(this.coords[1][1] .. this.coords[1][2])
+  -- check first node for changes (numeric concat already yields a string, so
+  -- tostring() was redundant; build the key once instead of concatenating twice)
+  local fnkey = this.coords[1][1] .. this.coords[1][2]
+  if this.firstnode ~= fnkey then
+    this.firstnode = fnkey
 
     -- recalculate objective paths
     local route = { [1] = this.coords[1] }
@@ -495,6 +497,25 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     invalid = nil
   end
 
+  -- Reforged perf: this handler recomputed ~3 atan2 + sin/cos + SetTexCoord +
+  -- SetVertexColor every rendered frame while shown, even standing still. Cap to
+  -- ~50/sec (indistinguishable for a pointer) and, once the ease has settled,
+  -- skip the whole recompute when the player has not moved or turned and the
+  -- target is unchanged -- every value below is a pure function of player
+  -- position, facing and target. lastt is refreshed on skip so a later move
+  -- eases instead of snapping.
+  local now = GetTime()
+  if this.perfTick and now < this.perfTick then return end
+  this.perfTick = now + 0.02
+
+  player = pfQuestCompat.GetPlayerFacing()
+  if this.settled and target == lasttarget
+     and xplayer == this.lastXP and yplayer == this.lastYP and player == this.lastFacing then
+    lastt = now
+    return
+  end
+  this.lastXP, this.lastYP, this.lastFacing = xplayer, yplayer, player
+
   -- Reforged: free-rotation arrow. Bearing math: map coords are x-east/y-south,
   -- GetPlayerFacing is 0=north increasing counterclockwise. Relative clockwise
   -- bearing rel = atan2(dx, -dy) + facing (0 = target dead ahead). The rotation
@@ -509,19 +530,20 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   -- DEGREES while GetPlayerFacing/math.sin are radians -- mixing them spun
   -- the arrow wildly on any movement (QA). Zygor pins the radian one for the
   -- same math (Astrolabe.lua: local atan2 = math.atan2).
-  player = pfQuestCompat.GetPlayerFacing()
   angle = math.atan2(xDelta, -yDelta) + player
   angle = math.atan2(math.sin(angle), math.cos(angle)) -- normalize to [-pi, pi]
 
   -- ease toward the new bearing across the shortest wrap so target switches
   -- turn the arrow instead of snapping it (Zygor Pointer.lua does the same)
-  local now = GetTime()
   if lastangle and lastt then
     local dif = angle - lastangle
     if dif > math.pi then dif = dif - 2 * math.pi end
     if dif < -math.pi then dif = dif + 2 * math.pi end
+    this.settled = math.abs(dif) < 0.0008 -- reached target bearing -> idle-skip eligible
     angle = lastangle + dif * math.min(1, (now - lastt) * 10)
     angle = math.atan2(math.sin(angle), math.cos(angle))
+  else
+    this.settled = nil
   end
   lastangle, lastt = angle, now
   perc = math.abs(((math.pi - math.abs(angle)) / math.pi))
@@ -588,6 +610,11 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
       desc = string.gsub(desc, "ff33ffcc", "ffffffff")
     end
     this.description:SetText(desc .. "|r.")
+    -- Reforged perf: the "on target change" guard above was dead -- lasttarget
+    -- was declared (line ~465) but never assigned, so this whole block
+    -- (SetTexture/SetVertexColor/SetText/string builds/gsub) ran every frame.
+    -- Commit the target so it now runs only on an actual target switch.
+    lasttarget = target
   end
 
   -- only refresh distance text on change

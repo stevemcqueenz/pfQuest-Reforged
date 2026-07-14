@@ -94,25 +94,31 @@ local function UpdateSortButton()
   end
 end
 
+-- Reforged perf: reused scratch tables so the 5 Hz distance pass (distance-sort
+-- mode only) does not allocate two fresh tables every tick.
+local qd_nearest, qd_nearestByTitle = {}, {}
 local function UpdateQuestDistances()
   if tracker.mode ~= "QUEST_TRACKING" or GetQuestSortMode() ~= "distance" then
     return
   end
 
   local changed = nil
-  local nearest = {}
   -- Some tracker entries fall back to title keys instead of numeric questids,
   -- so nearest-mode needs both maps to keep tracker and route ordering aligned.
-  local nearestByTitle = {}
-  for _, data in ipairs((pfQuest.route and pfQuest.route.coords) or {}) do
-    local questid = data[6] or (data[3] and data[3].questid)
-    local distance = data[4]
-    if questid and distance and (not nearest[questid] or distance < nearest[questid]) then
-      nearest[questid] = distance
-    end
-    local title = data[3] and data[3].title
-    if title and distance and (not nearestByTitle[title] or distance < nearestByTitle[title]) then
-      nearestByTitle[title] = distance
+  local nearest, nearestByTitle = qd_nearest, qd_nearestByTitle
+  for k in pairs(nearest) do nearest[k] = nil end
+  for k in pairs(nearestByTitle) do nearestByTitle[k] = nil end
+  if pfQuest.route and pfQuest.route.coords then
+    for _, data in ipairs(pfQuest.route.coords) do
+      local questid = data[6] or (data[3] and data[3].questid)
+      local distance = data[4]
+      if questid and distance and (not nearest[questid] or distance < nearest[questid]) then
+        nearest[questid] = distance
+      end
+      local title = data[3] and data[3].title
+      if title and distance and (not nearestByTitle[title] or distance < nearestByTitle[title]) then
+        nearestByTitle[title] = distance
+      end
     end
   end
 
@@ -382,6 +388,14 @@ function tracker.ButtonLeave()
 end
 
 function tracker.ButtonUpdate()
+  -- Reforged perf: this runs once per frame for EVERY shown tracked-quest row.
+  -- Both inputs (config alpha, map-hover highlight) are event-changed, not
+  -- animated, so a ~15 Hz throttle is imperceptible and cuts the multiplied
+  -- per-frame cost ~4x. (arg1 = elapsed in a 3.3.5a OnUpdate handler.)
+  this.acc = (this.acc or 0) + (arg1 or 0)
+  if this.acc < 0.066 then return end
+  this.acc = 0
+
   local alpha = tonumber((pfQuest_config["trackeralpha"] or 0.2)) or 0.2
 
   if not this.alpha or this.alpha ~= alpha then
@@ -563,7 +577,16 @@ function tracker.ButtonEvent(self)
       -- populate cache and compute progress in one pass
       for i = 1, objectives, 1 do
         local text, type, done = GetQuestLogLeaderBoard(i, qlogid)
-        board_cache[i] = { text, type, done }
+        -- Reforged perf: reuse the inner cache table instead of allocating a
+        -- fresh {text,type,done} per objective per ButtonEvent (fires up to 25x
+        -- on every QUEST_LOG_UPDATE). The tail-trim below still frees slots when
+        -- an objective count shrinks.
+        local entry = board_cache[i]
+        if not entry then
+          entry = {}
+          board_cache[i] = entry
+        end
+        entry[1], entry[2], entry[3] = text, type, done
         local _, _, obj, objNum, objNeeded = strfind(gsub(text, "\239\188\154", ":"), "(.*):%s*([%d]+)%s*/%s*([%d]+)")
         if objNum and objNeeded then
           max = max + objNeeded

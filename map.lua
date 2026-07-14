@@ -1276,6 +1276,9 @@ function pfMap:UpdateNodes()
   pfMap.mapJustOpened = nil
 end
 
+-- Reforged perf: memoized zone-name -> mapID for the minimap loop (see below).
+local mm_zonename, mm_zoneid
+
 function pfMap:UpdateMinimap()
   -- check for disabled minimap nodes
   if pfQuest_config["minimapnodes"] == "0" then
@@ -1316,7 +1319,15 @@ function pfMap:UpdateMinimap()
 
   this.xPlayer, this.yPlayer, this.mZoom = xPlayer, yPlayer, mZoom
   local color = pfQuest_config["spawncolors"] == "1" and "spawn" or "title"
-  local mapID = pfMap:GetMapIDByName(GetRealZoneText())
+  -- Reforged perf: GetMapIDByName does a linear scan over every zone name in the
+  -- DB. This runs ~20x/sec while the player moves (the minimap loop's whole
+  -- reason to exist), re-deriving a value that only changes on a zone change.
+  -- Memoize by the raw zone-text string so the scan happens once per zone.
+  local rz = GetRealZoneText()
+  if rz ~= mm_zonename then
+    mm_zonename, mm_zoneid = rz, pfMap:GetMapIDByName(rz)
+  end
+  local mapID = mm_zoneid
   local mapZoom = minimap_zoom[minimap_indoor()][mZoom]
   local mapWidth = minimap_sizes[mapID] and minimap_sizes[mapID][1] or 0
   local mapHeight = minimap_sizes[mapID] and minimap_sizes[mapID][2] or 0
@@ -1326,6 +1337,12 @@ function pfMap:UpdateMinimap()
 
   local xDraw = pfMap.drawlayer:GetWidth() / xScale / 100
   local yDraw = pfMap.drawlayer:GetHeight() / yScale / 100
+
+  -- Reforged perf: the drawlayer is a fixed size for the whole call, so hoist
+  -- its half-extents out of the per-node cull check (was 1-2 GetWidth/GetHeight
+  -- C-calls per node, per ~20/sec tick while moving).
+  local halfW = pfMap.drawlayer:GetWidth() / 2
+  local halfH = pfMap.drawlayer:GetHeight() / 2
 
   local i = 1
 
@@ -1360,11 +1377,11 @@ function pfMap:UpdateMinimap()
         local distance = sqrt(xPos * xPos + yPos * yPos)
 
         if pfUI.minimap then
-          display = (abs(xPos) + 8 < pfMap.drawlayer:GetWidth() / 2 and abs(yPos) + 8 < pfMap.drawlayer:GetHeight() / 2)
+          display = (abs(xPos) + 8 < halfW and abs(yPos) + 8 < halfH)
               and true
             or nil
         else
-          display = (distance + 8 < pfMap.drawlayer:GetWidth() / 2) and true or nil
+          display = (distance + 8 < halfW) and true or nil
         end
 
         if display then

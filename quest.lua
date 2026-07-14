@@ -472,6 +472,10 @@ pfQuest:SetScript("OnUpdate", function()
 end)
 
 local questlog_flip, questlog_flop = {}, {}
+-- Reforged perf: reused scratch table for the per-quest state string. This
+-- rebuild runs on a 1s poll plus on quest changes, so allocating a fresh table
+-- per quest (up to ~25) meant ~25 throwaway tables/sec even at idle.
+local sp_scratch = {}
 function pfQuest:UpdateQuestlog()
   -- initialize flip flop if not yet defined
   pfQuest.questlog_tmp = pfQuest.questlog_tmp or questlog_flip
@@ -495,16 +499,21 @@ function pfQuest:UpdateQuestlog()
       questid = questid and tonumber(questid[1]) or title
       watched = IsQuestWatched(qlogid)
 
-      -- build state string using table.concat (avoid string concat garbage)
-      local stateParts = { watched and "track" or "" }
+      -- build state string via table.concat (avoids string-concat garbage), into
+      -- a reused scratch table with a range-limited concat so no per-quest table
+      -- is allocated and no tail-clear is needed.
+      local sp = sp_scratch
+      sp[1] = watched and "track" or ""
+      local n = 1
       if objectives then
         for i = 1, objectives, 1 do
           local text, _, done = GetQuestLogLeaderBoard(i, qlogid)
-          stateParts[getn(stateParts) + 1] = i
-          stateParts[getn(stateParts) + 1] = done and "done" or "todo"
+          sp[n + 1] = i
+          sp[n + 2] = done and "done" or "todo"
+          n = n + 2
         end
       end
-      state = concat(stateParts)
+      state = concat(sp, "", 1, n)
 
       -- Some WoW clients (e.g. group/dungeon/raid quests) set collapsed=true on the
       -- individual quest entry itself rather than (or in addition to) the zone header.
@@ -722,15 +731,31 @@ function pfQuest:AddQuestLogIntegration()
     end
 
     if id and pfDB["quests"][lang] and pfDB["quests"][lang][id] then
-      local QuestLogQuestTitle = EQL3_QuestLogQuestTitle or pfQuestCompat.QuestLogQuestTitle
-      local QuestLogObjectivesText = EQL3_QuestLogObjectivesText or pfQuestCompat.QuestLogObjectivesText
-      local QuestLogQuestDescription = EQL3_QuestLogQuestDescription or pfQuestCompat.QuestLogQuestDescription
-      local QuestLogDetailScrollFrame = EQL3_QuestLogDetailScrollFrame or QuestLogDetailScrollFrame
+      -- Reforged perf: this ran 3x FormatQuestText + SetText + UpdateScrollChildRect
+      -- EVERY frame while the quest log was open in translate mode. FormatQuestText
+      -- is only a function of (id, lang), so cache the formatted strings and
+      -- recompute them only when the selected quest or language changes. The
+      -- SetText re-apply must still fire whenever Blizzard re-renders the detail
+      -- (QUEST_LOG_UPDATE resets it to the source language), so gate that on a
+      -- cheap GetText compare -- zero allocation in the steady state.
+      if this.fmtId ~= id or this.fmtLang ~= lang then
+        this.fmtId, this.fmtLang = id, lang
+        this.fmtTitle = pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["T"])
+        this.fmtObj = pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["O"])
+        this.fmtDesc = pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["D"])
+      end
 
-      QuestLogQuestTitle:SetText(pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["T"]))
-      QuestLogObjectivesText:SetText(pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["O"]))
-      QuestLogQuestDescription:SetText(pfDatabase:FormatQuestText(pfDB["quests"][lang][id]["D"]))
-      QuestLogDetailScrollFrame:UpdateScrollChildRect()
+      local QuestLogQuestTitle = EQL3_QuestLogQuestTitle or pfQuestCompat.QuestLogQuestTitle
+      if QuestLogQuestTitle:GetText() ~= this.fmtTitle then
+        local QuestLogObjectivesText = EQL3_QuestLogObjectivesText or pfQuestCompat.QuestLogObjectivesText
+        local QuestLogQuestDescription = EQL3_QuestLogQuestDescription or pfQuestCompat.QuestLogQuestDescription
+        local QuestLogDetailScrollFrame = EQL3_QuestLogDetailScrollFrame or QuestLogDetailScrollFrame
+
+        QuestLogQuestTitle:SetText(this.fmtTitle)
+        QuestLogObjectivesText:SetText(this.fmtObj)
+        QuestLogQuestDescription:SetText(this.fmtDesc)
+        QuestLogDetailScrollFrame:UpdateScrollChildRect()
+      end
     end
   end)
 
