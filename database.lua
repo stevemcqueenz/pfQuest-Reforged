@@ -221,6 +221,22 @@ for _, exp in pairs({ "-tbc", "-wotlk" }) do
   end
 end
 
+-- Reforged: apply server-authoritative quest level overrides (see
+-- db/quests-serverlevels335.lua) field-wise onto the already-merged quest data.
+-- Runs after the tbc/wotlk overlays are merged and before the expansion patch
+-- tables are freed. Unlike patchtable this only sets lvl/min -- it never replaces
+-- a quest entry, so the Questie-sourced relations/masks/prereqs are preserved.
+if pfDB["quests"]["serverlevels"] then
+  for id, lv in pairs(pfDB["quests"]["serverlevels"]) do
+    local q = pfDB["quests"]["data"][id]
+    if q then
+      if lv.lvl then q.lvl = lv.lvl end
+      if lv.min then q.min = lv.min end
+    end
+  end
+  pfDB["quests"]["serverlevels"] = nil
+end
+
 -- detect installed locales
 for key, name in pairs(pfDB.locales) do
   if not pfDB["quests"][key] then

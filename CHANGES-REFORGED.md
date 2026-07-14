@@ -28,6 +28,16 @@ the experience layer.
 - Flat dark chrome + header strip matching the tracker.
 - Accent-tinted row hover (replaces the white wash).
 
+## Quest levels (server-sourced)
+- `db/quests-serverlevels335.lua`: overrides the quest **level** and **minimum
+  level** for 214 quests to match an AzerothCore (3.3.5a) server's own
+  `quest_template`, where the Questie-derived base data had drifted. Applied
+  field-wise in `database.lua` after the tbc/wotlk merge -- only `lvl`/`min` are
+  touched; every quest's giver/objective/prerequisite data is preserved.
+  Server `MinLevel` sentinels (255), event/skill-gated placeholders and
+  reused-id custom quests are deliberately excluded, so only sane corrections
+  land.
+
 ## Notes
 - Load order gains `theme.lua` (before all UI files).
 - No database, query, route, or map logic was modified.
