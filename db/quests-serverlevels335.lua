@@ -1,11 +1,12 @@
 -- Server-authoritative quest levels for pfQuest Reforged.
 -- Source: the maintainer's AzerothCore (acore_world) quest_template, compared
 -- against the Questie-derived base data. Only the quest LEVEL (lvl) and the
--- minimum required level (min) are overridden here, and only where the server
--- value is a sane, small correction -- server MinLevel sentinels (255), event/
--- skill-gated placeholders and reused-id/custom quests are deliberately excluded.
--- Applied field-wise onto the merged quest data in database.lua (does NOT replace
--- the quest entry). Regenerate with tools + the server dump if the server changes.
+-- minimum required level (min) are overridden, and only where the server value
+-- is either a small sane correction OR matches pfQuest's own vanilla base while
+-- a Questie expansion overlay had drifted it (two independent sources agree).
+-- Server MinLevel sentinels (255), event/skill placeholders and reused-id custom
+-- quests are excluded. Applied field-wise in database.lua (never replaces an
+-- entry), so Questie-sourced givers/objectives/prereqs/masks are preserved.
 pfDB["quests"]["serverlevels"] = {
   [98] = { ["lvl"] = 35 },
   [126] = { ["lvl"] = 25 },
@@ -25,6 +26,7 @@ pfDB["quests"]["serverlevels"] = {
   [465] = { ["lvl"] = 31 },
   [473] = { ["lvl"] = 28 },
   [474] = { ["lvl"] = 32 },
+  [566] = { ["min"] = 35 },
   [567] = { ["min"] = 19 },
   [594] = { ["lvl"] = 45, ["min"] = 45 },
   [604] = { ["lvl"] = 43 },
@@ -80,6 +82,22 @@ pfDB["quests"]["serverlevels"] = {
   [7483] = { ["min"] = 57 },
   [7484] = { ["min"] = 57 },
   [7485] = { ["min"] = 57 },
+  [7521] = { ["lvl"] = 60 },
+  [7660] = { ["min"] = 60 },
+  [7661] = { ["min"] = 60 },
+  [7662] = { ["min"] = 60 },
+  [7663] = { ["min"] = 60 },
+  [7664] = { ["min"] = 60 },
+  [7665] = { ["min"] = 60 },
+  [7668] = { ["min"] = 58 },
+  [7671] = { ["min"] = 60 },
+  [7672] = { ["min"] = 60 },
+  [7673] = { ["min"] = 60 },
+  [7674] = { ["min"] = 60 },
+  [7675] = { ["min"] = 60 },
+  [7676] = { ["min"] = 60 },
+  [7677] = { ["min"] = 60 },
+  [7678] = { ["min"] = 60 },
   [7703] = { ["min"] = 60 },
   [7704] = { ["lvl"] = 50 },
   [7788] = { ["lvl"] = 29 },
@@ -158,9 +176,16 @@ pfDB["quests"]["serverlevels"] = {
   [8162] = { ["lvl"] = 29 },
   [8262] = { ["lvl"] = 60 },
   [8265] = { ["lvl"] = 60 },
+  [8267] = { ["min"] = 40 },
+  [8269] = { ["min"] = 40 },
   [8289] = { ["min"] = 10 },
   [8296] = { ["min"] = 10 },
   [8329] = { ["min"] = 1 },
+  [8354] = { ["min"] = 10 },
+  [8355] = { ["min"] = 10 },
+  [8358] = { ["min"] = 10 },
+  [8359] = { ["min"] = 10 },
+  [8360] = { ["min"] = 10 },
   [8410] = { ["lvl"] = 50 },
   [8411] = { ["lvl"] = 50 },
   [8415] = { ["lvl"] = 50 },
@@ -189,6 +214,9 @@ pfDB["quests"]["serverlevels"] = {
   [9209] = { ["min"] = 60 },
   [9210] = { ["min"] = 60 },
   [9260] = { ["lvl"] = 10 },
+  [9415] = { ["min"] = 1 },
+  [9416] = { ["min"] = 1 },
+  [9419] = { ["min"] = 1 },
   [9980] = { ["min"] = 62 },
   [10048] = { ["min"] = 62 },
   [10053] = { ["min"] = 58 },

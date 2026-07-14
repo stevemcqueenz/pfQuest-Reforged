@@ -30,13 +30,15 @@ the experience layer.
 
 ## Quest levels (server-sourced)
 - `db/quests-serverlevels335.lua`: overrides the quest **level** and **minimum
-  level** for 214 quests to match an AzerothCore (3.3.5a) server's own
-  `quest_template`, where the Questie-derived base data had drifted. Applied
+  level** for 241 quests to match an AzerothCore (3.3.5a) server's own
+  `quest_template`, where the Questie-derived data had drifted. Applied
   field-wise in `database.lua` after the tbc/wotlk merge -- only `lvl`/`min` are
-  touched; every quest's giver/objective/prerequisite data is preserved.
-  Server `MinLevel` sentinels (255), event/skill-gated placeholders and
-  reused-id custom quests are deliberately excluded, so only sane corrections
-  land.
+  touched; every quest's giver/objective/prerequisite data is preserved. A value
+  is taken when it is a small sane correction, or when the server value matches
+  pfQuest's own vanilla base while a Questie expansion overlay had drifted it
+  (two independent sources agreeing -- e.g. WANTED: Baron Vardus min 17->35,
+  Thunderaan the Windseeker level 1->60). Server `MinLevel` sentinels (255),
+  event/skill-gated placeholders and reused-id custom quests are excluded.
 
 ## Notes
 - Load order gains `theme.lua` (before all UI files).
