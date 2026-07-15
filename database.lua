@@ -237,6 +237,19 @@ if pfDB["quests"]["serverlevels"] then
   pfDB["quests"]["serverlevels"] = nil
 end
 
+-- Reforged: restore the holiday/event flag on WotLK quests (see
+-- db/quests-eventtags335.lua). The WotLK data was generated from Questie and the
+-- conversion dropped pfQuest's ["event"] field, so holiday quests were never
+-- hidden by QuestFilter's showfestival check. Reapply it field-wise onto the
+-- merged data, then free the overlay.
+if pfDB["quests"]["eventtags"] then
+  for id, ev in pairs(pfDB["quests"]["eventtags"]) do
+    local q = pfDB["quests"]["data"][id]
+    if q then q.event = ev end
+  end
+  pfDB["quests"]["eventtags"] = nil
+end
+
 -- detect installed locales
 for key, name in pairs(pfDB.locales) do
   if not pfDB["quests"][key] then
