@@ -479,6 +479,13 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     return
   end
 
+  -- resolve the arrow style once, in-game (every addon is loaded by the first
+  -- OnUpdate, so IsAddOnLoaded is reliable here regardless of load order)
+  if not this.styled then
+    this.styled = true
+    this:ConfigureStyle()
+  end
+
   xplayer, yplayer = GetPlayerMapPosition("player")
   wrongmap = xplayer == 0 and yplayer == 0 and true or nil
   target = this.parent.coords and this.parent.coords[1] and this.parent.coords[1][4] and this.parent.coords[1] or nil
@@ -549,10 +556,6 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   perc = math.abs(((math.pi - math.abs(angle)) / math.pi))
   r, g, b = pfUI.api.GetColorGradient(floor(perc * 100) / 100)
 
-  local phi = 2.35619449019234 - angle
-  local sin_a = math.sin(phi) * 0.70710678118655
-  local cos_a = math.cos(phi) * 0.70710678118655
-
   -- guess area based on node count
   area = target[3].priority and target[3].priority or 1
   area = max(1, area)
@@ -569,14 +572,33 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
 
   r, g, b = r + texalpha, g + texalpha, b + texalpha
 
-  -- update arrow (rotate around the texture center; art stays inside the
-  -- inscribed circle so the rotated sample never clips)
-  this.model:SetTexCoord(
-    0.5 - sin_a, 0.5 + cos_a,
-    0.5 + cos_a, 0.5 + sin_a,
-    0.5 - cos_a, 0.5 - sin_a,
-    0.5 + sin_a, 0.5 - cos_a
-  )
+  -- update arrow. GW2 mode: single art free-rotated around its center via the
+  -- 8-corner SetTexCoord (art stays inside the inscribed circle so the rotated
+  -- sample never clips). Stock mode (no GW2_UI): pfQuest's 9x12 sprite sheet --
+  -- pick the cell for this bearing. cell 0 = up and the index increases counter-
+  -- clockwise (verified against the sheet: 27=left, 54=down, 81=right); our
+  -- `angle` is clockwise-positive (0 = target ahead), so negate it to walk the
+  -- sheet the right way.
+  if this.gw2 then
+    local phi = 2.35619449019234 - angle
+    local sin_a = math.sin(phi) * 0.70710678118655
+    local cos_a = math.cos(phi) * 0.70710678118655
+    this.model:SetTexCoord(
+      0.5 - sin_a, 0.5 + cos_a,
+      0.5 + cos_a, 0.5 + sin_a,
+      0.5 - cos_a, 0.5 - sin_a,
+      0.5 + sin_a, 0.5 - cos_a
+    )
+  else
+    local cell = floor(-angle / (2 * math.pi) * 108 + 0.5) % 108
+    column = cell % 9
+    row = floor(cell / 9)
+    xstart = (column * 56) / 512
+    ystart = (row * 42) / 512
+    xend = ((column + 1) * 56) / 512
+    yend = ((row + 1) * 42) / 512
+    this.model:SetTexCoord(xstart, xend, ystart, yend)
+  end
   this.model:SetVertexColor(r, g, b)
 
   -- recalculate values on target change
@@ -637,10 +659,12 @@ pfQuest.route.arrow.content = CreateFrame("Frame", nil, pfQuest.route.arrow)
 pfQuest.route.arrow.content:SetPoint("TOPLEFT", pfQuest.route.arrow, "TOPLEFT", -80, 0)
 pfQuest.route.arrow.content:SetPoint("BOTTOMRIGHT", pfQuest.route.arrow, "BOTTOMRIGHT", 80, -54)
 
--- Reforged: single smoothly-rotated arrow (img\arrow-gw2, drawn for this addon)
--- instead of the 108-cell pre-rendered sprite sheet. The OnUpdate rotates it via
--- the free 8-corner SetTexCoord (same technique the GW2_UI compass uses), so the
--- pointer turns continuously instead of snapping between sprite cells.
+-- Reforged: with GW2_UI, a single smoothly-rotated arrow (img\arrow-gw2, drawn for
+-- this addon) that the OnUpdate turns via the free 8-corner SetTexCoord (same
+-- technique the GW2_UI compass uses), so the pointer rotates continuously instead
+-- of snapping. Without GW2_UI, ConfigureStyle() swaps this back to pfQuest's stock
+-- 108-cell sprite sheet (img\arrow). The texture/size below is just the initial
+-- state; ConfigureStyle sets the final art on the first in-game frame.
 pfQuest.route.arrow.model = pfQuest.route.arrow.content:CreateTexture("pfQuestRouteArrow", "MEDIUM")
 pfQuest.route.arrow.model:SetTexture(pfQuestConfig.path .. "\\img\\arrow-gw2")
 pfQuest.route.arrow.model:SetWidth(44)
@@ -678,7 +702,29 @@ pfQuest.route.arrow.textbg:SetTexture(pfQuestConfig.path .. "\\img\\panel-gw2")
 pfQuest.route.arrow.textbg:SetPoint("TOP", pfQuest.route.arrow.model, "BOTTOM", 0, -4)
 pfQuest.route.arrow.textbg:Hide()
 
+-- Reforged: the GW2 arrow art and the parchment text panel are part of the GW2_UI
+-- look, so only use them when GW2_UI is actually loaded. Without it, fall back to
+-- pfQuest's stock sprite-sheet arrow and never draw the panel. Called once from the
+-- first OnUpdate (in-game), where IsAddOnLoaded is reliable regardless of load order.
+function pfQuest.route.arrow:ConfigureStyle()
+  self.gw2 = IsAddOnLoaded and IsAddOnLoaded("GW2_UI") and true or false
+  if self.gw2 then
+    self.model:SetTexture(pfQuestConfig.path .. "\\img\\arrow-gw2")
+    self.model:SetWidth(44)
+    self.model:SetHeight(44)
+  else
+    self.model:SetTexture(pfQuestConfig.path .. "\\img\\arrow")
+    self.model:SetWidth(48)
+    self.model:SetHeight(36)
+    self.textbg:Hide()
+  end
+end
+
 function pfQuest.route.arrow:UpdateTextPanel()
+  if not self.gw2 then
+    self.textbg:Hide()
+    return
+  end
   local w = math.max(
     self.title:GetStringWidth() or 0,
     self.description:GetStringWidth() or 0,
