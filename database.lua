@@ -570,6 +570,63 @@ function pfDatabase.PackCoords()
   if collectgarbage then collectgarbage("collect") end
 end
 
+-- Reforged memory: the item drop DB is the other big slice -- each item entry holds up to
+-- four id->chance maps (U=dropped by units, O=from objects, V=sold by vendors, R=reference
+-- loot tables), and refloot mirrors U/O. ~13k small hash tables in a headless measure,
+-- ~12 MB of the ~18 MB items+refloot cost. Pack each present submap into ONE string
+-- ("id:chance,id:chance") under a __U/__O/__V/__R key and drop the maps; decode back to an
+-- {[id]=chance} map lazily on read (only for items the loot/browser code actually queries)
+-- and cache it. Absent submaps stay absent, so `if items[id]["U"]` still short-circuits.
+local LOOT_SUBKEYS = { "U", "O", "V", "R" }
+local lootMeta = {
+  __index = function(t, k)
+    if k ~= "U" and k ~= "O" and k ~= "V" and k ~= "R" then return nil end
+    local packed = rawget(t, "__" .. k)
+    if type(packed) ~= "string" then return nil end -- item genuinely has no drops of this type
+    local m = {}
+    if packed ~= "" then
+      for pair in string.gmatch(packed, "[^,]+") do
+        local id, chance = string.match(pair, "^(%-?%d+):(.+)$")
+        if id then m[tonumber(id)] = tonumber(chance) end
+      end
+    end
+    rawset(t, k, m) -- cache
+    return m
+  end,
+}
+
+local function packEntryLoot(entry)
+  if type(entry) ~= "table" then return end
+  local any = false
+  for _, sk in ipairs(LOOT_SUBKEYS) do
+    local mp = rawget(entry, sk)
+    if type(mp) == "table" and rawget(entry, "__" .. sk) == nil then
+      local parts, n = {}, 0
+      for id, chance in pairs(mp) do
+        n = n + 1
+        parts[n] = id .. ":" .. chance
+      end
+      entry[sk] = nil
+      entry["__" .. sk] = table.concat(parts, ",")
+      any = true
+    end
+  end
+  if any then setmetatable(entry, lootMeta) end
+end
+
+-- Pack item + refloot drop maps in place, once after the merge (same timing as PackCoords).
+function pfDatabase.PackDropData()
+  for _, db in ipairs({ "items", "refloot" }) do
+    local d = pfDB[db] and pfDB[db]["data"]
+    if type(d) == "table" then
+      for _, entry in pairs(d) do
+        packEntryLoot(entry)
+      end
+    end
+  end
+  if collectgarbage then collectgarbage("collect") end
+end
+
 -- add database shortcuts
 local items, units, objects, quests, zones, refloot, itemreq, areatrigger, professions
 pfDatabase.Reload = function()
@@ -585,7 +642,8 @@ pfDatabase.Reload = function()
 end
 
 pfDatabase.Reload()
-pfDatabase.PackCoords() -- compact the coord tables now that the DB is fully merged
+pfDatabase.PackCoords()   -- compact the coord tables now that the DB is fully merged
+pfDatabase.PackDropData() -- compact the item/refloot drop maps
 
 -- Inverted name index: maps name → {id, id, ...} for O(1) exact-match lookups.
 -- Built once after locale is known. Used by GetIDByName to skip full-table scans
