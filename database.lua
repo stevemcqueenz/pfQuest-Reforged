@@ -628,7 +628,7 @@ function pfDatabase.PackDropData()
 end
 
 -- add database shortcuts
-local items, units, objects, quests, zones, refloot, itemreq, areatrigger, professions
+local items, units, objects, quests, zones, refloot, itemreq, areatrigger, professions, qrel
 pfDatabase.Reload = function()
   items = pfDB["items"]["data"]
   units = pfDB["units"]["data"]
@@ -639,6 +639,7 @@ pfDatabase.Reload = function()
   itemreq = pfDB["quests-itemreq"]["data"]
   areatrigger = pfDB["areatrigger"]["data"]
   professions = pfDB["professions"]["loc"]
+  qrel = pfDB["quests"]["relations"] or {} -- WotLK quest relations overlay (may be absent)
 end
 
 pfDatabase.Reload()
@@ -1956,6 +1957,30 @@ function pfDatabase:QuestFilter(id, plevel, pclass, prace)
     -- hide if none of the pre-quests has been completed
     if not one_complete then
       return
+    end
+  end
+
+  -- Reforged: richer availability from the WotLK relations overlay (quests-relations335,
+  -- sourced from AzerothCore Questie). pfQuest's `pre` above only models "ANY one prereq
+  -- completed", so it kept showing quests you're actually locked out of. All checks below
+  -- read only the quest log / completed history, which pfQuest already tracks -- no new API.
+  local rel = qrel[id]
+  if rel then
+    -- exclusiveTo: taking/finishing a mutually-exclusive quest removes this one
+    if rel.excl then
+      for _, ex in ipairs(rel.excl) do
+        if pfQuest.questlog[ex] or pfQuest_history[ex] then return end
+      end
+    end
+    -- nextQuestInChain: if the later chain link is in the log or done, this one is behind you
+    if rel.chain and (pfQuest.questlog[rel.chain] or pfQuest_history[rel.chain]) then
+      return
+    end
+    -- preQuestGroup: EVERY quest in the group must be complete (stricter than `pre`'s ANY)
+    if rel.prg then
+      for _, pq in ipairs(rel.prg) do
+        if not pfQuest_history[pq] then return end
+      end
     end
   end
 

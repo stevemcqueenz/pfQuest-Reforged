@@ -5,4 +5,5 @@
   <Include file="..\db\quests-wotlk.lua" />
   <Include file="..\db\quests-serverlevels335.lua" />
   <Include file="..\db\quests-eventtags335.lua" />
+  <Include file="..\db\quests-relations335.lua" />
 </Ui>
