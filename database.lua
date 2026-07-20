@@ -509,6 +509,67 @@ if isempty(pfDB["quests"]["loc"]) then
   end)
 end
 
+-- Reforged memory: spawn coordinates are the single biggest slice of the loaded DB.
+-- Every unit/object stores coords as a list of 4-number tables ({x,y,zone,respawn}),
+-- and each of those ~80k+ tuple tables costs a Lua table header + slots -- ~28 MB of
+-- units+objects in a headless measure, ~21 MB of it just those coord tables. Pack each
+-- entry's coord list into ONE compact string at load ("x,y,z,r;x,y,z,r;...") and drop the
+-- tables; decode a string back into tuples lazily -- only for the handful of entries the
+-- map/search actually queries -- and cache the decoded table on the entry so repeat reads
+-- are free. Units in zones you never visit stay a small string and never explode.
+-- Consumers are unchanged: reading entry.coords still yields the {x,y,zone,respawn} list.
+local coordMeta = {
+  __index = function(t, k)
+    if k ~= "coords" then return nil end
+    local out = {}
+    local packed = rawget(t, "__c")
+    if type(packed) == "string" and packed ~= "" then
+      for tuple in string.gmatch(packed, "[^;]+") do
+        local tup, i = {}, 0
+        for num in string.gmatch(tuple, "[^,]+") do
+          i = i + 1
+          tup[i] = tonumber(num)
+        end
+        out[#out + 1] = tup
+      end
+    end
+    rawset(t, "coords", out) -- cache -> later reads hit the raw key, not __index
+    return out
+  end,
+}
+
+local function packEntryCoords(entry)
+  if type(entry) ~= "table" then return end
+  local c = rawget(entry, "coords")
+  if type(c) ~= "table" then return end          -- server-custom entry / nothing to pack
+  if rawget(entry, "__c") ~= nil then return end  -- idempotent (Reload may re-run)
+  local parts, n = {}, 0
+  for _, tup in ipairs(c) do
+    if type(tup) == "table" then
+      n = n + 1
+      parts[n] = table.concat(tup, ",")
+    end
+  end
+  entry.coords = nil
+  entry.__c = table.concat(parts, ";") -- "" for a unit with no known spawns
+  setmetatable(entry, coordMeta)
+end
+
+-- Pack the coord-bearing databases in place. Runs once after the base+overlay merge is
+-- complete; pfQuest_server custom nodes merge later as plain-coord entries, which the
+-- consumers read directly (the metatable only fronts packed entries), so mixing is safe.
+function pfDatabase.PackCoords()
+  for _, db in ipairs({ "units", "objects", "areatrigger" }) do
+    local d = pfDB[db] and pfDB[db]["data"]
+    if type(d) == "table" then
+      for _, entry in pairs(d) do
+        packEntryCoords(entry)
+      end
+    end
+  end
+  if collectgarbage then collectgarbage("collect") end
+end
+
 -- add database shortcuts
 local items, units, objects, quests, zones, refloot, itemreq, areatrigger, professions
 pfDatabase.Reload = function()
@@ -524,6 +585,7 @@ pfDatabase.Reload = function()
 end
 
 pfDatabase.Reload()
+pfDatabase.PackCoords() -- compact the coord tables now that the DB is fully merged
 
 -- Inverted name index: maps name → {id, id, ...} for O(1) exact-match lookups.
 -- Built once after locale is known. Used by GetIDByName to skip full-table scans
