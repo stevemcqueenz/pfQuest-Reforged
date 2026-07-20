@@ -19,6 +19,13 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
 - **A modernized interface** — flat dark theme with a single teal accent,
   tracker progress bars, a resizable database browser, map/minimap node-size
   sliders, and a clean smoothly-rotating navigation arrow.
+- **~50% lower memory footprint** — spawn coordinates and item drop tables (the
+  bulk of the loaded database) are packed into compact strings at load and
+  decoded lazily only when the map/search/browser needs them, taking total addon
+  memory from roughly **90 MB to 43 MB** in-game with no change to behavior.
+- **Smarter quest availability** — the filter now honors exclusive quests, chain
+  progression, and all-of-N prerequisites (relations sourced from Questie), so
+  fewer quests you're already locked out of show up on the map.
 - **A hardened map-pin lifecycle** — quest icons no longer vanish from the
   map/minimap on quest progress (several server-quirk races fixed and
   regression-tested in an offline harness).
