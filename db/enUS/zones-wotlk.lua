@@ -3,6 +3,25 @@
 -- data only (ids, names, levels, masks, spawn coordinates); ids/format
 -- follow pfQuest's native pfDB scheme.
 pfDB["zones"]["enUS-wotlk"] = {
+  -- Northrend outdoor zones whose IDs Blizzard RECYCLED: in the 1.12 data pfQuest
+  -- ships natively these same IDs are placeholders ("Reuse Me 2/3/4/5/6",
+  -- "Darrowmere Lake UNUSED"), and WotLK reused them for real zones. Without these
+  -- overrides pfMap:GetMapIDByName() -- which resolves the OPEN world map by
+  -- matching its name against pfDB.zones.loc -- finds nothing for these zones, so
+  -- pfMap:GetMapID() returns nil and NO nodes are drawn at all (issue #1, "It
+  -- doesn't work on Northrend"). ~14k spawns were unreachable across these six.
+  [65] = "Dragonblight",         -- base 1.12 data: "Reuse Me 3"
+  [66] = "Zul'Drak",             -- base 1.12 data: "Reuse Me 6"
+  [67] = "The Storm Peaks",      -- base 1.12 data: "Reuse Me 5"
+  [210] = "Icecrown",            -- base 1.12 data: "Reuse Me 2"
+  [394] = "Grizzly Hills",       -- base 1.12 data: "Darrowmere Lake UNUSED"
+  [2817] = "Crystalsong Forest", -- base 1.12 data: "Reuse Me 4"
+  -- Vanilla ID 279 is literally named "Dalaran" (the Alterac crater -- a SUBZONE
+  -- with no world map, and zero spawns in this database). It won the name lookup
+  -- for Northrend's Dalaran city, so the 151 nodes stored under 4395 never
+  -- rendered. Rename it so "Dalaran" resolves deterministically to the city below:
+  -- GetMapIDByName iterates with pairs(), so two identical names are a coin flip.
+  [279] = "Dalaran Crater",
   [495] = "Howling Fjord",
   [3537] = "Borean Tundra",
   [3557] = "The Exodar",
@@ -16,7 +35,7 @@ pfDB["zones"]["enUS-wotlk"] = {
   [4273] = "Ulduar - Raid",
   [4277] = "Azjol-Nerub",
   [4298] = "Plaguelands: The Scarlet Enclave",
-  [4395] = "Dalaran - Dungeon?",
+  [4395] = "Dalaran", -- was "Dalaran - Dungeon?" (generator artifact; never matched the map)
   [4415] = "The Violet Hold - Dungeon",
   [4416] = "Gundrak",
   [4493] = "The Obsidian Sanctum - Raid",
