@@ -56,6 +56,6 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
 
 - [Shagu](https://github.com/shagu) — pfQuest, the engine and the
   vanilla/TBC databases (GPLv3; this fork remains GPLv3)
-- txtsd — the original WotLK client port
+- [txtsd](https://github.com/txtsd) — the original WotLK client port
 - [Questie](https://github.com/Questie/Questie) — the WotLK quest/spawn data
   the Reforged overlay was converted from
