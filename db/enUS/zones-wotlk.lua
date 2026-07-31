@@ -22,6 +22,13 @@ pfDB["zones"]["enUS-wotlk"] = {
   -- rendered. Rename it so "Dalaran" resolves deterministically to the city below:
   -- GetMapIDByName iterates with pairs(), so two identical names are a coin flip.
   [279] = "Dalaran Crater",
+  -- Same collision class, and it predates WotLK: vanilla ships TWO entries named
+  -- "Alterac Valley" -- 2597 (the battleground map, 1612 spawns) and 2839 (zero
+  -- spawns). pfMap:GetMapID() runs `GetMapIDByName(name) or customids[GetMapInfo()]`,
+  -- so a name hit SHORT-CIRCUITS the AlteracValley->2597 customids fallback; when
+  -- pairs() handed back 2839 first, every AV node silently vanished for that
+  -- session. Disambiguate the empty one so 2597 always wins.
+  [2839] = "Alterac Valley (unused duplicate)",
   [495] = "Howling Fjord",
   [3537] = "Borean Tundra",
   [3557] = "The Exodar",
@@ -29,21 +36,21 @@ pfDB["zones"]["enUS-wotlk"] = {
   [4100] = "The Culling of Stratholme",
   [4196] = "Drak'Tharon Keep",
   [4197] = "Wintergrasp",
-  [4228] = "The Oculus - Dungeon",
+  [4228] = "The Oculus",
   [4264] = "Halls of Stone",
-  [4272] = "Halls of Lightning - Dungeon",
-  [4273] = "Ulduar - Raid",
+  [4272] = "Halls of Lightning",
+  [4273] = "Ulduar",
   [4277] = "Azjol-Nerub",
   [4298] = "Plaguelands: The Scarlet Enclave",
   [4395] = "Dalaran", -- was "Dalaran - Dungeon?" (generator artifact; never matched the map)
-  [4415] = "The Violet Hold - Dungeon",
+  [4415] = "The Violet Hold",
   [4416] = "Gundrak",
-  [4493] = "The Obsidian Sanctum - Raid",
+  [4493] = "The Obsidian Sanctum",
   [4494] = "Ahn'kahet: The Old Kingdom",
-  [4500] = "The Eye of Eternity - Raid",
+  [4500] = "The Eye of Eternity",
   [4742] = "Hrothgar's Landing",
-  [4809] = "The Forge of Souls - Dungeon",
-  [4812] = "Icecrown Citadel - Raid",
-  [4813] = "Pit of Saron - Dungeon",
-  [4987] = "The Ruby Sanctum - Raid",
+  [4809] = "The Forge of Souls",
+  [4812] = "Icecrown Citadel",
+  [4813] = "Pit of Saron",
+  [4987] = "The Ruby Sanctum",
 }
