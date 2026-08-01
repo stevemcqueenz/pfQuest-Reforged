@@ -6,6 +6,8 @@
        these files mutate data-wotlk in place, so the base table has to exist. -->
   <Include file="..\db\units-wotlk-sw335.lua" />
   <Include file="..\db\objects-wotlk-sw335.lua" />
+  <!-- Icecrown/Scourgeholme objective spawns, from the server's own acore_world. -->
+  <Include file="..\db\units-wotlk-icecrown335.lua" />
   <Include file="..\db\quests-wotlk.lua" />
   <Include file="..\db\quests-serverlevels335.lua" />
   <Include file="..\db\quests-eventtags335.lua" />
