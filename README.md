@@ -16,6 +16,14 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
   1,001 items, and all Northrend zones (data converted from the
   [Questie](https://github.com/Questie/Questie) project's WotLK database).
   Total coverage: 9,086 quests, verified 1:1 against Questie.
+- **Server-accurate spawn data** — where the public data sets are wrong or simply
+  empty, coordinates are recovered from an
+  [AzerothCore](https://github.com/azerothcore/azerothcore-wotlk) `acore_world`
+  database, which is what 3.3.5a servers actually run. World coordinates are
+  converted to map positions with per-zone transforms fitted from NPCs present in
+  both data sets, and a zone is skipped entirely if its fit is not clean — no
+  guessed coordinates ship. Every batch is cross-checked against Questie where the
+  two overlap. AzerothCore is preferred; Questie fills the gaps.
 - **A modernized interface** — flat dark theme with a single teal accent,
   tracker progress bars, a resizable database browser, map/minimap node-size
   sliders, and a clean smoothly-rotating navigation arrow.
@@ -58,4 +66,8 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
   vanilla/TBC databases (GPLv3; this fork remains GPLv3)
 - [txtsd](https://github.com/txtsd) — the original WotLK client port
 - [Questie](https://github.com/Questie/Questie) — the WotLK quest/spawn data
-  the Reforged overlay was converted from
+  the Reforged overlay was converted from, and the cross-check every
+  AzerothCore-sourced batch is validated against
+- [AzerothCore](https://github.com/azerothcore/azerothcore-wotlk) — the
+  `acore_world` schema and data model the server-accurate spawn corrections are
+  recovered from (AGPLv3 project; only coordinate data is used here, no code)
