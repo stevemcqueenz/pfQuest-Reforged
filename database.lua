@@ -1203,7 +1203,13 @@ function pfDatabase:SearchMobID(id, meta, maps, prio)
       meta["zone"] = zone
       meta["x"] = x
       meta["y"] = y
-      meta["respawn"] = respawn > 0 and SecondsToTime(respawn)
+      -- Reforged: respawn defaults to 0 ("unknown") rather than being compared raw.
+      -- Upstream assumes every coord tuple is {x,y,zone,respawn}, which holds for all
+      -- ~240k of pfQuest's own nodes -- but a tuple that omits the 4th slot makes this
+      -- `nil > 0` and throws out of the node builder, which runs on every questlog and
+      -- map update (that is what a 3-slot tuple in our own AC-sourced overlay did in
+      -- v1.0.26/.27). The object path two functions down already guards this way.
+      meta["respawn"] = (respawn or 0) > 0 and SecondsToTime(respawn)
 
       maps[zone] = maps[zone] and maps[zone] + prio or prio
       pfMap:AddNode(meta)
