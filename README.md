@@ -23,7 +23,13 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
   converted to map positions with per-zone transforms fitted from NPCs present in
   both data sets, and a zone is skipped entirely if its fit is not clean — no
   guessed coordinates ship. Every batch is cross-checked against Questie where the
-  two overlap. AzerothCore is preferred; Questie fills the gaps.
+  two overlap. AzerothCore is preferred; Questie fills the gaps. Spawn tooltips show
+  the server's real respawn timer rather than a guess.
+- **Minimap nodes in Northrend** — upstream pfQuest ships map dimensions for vanilla
+  and TBC only, and silently skips the minimap for any zone without them, so Northrend
+  had world-map dots but never minimap dots. The Northrend rectangles are derived from
+  the same AzerothCore data and validated against the 57 zones pfQuest already had
+  (median error 0.09%).
 - **A modernized interface** — flat dark theme with a single teal accent,
   tracker progress bars, a resizable database browser, map/minimap node-size
   sliders, and a clean smoothly-rotating navigation arrow.
