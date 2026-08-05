@@ -90,6 +90,7 @@ pfQuest_defconfig = {
   { text = L["Quest Tracker Visibility"], default = "0", type = "text", config = "trackeralpha" },
   { text = L["Quest Tracker Font Size"], default = "12", type = "text", config = "trackerfontsize" },
   { text = L["Quest Tracker Max Width"], default = "300", type = "text", config = "trackerwidth" },
+  { text = L["Quest Tracker Scale"], default = "1", type = "text", config = "trackerscale" },
   { text = L["Quest Tracker Progress Bars"], default = "1", type = "checkbox", config = "trackerbars" },
   { text = L["Quest Tracker Unfold Objectives"], default = "0", type = "checkbox", config = "trackerexpand" },
   { text = L["Quest Objective Spawn Points (World Map)"], default = "1", type = "checkbox", config = "showspawn" },

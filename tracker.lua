@@ -745,6 +745,19 @@ function tracker.DoLayout()
   width = min(width, maxwidth) + 30
   tracker:SetHeight(height)
   tracker:SetWidth(width)
+
+  -- Reforged: overall scale, so the tracker can be made genuinely bigger or smaller
+  -- rather than only wider (readability request). Separate from the font size option,
+  -- which grows the text inside a fixed frame.
+  local scale = tonumber(pfQuest_config["trackerscale"]) or 1
+  scale = min(max(scale, 0.5), 2)
+  if tracker:GetScale() ~= scale then tracker:SetScale(scale) end
+
+  -- The per-quest bars size their fill from the track width, which only resolves once
+  -- the tracker above has been sized -- so re-apply them now that it has.
+  for _, button in pairs(tracker.buttons) do
+    if button.bar and button.bar.Refresh then button.bar:Refresh() end
+  end
 end
 
 function tracker.RefreshZoneTracker()
