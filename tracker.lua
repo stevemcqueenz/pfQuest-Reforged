@@ -518,6 +518,9 @@ function tracker.ButtonEvent(self)
 
   -- Reforged: progress bar off by default; the quest branch re-arms it
   if self.bar then
+    -- Reforged: the per-quest progress bar is ours, not upstream, so it needs an off
+    -- switch -- some players want the plain text list back (QA request).
+    if pfQuest_config["trackerbars"] == "0" then self.bar:Hide() else self.bar:Show() end
     self.bar:SetProgress(nil)
   end
 
@@ -646,6 +649,7 @@ function tracker.ButtonEvent(self)
     -- red->yellow->green ramp the percent text uses; title-only rows grow by
     -- barpad so the bar never overlaps the next row.
     if self.bar then
+      if pfQuest_config["trackerbars"] == "0" then self.bar:Hide() else self.bar:Show() end
       self.bar:SetProgress(percent / 100, r, g, b)
       if self:GetHeight() <= entryheight + 1 then
         self:SetHeight(entryheight + barpad)
@@ -733,7 +737,12 @@ function tracker.DoLayout()
     end
   end
 
-  width = min(width, 300) + 30
+  -- Reforged: the cap on how wide the tracker may auto-grow. Was hardcoded to 300,
+  -- so a long quest title always clipped and there was no way to give it more room.
+  -- Clamped to something sane so a stray value cannot push it off-screen.
+  local maxwidth = tonumber(pfQuest_config["trackerwidth"]) or 300
+  maxwidth = min(max(maxwidth, 120), 600)
+  width = min(width, maxwidth) + 30
   tracker:SetHeight(height)
   tracker:SetWidth(width)
 end
