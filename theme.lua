@@ -76,25 +76,45 @@ function T.CreateProgressBar(parent, height)
     bar.track:SetPoint(a, b, c, d, e)
   end
 
-  function bar.SetProgress(_, pct, r, g, b)
+  -- The fill is sized in absolute pixels from the track's width, but the track is
+  -- anchored LEFT+RIGHT to its parent -- so GetWidth() only reports a real number once
+  -- the layout has resolved. SetProgress runs during the tracker refresh, BEFORE the
+  -- tracker sets its own width, so the read came back unresolved and the old
+  -- "if width <= 0 then width = 1" fallback drew a 1px sliver: a quest at 100% showed a
+  -- stub of green (QA screenshot). Remember what was asked for and re-apply it from
+  -- bar:Refresh() once the width is known -- deterministic, no polling.
+  function bar.Apply(_)
+    local pct = bar.pct
     if pct == nil then
       bar.track:Hide()
       bar.fill:Hide()
       return
     end
     bar.track:Show()
-    pct = pct < 0 and 0 or pct > 1 and 1 or pct
     local width = bar.track:GetWidth()
-    if not width or width <= 0 then width = 1 end
-    if pct <= 0.001 then
+    if pct <= 0.001 or not width or width <= 0 then
       bar.fill:Hide()
     else
       bar.fill:Show()
       bar.fill:SetWidth(width * pct)
     end
-    if r then
-      bar.fill:SetTexture(r, g, b, 0.9)
+    if bar.r then
+      bar.fill:SetTexture(bar.r, bar.g, bar.b, 0.9)
     end
+  end
+
+  -- Called by the tracker after it has sized itself, so the fill matches the final width.
+  function bar.Refresh(_)
+    bar:Apply()
+  end
+
+  function bar.SetProgress(_, pct, r, g, b)
+    if pct ~= nil then
+      pct = pct < 0 and 0 or pct > 1 and 1 or pct
+    end
+    bar.pct = pct
+    if r then bar.r, bar.g, bar.b = r, g, b end
+    bar:Apply()
   end
 
   function bar.Hide(_)
