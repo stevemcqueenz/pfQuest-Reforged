@@ -88,3 +88,20 @@ WorldToScreen calibration one-liner.
 3. Compass stage 2 (build-to-spec).
 4. Pins stage 1: Waypoint + Navigator for the route target only.
 5. Pins stage 2: Pinpoint handoff + objective text + full settings.
+
+## Stage 1 status (shipped on `dev`, in-game QA pending)
+
+`pins.lua` implements step 4: Waypoint (diamond plate + gradient beam +
+distance/ETA text, distance-scaled between the 50%/150% clamps) and Navigator
+(orbiting chevron plate) for the route target only, switched by the
+WorldToScreen visible flag through a ~0.25s hysteresis hold. Feature-detected
+by `type(WorldToScreen)` -- fully inert (zero frames, settings rows hidden)
+without the DLL. Percent->world uses the delta form: pfQuest has zone SIZES
+(`pfMap.minimap_sizes`) but no world origins, so the player's own
+UnitPosition + GetPlayerMapPosition pair anchors the conversion every tick --
+no calibration state, correct immediately (axis pairing pinned by the
+db/minimap-wotlk335.lua fit derivation). Settings: `pins` (off), `pinssize`
+(100), `pinsbeam` (on). Numeric behavior is pinned in
+`tools/pinscheck335.lua` (check.sh gate 6). In-game QA gates: the ToUiCoords
+1024x768-base conclusion (one-line fix in `pins.lua` if widescreen drifts)
+and the beam's SetGradientAlpha look on untextured solids.
