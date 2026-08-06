@@ -520,7 +520,7 @@ function tracker.ButtonEvent(self)
   if self.bar then
     -- Reforged: the per-quest progress bar is ours, not upstream, so it needs an off
     -- switch -- some players want the plain text list back (QA request).
-    if pfQuest_config["trackerbars"] == "0" then self.bar:Hide() else self.bar:Show() end
+    self.bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
     self.bar:SetProgress(nil)
   end
 
@@ -649,7 +649,7 @@ function tracker.ButtonEvent(self)
     -- red->yellow->green ramp the percent text uses; title-only rows grow by
     -- barpad so the bar never overlaps the next row.
     if self.bar then
-      if pfQuest_config["trackerbars"] == "0" then self.bar:Hide() else self.bar:Show() end
+      self.bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
       self.bar:SetProgress(percent / 100, r, g, b)
       if self:GetHeight() <= entryheight + 1 then
         self:SetHeight(entryheight + barpad)
