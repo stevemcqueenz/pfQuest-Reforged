@@ -1,9 +1,11 @@
--- pfQuest Reforged -- HorizonCompass (stage 1)
+-- pfQuest Reforged -- HorizonCompass (stage 2)
 -- Reforged: Skyrim-style horizontal compass strip at top-center. Cardinal
 -- letters and 15-degree ticks scroll through a fixed 180-degree FOV as the
--- player turns; one marker mirrors the route arrow's current target. Loads
--- AFTER route.lua and only READS its state. All rendering is procedural
--- (solid-color textures + fontstrings) so no art files are needed.
+-- player turns; markers mirror the current zone's pfMap nodes (turn-ins,
+-- active objectives, available quests, dungeon entrances), the route arrow's
+-- current target and the player's corpse. Loads AFTER route.lua and only
+-- READS its state. Strip chrome is procedural; markers sit on the generated
+-- diamond plates (img/marker_fill + img/marker_edge, vertex-tinted to theme).
 
 -- Reforged: standalone guard -- without pfQuest/route there is nothing to
 -- mirror; bail before creating any frame so a partial install never errors.
@@ -15,22 +17,32 @@ local floor, sqrt = math.floor, math.sqrt
 -- while GetPlayerFacing/math.sin are radians -- mixing them spun the route
 -- arrow on any movement (route.lua:537).
 local sin, cos, atan2 = math.sin, math.cos, math.atan2
+local strfind = string.find
 local GetTime = GetTime
 local GetPlayerMapPosition = GetPlayerMapPosition
 local GetRealZoneText = GetRealZoneText
 local UnitOnTaxi = UnitOnTaxi
+local UnitLevel = UnitLevel
+-- corpse + difficulty APIs: all 3.3.5a-native (milkyway api-functions.ts:
+-- GetCorpseMapPosition returns map fractions 0..1 or 0,0 when not on this map;
+-- UnitIsDeadOrGhost; GetQuestDifficultyColor returns a {r,g,b} table)
+local UnitIsDeadOrGhost = UnitIsDeadOrGhost
+local GetCorpseMapPosition = GetCorpseMapPosition
+local GetQuestDifficultyColor = GetQuestDifficultyColor
 -- vanilla-era clients lack GetPlayerFacing; the compat shim derives it from the
 -- minimap arrow (compat/client.lua:83). 3.3.5a has it natively (milkyway).
 local GetFacing = pfQuestCompat and pfQuestCompat.GetPlayerFacing or GetPlayerFacing
 
 local HALF_PI = math.pi / 2
 local RAD2DEG = 180 / math.pi
+local L = pfQuest_Loc
 
 -- theme adapts to GW2_UI automatically (theme.lua swaps the accent when the
 -- addon is loaded); fall back to pfQuest teal when running without theme.lua
 local theme = pfQuestTheme
 local accent = theme and theme.accent or { 0.2, 1.0, 0.8 }
 local font = (pfUI and pfUI.font_default) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+local PATH = (pfQuestConfig and pfQuestConfig.path) or "Interface\\AddOns\\pfQuest"
 
 -- ---------------------------------------------------------------------------
 -- pure math (exposed on pfQuest.compass for the harness)
@@ -75,6 +87,60 @@ local function YardsTo(xp, yp, tx, ty, mapID)
   local dx = (tx / 100 - xp) * size[1]
   local dy = (ty / 100 - yp) * size[2]
   return sqrt(dx * dx + dy * dy)
+end
+
+-- ---------------------------------------------------------------------------
+-- marker taxonomy (COMPASS-DESIGN.md "Stage 2: the marker taxonomy") --
+-- ascending class number = higher importance; the cap drops the LOWEST class
+-- (highest number) first, and label tie-breaks follow the same order.
+-- ---------------------------------------------------------------------------
+
+local CLASS_CORPSE  = 1 -- highest priority of all: nothing else matters mid-corpse-run
+local CLASS_ROUTE   = 2 -- the guidance anchor, stage 1's single marker
+local CLASS_TURNIN  = 3 -- complete / complete_c (?)
+local CLASS_ACTIVE  = 4 -- cluster_* objective nodes for questlog quests
+local CLASS_AVAIL   = 5 -- available (!) quest givers
+local CLASS_DUNGEON = 6 -- meta DB meeting stones (instance portals), default off
+
+-- classify a pfMap node by its minimap texture -- the node loop's own visual
+-- language (map.lua layers table). Plain find, no patterns (perf idiom).
+-- available_c is the giver of a quest ALREADY in the log -- not an offer, and
+-- its objective already shows through cluster nodes, so it maps to nothing.
+local function ClassifyNode(tex)
+  if not tex then return nil end
+  if strfind(tex, "complete", 1, true) then return CLASS_TURNIN end
+  if strfind(tex, "cluster", 1, true) then return CLASS_ACTIVE end
+  if strfind(tex, "available_c", 1, true) then return nil end
+  if strfind(tex, "available", 1, true) then return CLASS_AVAIL end
+  return nil
+end
+
+-- capped insertion keeping `list` sorted by (class asc, dist2 asc): nearest
+-- first within a class, lowest class evicted first when over cap. Returns the
+-- entry that fell out (for the caller to repool), or nil if all fit.
+local function CapInsert(list, cap, entry)
+  local n = list.n or 0
+  local pos = n + 1
+  for i = 1, n do
+    local e = list[i]
+    if entry.class < e.class or (entry.class == e.class and entry.dist2 < e.dist2) then
+      pos = i
+      break
+    end
+  end
+  if pos > cap then return entry end
+  for i = n, pos, -1 do
+    list[i + 1] = list[i]
+  end
+  list[pos] = entry
+  if n + 1 > cap then
+    local evicted = list[n + 1]
+    list[n + 1] = nil
+    list.n = cap
+    return evicted
+  end
+  list.n = n + 1
+  return nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -205,18 +271,51 @@ needle:SetWidth(2)
 needle:SetPoint("TOP", compass, "TOP", 0, -1)
 needle:SetPoint("BOTTOM", compass, "BOTTOM", 0, 1)
 
--- the ONE marker: the route arrow's current target
-local marker = compass:CreateTexture(nil, "OVERLAY")
-marker:SetTexture(accent[1], accent[2], accent[3], 1)
-marker:SetWidth(6)
-marker:SetHeight(6)
-marker:Hide()
+-- ---------------------------------------------------------------------------
+-- marker pool: MAXCAP housed markers, built once. Each is a small frame (one
+-- SetPoint moves plate+icon+badge together) carrying the diamond plate --
+-- marker_fill tinted theme bg under marker_edge tinted theme accent, the type
+-- icon (the node's own minimap texture) on top, and the daily/event badge
+-- dot at the plate's top-right (COMPASS-DESIGN.md "Marker housing").
+-- ---------------------------------------------------------------------------
 
--- labels ride the marker via anchors, so only the marker moves per frame
+local MAXCAP = 12
+local ICON_FALLBACK = PATH .. "\\img\\node"
+local markers = {}
+for i = 1, MAXCAP do
+  local m = CreateFrame("Frame", nil, compass)
+  m:SetWidth(20)
+  m:SetHeight(20)
+  m.fill = m:CreateTexture(nil, "ARTWORK")
+  m.fill:SetTexture(PATH .. "\\img\\marker_fill")
+  m.fill:SetAllPoints(m)
+  m.fill:SetVertexColor(bgr, bgg, bgb, 0.9)
+  -- created after fill in the same layer -> draws above it
+  m.edge = m:CreateTexture(nil, "ARTWORK")
+  m.edge:SetTexture(PATH .. "\\img\\marker_edge")
+  m.edge:SetAllPoints(m)
+  m.edge:SetVertexColor(accent[1], accent[2], accent[3], 1)
+  m.icon = m:CreateTexture(nil, "OVERLAY")
+  m.icon:SetWidth(12)
+  m.icon:SetHeight(12)
+  m.icon:SetPoint("CENTER", m, "CENTER", 0, 0)
+  -- daily/event badge: a small accent-blue diamond, echoing the map's
+  -- VERTEX_BLUE tint for event quests
+  m.badge = m:CreateTexture(nil, "OVERLAY")
+  m.badge:SetWidth(7)
+  m.badge:SetHeight(7)
+  m.badge:SetTexture(PATH .. "\\img\\marker_edge")
+  m.badge:SetVertexColor(0.4, 0.7, 1.0, 1)
+  m.badge:SetPoint("CENTER", m, "TOPRIGHT", -3, -3)
+  m.badge:Hide()
+  m:Hide()
+  markers[i] = m
+end
+
+-- labels ride above the strip at the label owner's offset
 local dist = compass:CreateFontString(nil, "OVERLAY")
 dist:SetFont(font, 11, "OUTLINE")
 dist:SetTextColor(0.9, 0.9, 0.9, 1)
-dist:SetPoint("BOTTOM", marker, "TOP", 0, 10)
 dist:Hide()
 
 local title = compass:CreateFontString(nil, "OVERLAY")
@@ -234,13 +333,238 @@ degreeText:SetPoint("TOP", compass, "BOTTOM", 0, -3)
 local LETTERS8 = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
 -- ---------------------------------------------------------------------------
+-- marker providers: fill `list` (the capped, class/distance-sorted selection)
+-- from the corpse, the route target, the current zone's pfMap nodes and the
+-- meta DB dungeon entrances. Runs on rebuild triggers (~1/s), never per frame.
+-- ---------------------------------------------------------------------------
+
+local list = { n = 0 }
+local entrypool = {}
+local poolsize = 0
+local zoneName, zoneID
+
+local function GetEntry()
+  if poolsize > 0 then
+    local e = entrypool[poolsize]
+    entrypool[poolsize] = nil
+    poolsize = poolsize - 1
+    return e
+  end
+  return {}
+end
+
+local function Repool(e)
+  poolsize = poolsize + 1
+  entrypool[poolsize] = e
+end
+
+-- coord-key parse cache, the map.lua coord_cache idiom (map.lua:107): the
+-- "x|y" keys are stable strings, so each is split exactly once
+local coordcache = {}
+local function ParseCoords(coords)
+  local c = coordcache[coords]
+  if not c then
+    local _, _, strx, stry = strfind(coords, "(.*)|(.*)")
+    c = { strx + 0, stry + 0 }
+    coordcache[coords] = c
+  end
+  return c[1], c[2]
+end
+
+-- daily/event badge, cheap lookups only (design: no scans). The event flag
+-- lives on the merged quest DB (db/quests-eventtags335.lua overlay applied in
+-- database.lua:245); isDaily is GetQuestLogTitle slot 8 -- an AzerothCore
+-- backport, guarded so stock cores (nil there) simply never badge dailies.
+local function IsEventOrDaily(tab)
+  local qid = tonumber(tab.questid)
+  if qid and pfDB and pfDB["quests"] and pfDB["quests"]["data"]
+     and pfDB["quests"]["data"][qid] and pfDB["quests"]["data"][qid]["event"] then
+    return true
+  end
+  local qlogid = tonumber(tab.qlogid)
+  if qlogid and GetQuestLogTitle then
+    local qtitle, _, _, _, _, _, _, daily = GetQuestLogTitle(qlogid)
+    -- only trust the slot while it still holds this quest (the log shifts on
+    -- turn-in/abandon; quest.lua:417 uses the same verification)
+    if qtitle == tab.title and daily then
+      return true
+    end
+  end
+  return nil
+end
+
+-- icon tint: available quests above the player's level show the difficulty
+-- color (COMPASS-DESIGN.md taxonomy row); otherwise mirror the node's own
+-- vertex tint like the route arrow does (route.lua:616), else untinted.
+local function TintFor(class, tab, plevel)
+  if class == CLASS_AVAIL then
+    local qmin = tonumber(tab.qmin)
+    if qmin and plevel and qmin > plevel then
+      local c = GetQuestDifficultyColor(tonumber(tab.qlvl) or qmin)
+      if c then return c.r, c.g, c.b end
+    end
+  end
+  local v = tab.vertex
+  if v and (v[1] > 0 or v[2] > 0 or v[3] > 0) then
+    return v[1], v[2], v[3]
+  end
+  return 1, 1, 1
+end
+
+-- dungeon entrances: the meta DB's meeting stones stand at instance portals
+-- (db/meta.lua "meetingstone", negative object ids). Static per zone, so the
+-- object-coord scan runs once per zone change, never per rebuild.
+local dungeons = { n = 0 }
+local dungeonZone
+local function BuildDungeonList(zone)
+  if dungeonZone == zone then return end
+  dungeonZone = zone
+  local n = 0
+  local stones = pfDB and pfDB["meta"] and pfDB["meta"]["meetingstone"]
+  local objects = pfDB and pfDB["objects"] and pfDB["objects"]["data"]
+  local loc = pfDB and pfDB["objects"] and pfDB["objects"]["loc"]
+  if stones and objects then
+    for entry in pairs(stones) do
+      local id = entry < 0 and -entry or entry
+      local obj = objects[id]
+      if obj and obj["coords"] then
+        for _, c in pairs(obj["coords"]) do
+          if c[3] == zone then
+            n = n + 1
+            local d = dungeons[n] or {}
+            dungeons[n] = d
+            d.x, d.y = c[1], c[2]
+            d.title = (loc and loc[id]) or L["Meeting Stone"]
+          end
+        end
+      end
+    end
+  end
+  dungeons.n = n
+end
+
+local function BuildMarkers(xp, yp, target, dead)
+  for i = 1, list.n do
+    Repool(list[i])
+    list[i] = nil
+  end
+  list.n = 0
+
+  local cap = tonumber(pfQuest_config["compasscap"]) or 8
+  if cap < 4 then cap = 4 elseif cap > MAXCAP then cap = MAXCAP end
+
+  local px, py = xp * 100, yp * 100
+  local plevel = UnitLevel("player")
+
+  -- corpse: ONLY while dead/ghost and only when the corpse is on this map
+  -- (GetCorpseMapPosition returns 0,0 otherwise); class 1 so it can never be
+  -- capped out (cap floor is 4)
+  if dead then
+    local cx, cy = GetCorpseMapPosition()
+    if cx and cy and not (cx == 0 and cy == 0) then
+      local e = GetEntry()
+      e.class, e.key, e.title = CLASS_CORPSE, "corpse", L["Corpse"]
+      e.x, e.y = cx * 100, cy * 100
+      e.icon = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+      e.tr, e.tg, e.tb = 1, 1, 1
+      e.badge, e.desc, e.qlvl = nil, nil, nil
+      local dx, dy = (e.x - px) * 1.5, e.y - py
+      e.dist2 = dx * dx + dy * dy
+      local ev = CapInsert(list, cap, e)
+      if ev then Repool(ev) end
+    end
+  end
+
+  -- route target: the same node the arrow points at (route.lua:491), kept as
+  -- the guidance anchor and fallback label owner
+  if target then
+    local node = target[3]
+    local e = GetEntry()
+    e.class, e.key, e.title = CLASS_ROUTE, node, node.title
+    e.x, e.y = target[1], target[2]
+    e.icon = node.texture
+    e.tr, e.tg, e.tb = TintFor(CLASS_ROUTE, node, plevel)
+    e.badge = IsEventOrDaily(node)
+    e.desc = node.description
+    e.qlvl = node.qlvl
+    local dx, dy = (e.x - px) * 1.5, e.y - py
+    e.dist2 = dx * dx + dy * dy
+    local ev = CapInsert(list, cap, e)
+    if ev then Repool(ev) end
+  end
+
+  -- zone scan: one marker per coord cell (the minimap shows one pin there
+  -- too); within a cell the most important classified node wins
+  if zoneID and pfMap and pfMap.nodes then
+    local showAvail = pfQuest_config["compassavail"] ~= "0"
+    local showTurnin = pfQuest_config["compassturnin"] ~= "0"
+    for _, zones in pairs(pfMap.nodes) do
+      local zone = zones[zoneID]
+      if zone then
+        for coords, cell in pairs(zone) do
+          local best, bestclass
+          for _, tab in pairs(cell) do
+            local class = ClassifyNode(tab.texture)
+            if class == CLASS_AVAIL and not showAvail then class = nil end
+            if class == CLASS_TURNIN and not showTurnin then class = nil end
+            if class and (not bestclass or class < bestclass) then
+              best, bestclass = tab, class
+            end
+          end
+          if best then
+            local x, y = ParseCoords(coords)
+            -- the route-target marker already stands on this cell
+            if not (target and x == target[1] and y == target[2]) then
+              local e = GetEntry()
+              e.class, e.key, e.title = bestclass, best, best.title
+              e.x, e.y = x, y
+              e.icon = best.texture
+              e.tr, e.tg, e.tb = TintFor(bestclass, best, plevel)
+              e.badge = IsEventOrDaily(best)
+              e.desc = best.description
+              e.qlvl = best.qlvl
+              local dx, dy = (x - px) * 1.5, y - py
+              e.dist2 = dx * dx + dy * dy
+              local ev = CapInsert(list, cap, e)
+              if ev then Repool(ev) end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- dungeon entrances (default off: ambient info)
+  if zoneID and pfQuest_config["compassdungeon"] == "1" then
+    BuildDungeonList(zoneID)
+    for i = 1, dungeons.n do
+      local d = dungeons[i]
+      local e = GetEntry()
+      e.class, e.key, e.title = CLASS_DUNGEON, d, d.title
+      e.x, e.y = d.x, d.y
+      e.icon = PATH .. "\\img\\tracking\\meetingstone"
+      e.tr, e.tg, e.tb = 1, 1, 1
+      e.badge, e.desc, e.qlvl = nil, nil, nil
+      local dx, dy = (d.x - px) * 1.5, d.y - py
+      e.dist2 = dx * dx + dy * dy
+      local ev = CapInsert(list, cap, e)
+      if ev then Repool(ev) end
+    end
+  end
+
+  -- widget bindings go stale on every rebuild
+  list.rebind = true
+end
+
+-- ---------------------------------------------------------------------------
 -- update loop
 -- ---------------------------------------------------------------------------
 
 local halfWidth = 210
-local lastXP, lastYP, lastFacing, lastTarget
+local lastXP, lastYP, lastFacing
 local lastDegree, lastYards, lastTitle
-local zoneName, zoneID
+local lastTarget, lastDead, lastQueue
+local nextRebuild = 0
 
 -- Reforged: the OnUpdate lives on a separate always-shown driver, not on the
 -- strip itself -- Hide()ing the strip (taxi/disable) would stop its own
@@ -293,22 +617,43 @@ driver:SetScript("OnUpdate", function()
   local xp, yp = GetPlayerMapPosition("player")
   local facing = GetFacing()
 
-  -- the SAME target the route arrow points at (route.lua:491): the route head,
-  -- valid only once its distance (slot 4) has been computed
+  -- GetMapIDByName is a linear scan over every zone name in the DB -- memoize
+  -- by the raw zone-text string, same as the minimap loop (map.lua:1322)
+  local rebuild
+  local rz = GetRealZoneText()
+  if rz ~= zoneName then
+    zoneName = rz
+    zoneID = pfMap and pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
+    rebuild = true
+  end
+
+  -- rebuild triggers: the marker SET changes on node writes (pfMap.queue_update
+  -- bumps on AddNode/DeleteNode), route-target identity change, death-state
+  -- flips and zone change; a 1s heartbeat backstops anything missed. The
+  -- steady cost is a handful of compares plus one UnitIsDeadOrGhost C call.
   local coords = pfQuest.route.coords
   local target = coords and coords[1] and coords[1][4] and coords[1] or nil
+  local dead = UnitIsDeadOrGhost("player") and true or false
+  if target ~= lastTarget or dead ~= lastDead then rebuild = true end
+  if pfMap and pfMap.queue_update ~= lastQueue then rebuild = true end
+  if now > nextRebuild then rebuild = true end
+  if rebuild then
+    lastTarget, lastDead = target, dead
+    lastQueue = pfMap and pfMap.queue_update
+    nextRebuild = now + 1
+    BuildMarkers(xp, yp, target, dead)
+    lastFacing = nil -- marker set may have changed: force a repaint
+  end
 
   -- dirty-skip: everything below is a pure function of position, facing and
-  -- target -- standing still costs nothing beyond these compares
-  if facing == lastFacing and xp == lastXP and yp == lastYP and target == lastTarget then
+  -- the marker set -- standing still costs nothing beyond these compares
+  if facing == lastFacing and xp == lastXP and yp == lastYP then
     return
   end
   lastXP, lastYP, lastFacing = xp, yp, facing
-  local targetChanged = target ~= lastTarget
-  lastTarget = target
 
   -- scroll cardinals/ticks through the FOV; outside-FOV widgets hide (only
-  -- the marker clamps to the edge -- letters pinned there would just stack).
+  -- markers clamp to the edge -- letters pinned there would just stack).
   -- Edge fade: full strength inside 70% of the half-width, then linear to 0
   -- at the edge, so letters dissolve into the background gradient instead of
   -- popping out at the FOV boundary.
@@ -336,52 +681,84 @@ driver:SetScript("OnUpdate", function()
     degreeText:SetText(degree .. " " .. LETTERS8[floor(degree / 45 + 0.5) % 8 + 1])
   end
 
-  -- marker: hide when there is no route target, or when GetPlayerMapPosition
-  -- reports 0,0 (indoors/instance -- position unknown, bearing would lie);
-  -- cardinals stay up because facing is still valid there
-  if not target or (xp == 0 and yp == 0) then
-    marker:Hide()
+  -- markers: hide everything when GetPlayerMapPosition reports 0,0 (indoors/
+  -- instance -- position unknown, every bearing would lie); cardinals stay up
+  -- because facing is still valid there
+  local owner
+  if xp == 0 and yp == 0 then
+    for i = 1, MAXCAP do
+      markers[i]:Hide()
+    end
+  else
+    local rebind = list.rebind
+    list.rebind = nil
+    for i = 1, list.n do
+      local e = list[i]
+      local m = markers[i]
+      e.rel = BearingTo(xp, yp, e.x, e.y, facing)
+      local off, clamped = ProjectOffset(e.rel, halfWidth)
+      e.off, e.clamped = off, clamped
+
+      -- rebind the widget only when the marker set changed under it
+      if rebind or m.key ~= e.key then
+        m.key = e.key
+        if e.icon then
+          m.icon:SetTexture(e.icon)
+          m.icon:SetVertexColor(e.tr, e.tg, e.tb, 1)
+        else
+          -- unclassified art: pfQuest's colored dot, tinted by title like the
+          -- arrow's fallback (route.lua:622)
+          m.icon:SetTexture(ICON_FALLBACK)
+          local r, g, b = pfMap.str2rgb(e.title)
+          m.icon:SetVertexColor(r or 1, g or 1, b or 1, 1)
+        end
+        if e.badge then m.badge:Show() else m.badge:Hide() end
+      end
+
+      m:SetPoint("CENTER", compass, "CENTER", off, 0)
+      -- beyond the FOV the marker pins to the edge at 40% alpha: still shows
+      -- which way to turn without pretending to be on-screen. On-screen near
+      -- the edge it fades 1 -> 0.4 over the same band the cardinals fade in,
+      -- meeting the clamped value exactly -- no alpha pop at the boundary (the
+      -- 0.4 floor keeps markers visible, never faded to nothing)
+      local a = 1
+      if clamped then
+        a = 0.4
+      else
+        local absOff = off < 0 and -off or off
+        if absOff > fadeStart then
+          a = 1 - 0.6 * (absOff - fadeStart) / fadeSpan
+        end
+      end
+      e.a = a
+      m:SetAlpha(a)
+      m:Show()
+
+      if e.class == CLASS_ROUTE then owner = e end
+    end
+    for i = list.n + 1, MAXCAP do
+      markers[i]:Hide()
+    end
+  end
+
+  -- label: owned by the route target (the guidance anchor); the view-driven
+  -- selection replaces this owner pick in the label-policy step
+  if not owner then
     dist:Hide()
     title:Hide()
     lastYards, lastTitle = nil, nil -- stale caches must not suppress the first repaint
   else
-    local rel = BearingTo(xp, yp, target[1], target[2], facing)
-    local off, clamped = ProjectOffset(rel, halfWidth)
-    marker:SetPoint("CENTER", compass, "CENTER", off, 0)
-    -- beyond the FOV the marker pins to the edge at 40% alpha: still shows
-    -- which way to turn without pretending to be on-screen. On-screen near
-    -- the edge it fades 1 -> 0.4 over the same band the cardinals fade in,
-    -- meeting the clamped value exactly -- no alpha pop at the boundary (the
-    -- 0.4 floor keeps the guidance anchor visible, never faded to nothing)
-    local a = 1
-    if clamped then
-      a = 0.4
-    else
-      local absOff = off < 0 and -off or off
-      if absOff > fadeStart then
-        a = 1 - 0.6 * (absOff - fadeStart) / fadeSpan
-      end
-    end
-    marker:SetAlpha(a)
-    dist:SetAlpha(a)
-    title:SetAlpha(a)
-    marker:Show()
+    dist:SetPoint("BOTTOM", compass, "CENTER", owner.off, 14)
+    dist:SetAlpha(owner.a)
+    title:SetAlpha(owner.a)
 
-    if targetChanged or target[3].title ~= lastTitle then
-      lastTitle = target[3].title
+    if owner.title ~= lastTitle then
+      lastTitle = owner.title
       title:SetText(lastTitle or "")
     end
     title:Show()
 
-    -- GetMapIDByName is a linear scan over every zone name in the DB -- memoize
-    -- by the raw zone-text string, same as the minimap loop (map.lua:1322)
-    local rz = GetRealZoneText()
-    if rz ~= zoneName then
-      zoneName = rz
-      zoneID = pfMap and pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
-    end
-
-    local yards = YardsTo(xp, yp, target[1], target[2], zoneID)
+    local yards = YardsTo(xp, yp, owner.x, owner.y, zoneID)
     if not yards then
       -- no size data for this zone: show no distance rather than a wrong one
       dist:Hide()
@@ -411,6 +788,14 @@ end)
 compass.ProjectOffset = ProjectOffset
 compass.BearingTo = BearingTo
 compass.YardsTo = YardsTo
+compass.ClassifyNode = ClassifyNode
+compass.CapInsert = CapInsert
+compass.BuildMarkers = BuildMarkers
+compass.list = list
+compass.CLASS = {
+  CORPSE = CLASS_CORPSE, ROUTE = CLASS_ROUTE, TURNIN = CLASS_TURNIN,
+  ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL, DUNGEON = CLASS_DUNGEON,
+}
 
 -- re-read pfQuest_config and resize; safe before saved variables exist
 -- (defaults apply until the config module calls this again)

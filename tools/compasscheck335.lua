@@ -20,10 +20,24 @@ dofile("tools/framestub335.lua").install()
 -- world-state fakes, mutable per test case
 -- ---------------------------------------------------------------------------
 local facing, posx, posy, ontaxi = 0, 0.4, 0.6, nil
+local dead, corpsex, corpsey = nil, 0, 0
 _G.GetPlayerFacing = function() return facing end
 _G.GetPlayerMapPosition = function() return posx, posy end
 _G.UnitOnTaxi = function() return ontaxi end
 _G.GetRealZoneText = function() return "Testzone" end
+-- corpse seam (contract: corpse marker ONLY while UnitIsDeadOrGhost and
+-- GetCorpseMapPosition is non-zero; both 3.3.5a-native per milkyway)
+_G.UnitIsDeadOrGhost = function() return dead end
+_G.GetCorpseMapPosition = function() return corpsex, corpsey end
+-- GetQuestDifficultyColor returns a {r,g,b} table on 3.3.5a (milkyway); a
+-- fixed red stands in so tint assertions have a known value
+_G.GetQuestDifficultyColor = function() return { r = 1, g = 0.1, b = 0.1 } end
+-- GetQuestLogTitle: 3.3.5a shape with the AzerothCore isDaily backport in
+-- slot 8 (guarded in the addon; the fake serves a single daily quest)
+_G.GetQuestLogTitle = function(id)
+  if id == 7 then return "Daily Test", 80, nil, nil, nil, nil, nil, 1, 99901 end
+  return nil
+end
 -- the stub's GetTime is frozen at 1000; the compass perf cap (contract: perfTick =
 -- now + 0.02, route.lua:515 idiom) would then skip every fire after the first, so
 -- advance time on each read to keep the real per-frame path exercised.
@@ -58,6 +72,11 @@ pfQuest.route.arrow.distance = pfQuest.route.arrow:CreateFontString()
 _G.pfMap = setmetatable({
   minimap_sizes = { [113] = { 5450, 3633.3 } },
   GetMapIDByName = function() return 113 end,
+  -- the zone node store the providers scan: pfMap.nodes[addon][zoneID]
+  -- [coords]["title"] = node meta (map.lua:643-651); empty by default, test
+  -- blocks fill it per case
+  nodes = {},
+  str2rgb = function() return 0.5, 0.5, 0.5 end,
 }, { __index = function() return function() end end })
 
 -- pfQuestTheme: chrome seams (contract: SkinPanel for panel chrome, accent color).
