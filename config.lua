@@ -107,6 +107,8 @@ pfQuest_defconfig = {
   { text = L["Display Low Level Quest Givers"], default = "0", type = "checkbox", config = "showlowlevel" },
   { text = L["Display Level+3 Quest Givers"], default = "0", type = "checkbox", config = "showhighlevel" },
   { text = L["Display Event & Daily Quests"], default = "0", type = "checkbox", config = "showfestival" },
+  { text = L["Compass Bar (HorizonCompass)"], default = "0", type = "checkbox", config = "compass" },
+  { text = L["Compass Bar Width"], default = "420", type = "text", config = "compasswidth" },
 
   { text = L["Map & Minimap"], default = nil, type = "header" },
   { text = L["Enable Minimap Nodes"], default = "1", type = "checkbox", config = "minimapnodes" },

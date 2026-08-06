@@ -11,6 +11,7 @@
   <Include file="..\map.lua" />
   <Include file="..\quest.lua" />
   <Include file="..\route.lua" />
+  <Include file="..\compass.lua" />
   <Include file="..\tracker.lua" />
   <Include file="..\browser.lua" />
   <Include file="..\journal.lua" />
