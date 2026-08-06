@@ -88,9 +88,32 @@ compass:SetPoint("TOP", UIParent, "TOP", 0, -24)
 compass:SetHeight(22)
 compass:Hide()
 
-if theme and theme.SkinPanel then
-  theme.SkinPanel(compass)
+-- Background: not the standard hard-bordered panel (SkinPanel) -- a horizontal
+-- fade, transparent at both ends and semi-transparent in the middle, so the
+-- strip melts into the scene instead of sitting on it as a box. Three
+-- textures: the side pieces carry the gradients (SetGradientAlpha is
+-- 3.3.5a-native, milkyway widgets.ts:4144), the middle spans between them via
+-- two-corner anchoring so only the sides need explicit widths (sized in
+-- UpdateSettings, so they scale with compasswidth).
+local BG_ALPHA = 0.45
+local bgr, bgg, bgb = 0.05, 0.05, 0.06
+if theme and theme.bg then
+  bgr, bgg, bgb = theme.bg[1], theme.bg[2], theme.bg[3]
 end
+local bgLeft = compass:CreateTexture(nil, "BACKGROUND")
+bgLeft:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+bgLeft:SetPoint("TOPLEFT", compass, "TOPLEFT", 0, 0)
+bgLeft:SetPoint("BOTTOMLEFT", compass, "BOTTOMLEFT", 0, 0)
+bgLeft:SetGradientAlpha("HORIZONTAL", bgr, bgg, bgb, 0, bgr, bgg, bgb, BG_ALPHA)
+local bgRight = compass:CreateTexture(nil, "BACKGROUND")
+bgRight:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+bgRight:SetPoint("TOPRIGHT", compass, "TOPRIGHT", 0, 0)
+bgRight:SetPoint("BOTTOMRIGHT", compass, "BOTTOMRIGHT", 0, 0)
+bgRight:SetGradientAlpha("HORIZONTAL", bgr, bgg, bgb, BG_ALPHA, bgr, bgg, bgb, 0)
+local bgMid = compass:CreateTexture(nil, "BACKGROUND")
+bgMid:SetTexture(bgr, bgg, bgb, BG_ALPHA)
+bgMid:SetPoint("TOPLEFT", bgLeft, "TOPRIGHT", 0, 0)
+bgMid:SetPoint("BOTTOMRIGHT", bgRight, "BOTTOMLEFT", 0, 0)
 
 -- Movable like the route arrow: hold SHIFT and drag (route.lua:441-465 is the
 -- template). One deliberate difference: the arrow keeps EnableMouse(true)
@@ -285,7 +308,12 @@ driver:SetScript("OnUpdate", function()
   lastTarget = target
 
   -- scroll cardinals/ticks through the FOV; outside-FOV widgets hide (only
-  -- the marker clamps to the edge -- letters pinned there would just stack)
+  -- the marker clamps to the edge -- letters pinned there would just stack).
+  -- Edge fade: full strength inside 70% of the half-width, then linear to 0
+  -- at the edge, so letters dissolve into the background gradient instead of
+  -- popping out at the FOV boundary.
+  local fadeStart = halfWidth * 0.7
+  local fadeSpan = halfWidth - fadeStart
   for i = 1, numElements do
     local e = elements[i]
     local rel = Normalize(e.rad + facing)
@@ -293,6 +321,8 @@ driver:SetScript("OnUpdate", function()
     if clamped then
       e.widget:Hide()
     else
+      local absOff = off < 0 and -off or off
+      e.widget:SetAlpha(absOff > fadeStart and (1 - (absOff - fadeStart) / fadeSpan) or 1)
       e.widget:SetPoint("CENTER", compass, "CENTER", off, 0)
       e.widget:Show()
     end
@@ -319,8 +349,19 @@ driver:SetScript("OnUpdate", function()
     local off, clamped = ProjectOffset(rel, halfWidth)
     marker:SetPoint("CENTER", compass, "CENTER", off, 0)
     -- beyond the FOV the marker pins to the edge at 40% alpha: still shows
-    -- which way to turn without pretending to be on-screen
-    local a = clamped and 0.4 or 1
+    -- which way to turn without pretending to be on-screen. On-screen near
+    -- the edge it fades 1 -> 0.4 over the same band the cardinals fade in,
+    -- meeting the clamped value exactly -- no alpha pop at the boundary (the
+    -- 0.4 floor keeps the guidance anchor visible, never faded to nothing)
+    local a = 1
+    if clamped then
+      a = 0.4
+    else
+      local absOff = off < 0 and -off or off
+      if absOff > fadeStart then
+        a = 1 - 0.6 * (absOff - fadeStart) / fadeSpan
+      end
+    end
     marker:SetAlpha(a)
     dist:SetAlpha(a)
     title:SetAlpha(a)
@@ -382,6 +423,10 @@ function compass:UpdateSettings()
   end
   self:SetWidth(w)
   halfWidth = w / 2
+  -- gradient side pieces scale with the strip (30% each; the middle spans
+  -- between them by anchoring, no explicit width needed)
+  bgLeft:SetWidth(w * 0.3)
+  bgRight:SetWidth(w * 0.3)
   lastFacing = nil -- geometry changed: force a full reposition on the next tick
 end
 
