@@ -170,13 +170,13 @@ local function SelectLabel(slots, state, now)
   for i = 1, n do
     local e = slots[i]
     local a = e.rel < 0 and -e.rel or e.rel
-    if e.key == state.owner then
+    if e.key == state.owner and not e.merged then
       inc, incabs = e, a
     end
     if e.class == CLASS_ROUTE then
       fallback = e
     end
-    if a <= LABEL_WINDOW then
+    if a <= LABEL_WINDOW and not e.merged then
       if not best then
         best, bestabs = e, a
       elseif a < bestabs - 1e-9 then
@@ -209,6 +209,35 @@ end
 -- strip frame + pooled elements (everything created ONCE here; the OnUpdate
 -- only repositions/re-alphas -- zero allocations in the steady path)
 -- ---------------------------------------------------------------------------
+
+-- overlap collapse (maintainer QA: three turn-in plates stacked unreadably on
+-- one camp). The slot list is already sorted by (class asc, dist asc), so the
+-- FIRST marker at a screen position is the most important one; later markers
+-- whose plate centers land within mergePx of a kept marker hide behind it --
+-- several markers at one spot ARE one destination. Clamped stacks collapse to
+-- one edge hint per side for free (shared off). Pure over slots: sets/clears
+-- e.merged only.
+local function MergeOverlaps(slots, mergePx)
+  local n = slots.n or 0
+  for i = 1, n do
+    slots[i].merged = nil
+  end
+  for i = 2, n do
+    local e = slots[i]
+    for k = 1, i - 1 do
+      local o = slots[k]
+      if not o.merged then
+        local d = e.off - o.off
+        if d < 0 then d = -d end
+        if d < mergePx then
+          e.merged = true
+          break
+        end
+      end
+    end
+  end
+end
+local MERGE_PX = 16
 
 local compass = CreateFrame("Frame", nil, UIParent)
 pfQuest.compass = compass
@@ -346,6 +375,10 @@ local ICON_FALLBACK = PATH .. "\\img\\node"
 local markers = {}
 for i = 1, MAXCAP do
   local m = CreateFrame("Frame", nil, compass)
+  -- explicitly above the strip frame: cardinal LETTERS are fontstrings on the
+  -- strip itself and fontstrings draw over sibling textures, so without this
+  -- a cardinal renders across a plate (maintainer screenshot: SW over a ?)
+  m:SetFrameLevel(compass:GetFrameLevel() + 3)
   m:SetWidth(20)
   m:SetHeight(20)
   m.fill = m:CreateTexture(nil, "ARTWORK")
@@ -781,10 +814,17 @@ driver:SetScript("OnUpdate", function()
     list.rebind = nil
     for i = 1, list.n do
       local e = list[i]
-      local m = markers[i]
       e.rel = BearingTo(xp, yp, e.x, e.y, facing)
-      local off, clamped = ProjectOffset(e.rel, halfWidth)
-      e.off, e.clamped = off, clamped
+      e.off, e.clamped = ProjectOffset(e.rel, halfWidth)
+    end
+    MergeOverlaps(list, MERGE_PX)
+    for i = 1, list.n do
+      local e = list[i]
+      local m = markers[i]
+      local off, clamped = e.off, e.clamped
+      if e.merged then
+        m:Hide()
+      else
 
       -- rebind the widget only when the marker set changed under it
       if rebind or m.key ~= e.key then
@@ -820,6 +860,7 @@ driver:SetScript("OnUpdate", function()
       e.a = a
       m:SetAlpha(a)
       m:Show()
+      end
     end
     for i = list.n + 1, MAXCAP do
       markers[i]:Hide()
@@ -934,6 +975,7 @@ compass.YardsTo = YardsTo
 compass.ClassifyNode = ClassifyNode
 compass.CapInsert = CapInsert
 compass.SelectLabel = SelectLabel
+compass.MergeOverlaps = MergeOverlaps
 compass.BuildMarkers = BuildMarkers
 compass.list = list
 compass.markers = markers

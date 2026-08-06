@@ -466,9 +466,13 @@ compass.BuildMarkers(0.4, 0.6, target, false)
 facing = facing + 0.01 -- defeat the dirty-skip
 okE, errE = fireOnUpdate()
 check(okE, "OnUpdate over the synthetic zone%s", okE and "" or " -> " .. tostring(errE))
-local shown = 0
-for i = 1, list.n do if compass.markers[i]:IsShown() then shown = shown + 1 end end
-check(shown == list.n and shown >= 5, "all %d selected markers render (%d shown)", list.n, shown)
+local shown, mergedN = 0, 0
+for i = 1, list.n do
+  if compass.markers[i]:IsShown() then shown = shown + 1 end
+  if list[i].merged then mergedN = mergedN + 1 end
+end
+check(shown == list.n - mergedN and shown >= 1,
+      "all %d unmerged markers render (%d shown, %d merged away)", list.n - mergedN, shown, mergedN)
 local anyclamped = nil
 for i = 1, list.n do if list[i].clamped then anyclamped = true end end
 check(anyclamped and true or false, "behind-the-player markers report clamped=true after a fire")
@@ -482,6 +486,37 @@ for i = 1, 12 do if compass.markers[i]:IsShown() then shown = shown + 1 end end
 check(shown == 0, "indoors: every marker hidden (position unknown, bearings would lie)")
 check(compass:IsShown() == true, "indoors: the strip itself stays up (facing still valid)")
 posx, posy = 0.4, 0.6
+
+-- ---------------------------------------------------------------------------
+-- (k) overlap collapse: plates within MERGE_PX hide behind the most important
+-- one at that spot (maintainer QA: three ? plates stacked over one camp and a
+-- cardinal letter). Slots arrive sorted by (class asc, dist asc) like the real
+-- list; kept/merged is decided against KEPT plates only.
+-- ---------------------------------------------------------------------------
+local mslots = {
+  { key = "a", class = 3, off = 100 },
+  { key = "b", class = 4, off = 110 },  -- 10px from kept a -> merges
+  { key = "c", class = 5, off = 130 },  -- 20px from MERGED b, 30 from kept a -> kept
+  { key = "d", class = 5, off = -100 }, -- alone on the left -> kept
+  { key = "e", class = 6, off = -104 }, -- 4px from kept d -> merges
+  n = 5,
+}
+compass.MergeOverlaps(mslots, 16)
+check(not mslots[1].merged and not mslots[4].merged,
+      "merge: highest-priority plate at each spot kept")
+check(mslots[2].merged and mslots[5].merged,
+      "merge: overlapping lower-priority plates hidden")
+check(not mslots[3].merged,
+      "merge: distance measured against kept plates only, not merged ones")
+local lstate2 = {}
+local lslots2 = {
+  { key = "k1", class = 4, rel = 0.10, off = 40 },
+  { key = "k2", class = 5, rel = 0.02, off = 44, merged = true },
+  n = 2,
+}
+local lowner2 = compass.SelectLabel(lslots2, lstate2, 100)
+check(lowner2 and lowner2.key == "k1",
+      "label: a merged (hidden) marker cannot own the label")
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

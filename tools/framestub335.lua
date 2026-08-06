@@ -17,7 +17,7 @@ local noop = function() end
 -- frame: reading a field gives nil, and calling a method that is not there errors.
 -- Widening the stub means adding a name to the lists below, on purpose.
 local FRAME_NOOPS = [[SetAlpha GetAlpha SetMovable
-EnableMouse EnableMouseWheel SetClampedToScreen SetFrameStrata SetFrameLevel GetFrameLevel
+EnableMouse EnableMouseWheel SetClampedToScreen SetFrameStrata
 SetBackdrop SetBackdropColor SetBackdropBorderColor StartMoving StopMovingOrSizing
 SetUserPlaced RegisterForClicks RegisterForDrag SetID GetID SetToplevel Raise Lower
 SetHitRectInsets SetResizable SetMinResize SetMaxResize UnregisterAllEvents SetOwner
@@ -43,6 +43,12 @@ end
 -- would make the harness unable to tell a working bar from a broken one.
 local function applySize(o)
   o.points = {}
+  -- frame level modelled, not noop'd: compass.lua does arithmetic on
+  -- GetFrameLevel() (plate layering above cardinal fontstrings) and a nil
+  -- return would mask exactly that class of bug in-game
+  o.frameLevel = 1
+  function o.SetFrameLevel(s, lvl) s.frameLevel = tonumber(lvl) or 1 end
+  function o.GetFrameLevel(s) return s.frameLevel end
   function o.SetPoint(s, point, rel, relPoint, x, y)
     if type(point) ~= "string" then return end
     s.points[point] = { rel = rel, x = tonumber(x) or 0 }
