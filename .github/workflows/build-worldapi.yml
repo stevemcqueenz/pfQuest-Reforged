@@ -30,8 +30,12 @@ jobs:
         shell: bash
         run: |
           mkdir staging
-          find out -name 'AwesomeWotlkLib.dll' -exec cp {} staging/ \;
-          find out -name 'AwesomeWotlkPatch.exe' -exec cp {} staging/ \;
+          # noname's CMake emits into awesome_wotlk/build/<config>, not the
+          # cmake -B dir -- search both, and FAIL if the DLL is missing (a
+          # silent find match miss shipped an artifact containing only skia)
+          find out awesome_wotlk/build -name 'AwesomeWotlkLib.dll' -exec cp {} staging/ \;
+          find out awesome_wotlk/build -name 'AwesomeWotlkPatch.exe' -exec cp {} staging/ \;
+          test -f staging/AwesomeWotlkLib.dll
           cp awesome_wotlk/deps/skia/skia.dll staging/
           ls -la staging
       - uses: actions/upload-artifact@v4
