@@ -35,6 +35,24 @@ from the map. No new art.
 | Daily / event quest | `isDaily` (GetQuestLogTitle slot 8, guarded — AzerothCore backport) + our `quests-eventtags335.lua` overlay | small badge overlay on the base marker, not a distinct marker |
 | **Corpse** | `GetCorpseMapPosition()` — **verified present on 3.3.5a** + `UnitIsDeadOrGhost("player")` | shown ONLY while dead/ghost; highest priority of all (nothing else matters mid-corpse-run) |
 
+## Objective kind (kill vs collect vs interact) — already encoded
+
+Every pfQuest node carries its minimap texture: `cluster_mob` (kill),
+`cluster_item` (collect), `cluster_misc` (interact), each with a mono variant.
+The compass marker mirrors `node.texture` -- same icon language as the minimap,
+no new classification logic anywhere.
+
+## Objective text — already generated
+
+`pfDatabase:BuildQuestDescription()` produces the per-QTYPE "what to do" line
+("Speak with X to obtain [!] Quest", kill/collect progress forms) and is
+precomputed onto every node as `meta.description`; the route arrow displays
+exactly this (route.lua:628-634). The compass consumes the same field for the
+top-priority marker. OPEN LAYOUT DECISION (in-game QA call, stage 2): the
+description line lives either (a) as a third line above the marker (tower risk)
+or (b) below the strip beside the degree readout -- current preference (b),
+plus a `compassdesc` toggle either way.
+
 ## Label policy (the "when to show more info" question)
 
 The mock shows the right answer: exactly ONE marker carries text at a time.
