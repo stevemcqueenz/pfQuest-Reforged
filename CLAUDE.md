@@ -1,0 +1,92 @@
+# CLAUDE.md — pfQuest-Reforged · WotLK 3.3.5a
+
+A **WotLK 3.3.5a fork of [pfQuest](https://github.com/shagu/pfQuest)** (shagu, GPLv3),
+built on txtsd's WotLK client port. Quest/database engine plus a modernized interface,
+standalone and dependency-free.
+
+---
+
+## Before you touch any Lua or XML: load the knowledge base
+
+**Load the `gw2ui-335a-addon-dev` skill first.** Despite the name it is the
+knowledge base for 3.3.5a addon work generally, not just GW2_UI: return-shape traps,
+taint rules, XML silent failures, the performance playbook, recurring bug patterns,
+the verification model. Skills do not load themselves, so an un-invoked skill is dead
+weight: invoke it.
+
+Alongside it sit focused companions, each answering one question: `335-api-oracle`
+(does this API exist, what does it return), `335-taint-and-secure`, `335-xml-and-widgets`,
+`335-bug-patterns`, `335-performance`, `335-architecture-map`, `335-porting-and-references`
+and `335-verification-and-ci`. Load the one that matches the change.
+
+**The 3.3.5a API oracle is [milkyway-codex](https://github.com/Shard-MW/milkyway-codex).**
+Check it BEFORE writing any API call, event registration or CVar read. `~/refs` is
+disposable and gets wiped with the container, so re-clone rather than assuming:
+
+```sh
+git clone --depth 1 https://github.com/Shard-MW/milkyway-codex ~/refs/milkyway-codex
+```
+
+`tools/apicheck335.py` automates that check across the whole addon.
+
+---
+
+## Verify before you commit
+
+```sh
+./tools/check.sh      # parse + API surface + runtime + end-to-end
+```
+
+Four gates, and it matters WHY there are four. A green parse is not evidence the
+addon works: v1.0.30 shipped `tracker.lua:523: attempt to call method 'Show' (a nil
+value)` with a clean parse and a clean load, because nothing built a tracker row.
+
+1. **Lua 5.1 parse** — the client's Lua. Catches syntax only.
+2. **`apicheck335.py`** — every global call and event name vs milkyway-codex.
+   Catches retail-only APIs and Cataclysm+ events.
+3. **`runtimecheck335.lua`** — builds our objects and drives them, asserting on
+   results (the progress bar's fill arithmetic lives here).
+4. **`trackercheck335.lua`** — loads the REAL tracker and builds rows, so it follows
+   the addon instead of a hand-copied sequence.
+
+See `tools/README.md`. **None of this replaces in-game QA** — anything touching
+rendering, combat or secure frames is QA-gated, and say so in the PR.
+
+---
+
+## Rules that come from shipped bugs
+
+- **Our own objects are not frames.** `CreateProgressBar` returns a plain table with
+  exactly the methods `theme.lua` defines. `Hide` existing does not imply `Show`
+  does. Adding a method call to one of our objects means adding it to that object.
+- **Data shape must stay uniform.** Every one of the ~240k spawn coordinates is a
+  4-slot `{x, y, zone, respawn}` tuple, so consumers index the 4th slot without
+  guarding. Emitting a 3-slot tuple threw out of the node builder on every questlog
+  update (v1.0.26/.27). If a table has N fields everywhere, ship N fields.
+- **`patchtable()` replaces a key outright**, it does not merge. Emitting an entry
+  whole means carrying over EVERY field of the entry being replaced, or you silently
+  delete the ones you forgot.
+- **Layout resolves after the refresh pass.** A region anchored LEFT+RIGHT has no
+  width until its parent is sized, so anything reading `GetWidth()` during a refresh
+  reads zero. Re-apply after the layout pass.
+- **Upstream fidelity.** Divergences from shagu's code carry a `-- Reforged:` comment
+  saying what changed and why. Keep his idiom: flat procedural Lua, `this` not `self`
+  in handlers, terse locals, no per-frame allocation.
+
+---
+
+## Data provenance
+
+Spawn/quest data comes from Questie (GPLv3) and from an AzerothCore `acore_world`
+database, converted with the tools in `tools/`. AzerothCore is preferred where it has
+data; Questie fills gaps. A zone whose coordinate fit is not clean is skipped rather
+than guessed. Generated `db/*335*.lua` files carry a header recording method,
+cross-check results and what was deliberately excluded.
+
+---
+
+## Branch and release
+
+Work on `claude/<topic>` off fresh `origin/main`, PR, squash-merge. **Every push to
+`main` cuts a release**; CI computes the version. Never pick a version or push a tag
+by hand. Delete the branch after merge: only `main` and the branch in flight exist.
