@@ -53,18 +53,49 @@ description line lives either (a) as a third line above the marker (tower risk)
 or (b) below the strip beside the degree readout -- current preference (b),
 plus a `compassdesc` toggle either way.
 
-## Label policy (the "when to show more info" question)
+## Label policy — VIEW-DRIVEN, one label at a time (maintainer's correction)
 
-The mock shows the right answer: exactly ONE marker carries text at a time.
-- Priority: corpse (when dead) > explicit waypoint/arrow target > turn-in ready
-  > nearest active objective > nearest available.
-- The top-priority marker gets title + distance above the strip; everything else
-  is icon-only. Two labels minimum-distance apart is unreadable at strip scale.
-- Cap: 8 visible markers, nearest-first within priority class; overflow drops
-  the lowest class first. `log()`-style honesty: no indicator pretends to show
-  everything.
-- No hover interactions on stage 2: the strip sits in screen-top space where a
-  mouse-enabled frame would eat camera drags. Revisit only if users ask.
+The mock's label sits on the marker nearest the center needle: the label follows
+what the player is FACING, and rotating hands it to whatever marker rotates into
+view. The first draft of this spec had it purely priority-driven, which would pin
+one label to an edge-clamped icon while the player looks elsewhere -- wrong
+default for a compass. The synthesis:
+
+- **Selection**: the marker nearest the center needle within a capture window
+  (~ +/-15 degrees) gets the label; ties inside the window break by priority
+  (waypoint > turn-in > active > available).
+- **Fallback**: when NO marker is inside the window, the top-priority marker
+  keeps a label even edge-clamped -- so a waypoint never goes unguided just
+  because you face the wrong way.
+- **Override**: while dead, the corpse marker owns the label unconditionally.
+- **Transitions**: alpha crossfade (~0.2s) when the labeled marker changes.
+- **Hysteresis (the thrash hazard)**: two markers straddling the center would
+  flicker-fight the label every frame. The incumbent keeps it until a challenger
+  is CLEARLY closer to center (>= ~4 degree margin) AND a minimum hold (~0.5s)
+  has passed. This is the edge case that makes or breaks the feel; it gets a
+  numeric harness block (sequence of facings in, label-owner sequence out).
+- Still exactly ONE label at a time; everything else icon-only. Cap 8 visible
+  markers, nearest-first within class, lowest class dropped first.
+- No hover interactions: the strip sits where a mouse-enabled frame would eat
+  camera drags. Revisit only on real demand.
+
+## Settings inventory (stage 2)
+
+Existing: enable (`compass`), width (`compasswidth`, live), metric
+(`compassmetric`, live). Added in stage 2, all live where feasible:
+
+| Setting | Default | Notes |
+|---|---|---|
+| Compass Bar Scale | 1 (0.5-2) | same pattern as the tracker scale |
+| Show available quests (!) | on | per-class toggle |
+| Show turn-ins (?) | on | per-class toggle |
+| Show dungeon entrances | off | ambient info |
+| Show objective description | on | the BuildQuestDescription line below the strip |
+| Marker cap | 8 (4-12) | text option, clamped |
+
+Deliberately NOT settings: FOV (fixed 180 -- a slider there changes the math
+users build muscle memory against), label selection mode (the view-driven
+synthesis IS the sane default; a mode knob would just relitigate it).
 
 ## Units
 
