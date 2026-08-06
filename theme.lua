@@ -60,7 +60,7 @@ end
 -- Thin progress bar: dark track + colored fill. The caller drives it with
 -- bar.SetProgress(pct01, r, g, b); width follows the parent automatically.
 function T.CreateProgressBar(parent, height)
-  local bar = { height = height or 3 }
+  local bar = { height = height or 3, enabled = true }
 
   bar.track = parent:CreateTexture(nil, "BORDER")
   bar.track:SetTexture(1, 1, 1, 0.10)
@@ -85,7 +85,7 @@ function T.CreateProgressBar(parent, height)
   -- bar:Refresh() once the width is known -- deterministic, no polling.
   function bar.Apply(_)
     local pct = bar.pct
-    if pct == nil then
+    if bar.enabled == false or pct == nil then
       bar.track:Hide()
       bar.fill:Hide()
       return
@@ -101,6 +101,15 @@ function T.CreateProgressBar(parent, height)
     if bar.r then
       bar.fill:SetTexture(bar.r, bar.g, bar.b, 0.9)
     end
+  end
+
+  -- On/off for the whole bar (the "Quest Tracker Progress Bars" option). A flag rather
+  -- than a Show/Hide pair: this table is NOT a frame -- it owns two textures and exposes
+  -- only what is defined here -- and visibility is decided entirely inside Apply, so a
+  -- bare Show would be contradicted by the very next SetProgress anyway.
+  function bar.SetEnabled(_, on)
+    bar.enabled = on and true or false
+    bar:Apply()
   end
 
   -- Called by the tracker after it has sized itself, so the fill matches the final width.
