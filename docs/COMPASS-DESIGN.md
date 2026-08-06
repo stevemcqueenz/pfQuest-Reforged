@@ -23,7 +23,19 @@ to a spec, not improvised.
 
 Reuse pfQuest's map-dot textures (`img/available.tga`, `complete.tga`, cluster
 and faction icons) so the strip speaks the visual language users already know
-from the map. No new art.
+from the map.
+
+**Marker housing (maintainer direction):** the type icon never floats alone on
+the strip -- it sits inside a diamond PLATE so markers feel like they belong to
+the compass. The plate is two generated layers (`img/marker_fill.tga` +
+`img/marker_edge.tga`, tools/gen_marker_assets.py): both WHITE, vertex-tinted at
+runtime -- fill takes the theme bg, edge takes the theme ACCENT. Because
+pfQuestTheme already switches accent by context (teal standalone, parchment gold
+when GW2_UI is loaded), one asset set renders the GW2 identity automatically
+without pfQuest ever depending on GW2_UI's texture files (charter: standalone).
+NOT a copy of Waypoint-UI's visuals -- only the containment idea. The labeled
+(view-selected) marker's plate can scale up slightly (~115%) as the selection
+cue, replacing any need for a highlight texture.
 
 | Marker | Source | Notes |
 |---|---|---|

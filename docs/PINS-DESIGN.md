@@ -57,6 +57,15 @@ Defaults follow their proven values: size 120%, min 50%, max 150%, beam on,
 info text on, navigator dynamic distance on. Whole feature off by default and
 hidden entirely when `type(WorldToScreen) ~= "function"`.
 
+## Visual identity: GW2 flavor, not a Waypoint-UI copy (maintainer direction)
+
+The screenshots are BEHAVIOR input only. Rendering uses our own language: the
+same diamond plate housing as the compass (marker_fill/marker_edge, white art
+vertex-tinted by pfQuestTheme -- teal standalone, GW2 gold with GW2_UI loaded),
+pfQuest's type icons inside it, flat panels for info text via T.SkinPanel. The
+Waypoint/Pinpoint/Navigator all share the housing so the whole tier reads as one
+family with the strip.
+
 ## Beam on 3.3.5a (no new art)
 
 A 1px-wide vertically-stretched solid texture with vertical alpha gradient via
