@@ -17,8 +17,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
-      - name: Configure (VS 2022, Win32)
-        run: cmake -S awesome_wotlk -B out -G "Visual Studio 17 2022" -A Win32 -T host=x64
+      - name: Configure (MSVC, Win32)
+        # No -G pin: upstream pins "Visual Studio 17 2022" but windows-latest
+        # now ships VS 18, and a pinned generator that is not installed fails
+        # in seconds. The default generator picks whatever VS the image has.
+        run: cmake -S awesome_wotlk -B out -A Win32 -T host=x64
       - name: Build Release
         run: cmake --build out --config Release -- /m
       - name: Stage runtime set
