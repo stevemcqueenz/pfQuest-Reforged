@@ -92,6 +92,51 @@ if theme and theme.SkinPanel then
   theme.SkinPanel(compass)
 end
 
+-- Movable like the route arrow: hold SHIFT and drag (route.lua:441-465 is the
+-- template). One deliberate difference: the arrow keeps EnableMouse(true)
+-- permanently, but a 420px strip across the screen top would eat world clicks
+-- and camera drags over its whole rectangle -- so the mouse is enabled only
+-- while shift is held (MODIFIER_STATE_CHANGED + IsShiftKeyDown, both
+-- 3.3.5a-native per milkyway events.ts:3777 / api-functions.ts).
+compass:SetMovable(true)
+compass:SetClampedToScreen(true)
+compass:RegisterForDrag("LeftButton")
+compass:EnableMouse(false)
+compass:RegisterEvent("MODIFIER_STATE_CHANGED")
+compass:SetScript("OnEvent", function()
+  -- never drop the mouse mid-drag: releasing shift first would strand the
+  -- frame on the cursor with no OnDragStop to finish the move
+  if not compass.moving then
+    compass:EnableMouse(IsShiftKeyDown())
+  end
+end)
+
+compass:SetScript("OnDragStart", function()
+  if IsShiftKeyDown() then
+    compass.moving = true
+    this:StartMoving()
+  end
+end)
+
+compass:SetScript("OnDragStop", function()
+  compass.moving = nil
+  this:StopMovingOrSizing()
+  local anchor, x, y = pfUI.api.ConvertFrameAnchor(this, pfUI.api.GetBestAnchor(this))
+  this:ClearAllPoints()
+  this:SetPoint(anchor, x, y)
+
+  -- save position
+  pfQuest_config.compasspos = { anchor, x, y }
+  compass:EnableMouse(IsShiftKeyDown())
+end)
+
+compass:SetScript("OnShow", function()
+  if pfQuest_config.compasspos then
+    this:ClearAllPoints()
+    this:SetPoint(unpack(pfQuest_config.compasspos))
+  end
+end)
+
 local CARDINALS = {
   [0] = "N", [45] = "NE", [90] = "E", [135] = "SE",
   [180] = "S", [225] = "SW", [270] = "W", [315] = "NW",

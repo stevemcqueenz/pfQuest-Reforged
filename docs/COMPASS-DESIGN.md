@@ -91,7 +91,11 @@ default for a compass. The synthesis:
 - Still exactly ONE label at a time; everything else icon-only. Cap 8 visible
   markers, nearest-first within class, lowest class dropped first.
 - No hover interactions: the strip sits where a mouse-enabled frame would eat
-  camera drags. Revisit only on real demand.
+  camera drags. Revisit only on real demand. Moving the strip (shipped): the
+  arrow's shift+drag gesture, but the mouse is enabled ONLY while shift is held
+  (MODIFIER_STATE_CHANGED) so the strip stays click-transparent otherwise --
+  the wide-frame version of this same constraint. Position persists in
+  `compasspos`, restored OnShow, same shape as `arrowpos`/`trackerpos`.
 
 ## Settings inventory (stage 2)
 
