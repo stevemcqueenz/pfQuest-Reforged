@@ -62,3 +62,40 @@ Verified against the real defect: reintroducing the v1.0.30 bar and running this
 reports 7 failures and exits non-zero.
 
 When you add an object with its own methods, add a block here.
+
+## trackercheck335.lua -- end-to-end: load the real tracker and build rows
+
+`runtimecheck335.lua` drives our objects through a sequence transcribed BY HAND from
+tracker.lua, so it tests the transcription: change what tracker.lua calls and it still
+passes. This one loads the real `tracker.lua` and `theme.lua` against
+`framestub335.lua`, hands them a synthetic quest log, and calls the actual
+`ButtonAdd` / `ButtonEvent` / `DoLayout` chain -- so it follows the addon automatically.
+
+Verified against the real defect: reintroducing the v1.0.30 bar reports
+
+    FAIL  ButtonAdd("Distress Call") -> tracker.lua:523: attempt to call method 'SetEnabled' (a nil value)
+
+which is the exact line and call from issue #10.
+
+### framestub335.lua, and the thing to be careful about
+
+Two rules this stub follows, both learned the hard way while writing it:
+
+1. **No catch-all `__index`.** Returning a noop for every unknown key makes
+   `if not frame.field` always false (a function is truthy) and makes calling a method
+   that does not exist SUCCEED -- which would mask exactly the v1.0.30 bug. Unknown
+   keys stay nil, like a real frame. Widening the stub means adding a name to
+   `FRAME_NOOPS` deliberately.
+2. **Two-point anchoring is modelled, not stubbed.** A region anchored LEFT and RIGHT
+   derives its width from its parent. With a no-op `SetPoint` no width ever resolves,
+   and the harness cannot tell a working progress bar from a broken one -- that is the
+   precise mechanism of the fill bug.
+
+The general hazard: the more the stub fakes, the more you are testing the stub. Keep
+what a test asserts on honestly modelled, and prefer no assertion to one that passes
+without measuring anything. The bar FILL is deliberately NOT asserted in the
+end-to-end file for that reason (`ButtonEvent` needs richer questlog data than the
+harness fakes); it is covered in `runtimecheck335.lua` with a known track width.
+
+None of this replaces in-game QA. It catches the class of bug where the addon is
+plainly broken on load, which is the class that shipped twice.
