@@ -5,6 +5,10 @@
 #include <vector>
 #include <unordered_map>
 
+namespace VoiceChat {
+    void shutdown();  // Forward-Declaration
+}
+
 struct CVarArgs {
     Console::CVar** dst;
     const char* name;
@@ -208,6 +212,28 @@ static void __declspec(naked) LoadCharacters_hk()
     }
 }
 
+
+using tCGameDestroy = void(__thiscall*)(void* self);
+static tCGameDestroy CGame_Destroy_orig =
+    (decltype(CGame_Destroy_orig))0x00406B70;
+
+static void __declspec(naked) CGame_Destroy_hk()
+{
+    __asm {
+        pushad
+        pushfd
+    }
+
+    VoiceChat::shutdown();
+
+    __asm {
+        popfd
+        popad
+        mov eax, CGame_Destroy_orig
+        jmp eax
+    }
+}
+
 void Hooks::initialize()
 {
     DetourAttach(&(LPVOID&)CVars_Initialize_orig, CVars_Initialize_hk);
@@ -218,4 +244,5 @@ void Hooks::initialize()
     DetourAttach(&(LPVOID&)GetKeywordsByGuid_orig, GetKeywordsByGuid_hk);
     DetourAttach(&(LPVOID&)LoadGlueXML_orig, LoadGlueXML_hk);
     DetourAttach(&(LPVOID&)LoadCharacters_orig, LoadCharacters_hk);
+    DetourAttach(&(LPVOID&)CGame_Destroy_orig, CGame_Destroy_hk);
 }

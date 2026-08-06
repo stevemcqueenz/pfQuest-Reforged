@@ -10,6 +10,7 @@ ___
 > - Changing cameras FOV
 > - Improved nameplates sorting
 > - New API:<br>
+    - C_VoiceChat (documentation missing)
     - C_NamePlate.GetNamePlates<br>
     - C_NamePlate.GetNamePlateForUnit<br>
     - UnitIsControlled<br>
@@ -30,13 +31,13 @@ ___
 See [Docs](https://github.com/FrostAtom/awesome_wotlk/blob/main/docs/api_reference.md) for details
 
 ## Installation
-1) Download latest [release](https://github.com/FrostAtom/awesome_wotlk/releases)
+1) Download latest [release](https://github.com/NoM0Re/awesome_wotlk/releases)
 2) Unpack files to root game folder
 3) Launch `AwesomeWotlkPatch.exe`, you should get a message
 4) To update just download and replace dll
 
 ## For suggestions
-Join us at [Discord](https://discord.gg/NNnBTK5c8e) - [Telegram](https://t.me/wow_soft)
+Join us at [Discord](https://discord.gg/UXSc7nt) Original Creator's [Discord](https://discord.gg/NNnBTK5c8e) and [Telegram](https://t.me/wow_soft)
 <br><img src="https://raw.githubusercontent.com/FrostAtom/awesome_wotlk/main/docs/assets/wow_soft.jpg" width="148" height="148">
 
 ## 3rd party libraries
