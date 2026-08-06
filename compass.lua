@@ -143,6 +143,68 @@ local function CapInsert(list, cap, entry)
   return nil
 end
 
+-- view-driven label selection (COMPASS-DESIGN.md "Label policy"): the marker
+-- nearest the center needle inside a ~ +/-15 degree window owns the label;
+-- ties inside the window break by class priority (route > turn-in > active >
+-- available). When NO marker is in the window the ROUTE TARGET keeps the
+-- label even edge-clamped, so the strip is never guidance-free; the corpse
+-- owns it unconditionally while dead. Hysteresis (the thrash hazard): the
+-- incumbent keeps the label until a challenger is >= ~4 degrees closer to
+-- center AND a ~0.5s minimum hold has passed -- two markers straddling the
+-- center must not flicker-fight it. Pure over (slots, state, now): reads
+-- each slot's class/rel/key, mutates only state {owner=key, since=time}.
+local LABEL_WINDOW = 15 * math.pi / 180
+local LABEL_MARGIN = 4 * math.pi / 180
+local LABEL_HOLD = 0.5
+local function SelectLabel(slots, state, now)
+  local n = slots.n or 0
+  for i = 1, n do
+    if slots[i].class == CLASS_CORPSE then
+      if state.owner ~= slots[i].key then
+        state.owner, state.since = slots[i].key, now
+      end
+      return slots[i]
+    end
+  end
+  local best, bestabs, inc, incabs, fallback
+  for i = 1, n do
+    local e = slots[i]
+    local a = e.rel < 0 and -e.rel or e.rel
+    if e.key == state.owner then
+      inc, incabs = e, a
+    end
+    if e.class == CLASS_ROUTE then
+      fallback = e
+    end
+    if a <= LABEL_WINDOW then
+      if not best then
+        best, bestabs = e, a
+      elseif a < bestabs - 1e-9 then
+        best, bestabs = e, a
+      elseif a < bestabs + 1e-9 and e.class < best.class then
+        best, bestabs = e, a
+      end
+    end
+  end
+  local chosen
+  if not best then
+    chosen = fallback
+  elseif inc and inc ~= best and incabs <= LABEL_WINDOW then
+    -- incumbent still in the window: the challenger must clear both gates
+    if now - (state.since or 0) >= LABEL_HOLD and bestabs <= incabs - LABEL_MARGIN then
+      chosen = best
+    else
+      chosen = inc
+    end
+  else
+    chosen = best
+  end
+  if chosen and chosen.key ~= state.owner then
+    state.owner, state.since = chosen.key, now
+  end
+  return chosen
+end
+
 -- ---------------------------------------------------------------------------
 -- strip frame + pooled elements (everything created ONCE here; the OnUpdate
 -- only repositions/re-alphas -- zero allocations in the steady path)
@@ -565,6 +627,11 @@ local lastXP, lastYP, lastFacing
 local lastDegree, lastYards, lastTitle
 local lastTarget, lastDead, lastQueue
 local nextRebuild = 0
+local labelState = {}
+local lastOwnerKey
+local labelFade = 0 -- crossfade start; one label object, so the incoming side fades
+local FADE_TIME = 0.2
+local titleHalf, distHalf = 0, 0
 
 -- Reforged: the OnUpdate lives on a separate always-shown driver, not on the
 -- strip itself -- Hide()ing the strip (taxi/disable) would stop its own
@@ -646,8 +713,10 @@ driver:SetScript("OnUpdate", function()
   end
 
   -- dirty-skip: everything below is a pure function of position, facing and
-  -- the marker set -- standing still costs nothing beyond these compares
-  if facing == lastFacing and xp == lastXP and yp == lastYP then
+  -- the marker set -- standing still costs nothing beyond these compares.
+  -- A running label crossfade keeps painting until it completes, else the
+  -- fade would freeze mid-transition the moment the player stands still.
+  if facing == lastFacing and xp == lastXP and yp == lastYP and now >= labelFade + FADE_TIME then
     return
   end
   lastXP, lastYP, lastFacing = xp, yp, facing
@@ -733,29 +802,66 @@ driver:SetScript("OnUpdate", function()
       e.a = a
       m:SetAlpha(a)
       m:Show()
-
-      if e.class == CLASS_ROUTE then owner = e end
     end
     for i = list.n + 1, MAXCAP do
       markers[i]:Hide()
     end
+
+    -- view-driven label owner (needs every slot's rel from the loop above)
+    owner = SelectLabel(list, labelState, now)
+
+    -- the owning marker's plate grows to ~115% as the selection cue. Sizing
+    -- the frame (fill/edge follow via SetAllPoints) instead of SetScale keeps
+    -- the anchor offset in parent space -- SetScale would shift the rendered
+    -- position by the scale factor.
+    for i = 1, list.n do
+      local m = markers[i]
+      local size = (owner == list[i]) and 23 or 20
+      if m.plateSize ~= size then
+        m.plateSize = size
+        m:SetWidth(size)
+        m:SetHeight(size)
+      end
+    end
   end
 
-  -- label: owned by the route target (the guidance anchor); the view-driven
-  -- selection replaces this owner pick in the label-policy step
+  if owner and owner.key ~= lastOwnerKey then
+    lastOwnerKey = owner.key
+    labelFade = now -- restart the crossfade for the incoming owner
+    lastTitle, lastYards = nil, nil -- force text repaint for the new owner
+  elseif not owner then
+    lastOwnerKey = nil
+  end
+
   if not owner then
     dist:Hide()
     title:Hide()
     lastYards, lastTitle = nil, nil -- stale caches must not suppress the first repaint
   else
-    dist:SetPoint("BOTTOM", compass, "CENTER", owner.off, 14)
-    dist:SetAlpha(owner.a)
-    title:SetAlpha(owner.a)
-
     if owner.title ~= lastTitle then
       lastTitle = owner.title
       title:SetText(lastTitle or "")
+      titleHalf = (title:GetStringWidth() or 0) / 2
     end
+
+    -- clamp the label inside the strip: a long title on an edge-clamped
+    -- marker ran past the screen edge (maintainer screenshot); pin the text
+    -- center so its half-width stays inside the strip bounds, dead-center
+    -- when the title is wider than the strip itself
+    local half = titleHalf > distHalf and titleHalf or distHalf
+    local lo = owner.off
+    if half >= halfWidth then
+      lo = 0
+    else
+      if lo > halfWidth - half then lo = halfWidth - half end
+      if lo < -halfWidth + half then lo = -halfWidth + half end
+    end
+    dist:SetPoint("BOTTOM", compass, "CENTER", lo, 14)
+
+    local fadeMul = (now - labelFade) / FADE_TIME
+    if fadeMul > 1 then fadeMul = 1 elseif fadeMul < 0 then fadeMul = 0 end
+    dist:SetAlpha(owner.a * fadeMul)
+    title:SetAlpha(owner.a * fadeMul)
     title:Show()
 
     local yards = YardsTo(xp, yp, owner.x, owner.y, zoneID)
@@ -775,6 +881,7 @@ driver:SetScript("OnUpdate", function()
       if key ~= lastYards then
         lastYards = key
         dist:SetText(rounded .. (metric and " m" or " yd"))
+        distHalf = (dist:GetStringWidth() or 0) / 2
       end
       dist:Show()
     end
@@ -790,6 +897,7 @@ compass.BearingTo = BearingTo
 compass.YardsTo = YardsTo
 compass.ClassifyNode = ClassifyNode
 compass.CapInsert = CapInsert
+compass.SelectLabel = SelectLabel
 compass.BuildMarkers = BuildMarkers
 compass.list = list
 compass.CLASS = {
