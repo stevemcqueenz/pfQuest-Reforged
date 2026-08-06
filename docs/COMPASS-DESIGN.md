@@ -30,7 +30,7 @@ from the map. No new art.
 | Quest available (!) | pfMap nodes, `available` texture, layer ≤ 2 | gray/red tint when `qmin` > player level (too high to take) — `GetQuestDifficultyColor` exists natively |
 | Active objective | pfMap nodes for questlog quests | the current stage-1 behavior, kept |
 | Turn-in ready (?) | node `complete`/`complete_c` texture | highest priority after the explicit arrow target |
-| Waypoint | the route arrow target | explicit user intent — always labeled |
+| Route target | `route.lua`'s single current destination: the user's MANUAL pick (Navigate with arrow / browser or map click, `SetTarget`) or, absent one, the router's AUTOMATIC nearest objective across the (auto-tracked) quest log | the guidance anchor -- this is stage 1's only marker, kept as the fallback label owner |
 | Dungeon entrance | pfQuest `meta` DB (instance portals) | off by default; it is ambient info |
 | Daily / event quest | `isDaily` (GetQuestLogTitle slot 8, guarded — AzerothCore backport) + our `quests-eventtags335.lua` overlay | small badge overlay on the base marker, not a distinct marker |
 | **Corpse** | `GetCorpseMapPosition()` — **verified present on 3.3.5a** + `UnitIsDeadOrGhost("player")` | shown ONLY while dead/ghost; highest priority of all (nothing else matters mid-corpse-run) |
@@ -63,10 +63,12 @@ default for a compass. The synthesis:
 
 - **Selection**: the marker nearest the center needle within a capture window
   (~ +/-15 degrees) gets the label; ties inside the window break by priority
-  (waypoint > turn-in > active > available).
-- **Fallback**: when NO marker is inside the window, the top-priority marker
-  keeps a label even edge-clamped -- so a waypoint never goes unguided just
-  because you face the wrong way.
+  (manual route target > turn-in > active > available).
+- **Fallback**: when NO marker is inside the window, the ROUTE TARGET keeps its
+  label even edge-clamped. Since pfQuest always maintains one route target while
+  any quest is logged (manual pick, else auto-nearest objective), the strip is
+  NEVER guidance-free: at minimum one clamped, labeled marker at the edge says
+  which way to walk -- the same destination the arrow points at.
 - **Override**: while dead, the corpse marker owns the label unconditionally.
 - **Transitions**: alpha crossfade (~0.2s) when the labeled marker changes.
 - **Hysteresis (the thrash hazard)**: two markers straddling the center would
