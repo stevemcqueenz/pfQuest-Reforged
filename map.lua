@@ -271,7 +271,26 @@ pfMap.minimap_zoom = minimap_zoom
 pfMap.minimap_sizes = minimap_sizes
 
 pfMap.tooltip = CreateFrame("Frame", "pfMapTooltip", GameTooltip)
+
+-- The 3.3.5a client natively prints quest objective progress on unit tooltips
+-- (showQuestTrackingTooltips CVar, default 1, verified in milkyway cvars.ts),
+-- which duplicates the block pfQuest appends below. Keep exactly one source of
+-- truth: the native section is switched off while pfQuest tooltips are active
+-- and restored to the client default when they are disabled. Synced on login
+-- and dirty-checked on tooltip show so config changes apply without a reload.
+local nativeQuestTooltipCVar = nil
+local function SyncNativeQuestTooltips()
+  local want = (pfQuest_config and pfQuest_config.showtooltips == "0") and "1" or "0"
+  if nativeQuestTooltipCVar ~= want then
+    nativeQuestTooltipCVar = want
+    SetCVar("showQuestTrackingTooltips", want)
+  end
+end
+pfMap.tooltip:RegisterEvent("PLAYER_ENTERING_WORLD")
+pfMap.tooltip:SetScript("OnEvent", SyncNativeQuestTooltips)
+
 pfMap.tooltip:SetScript("OnShow", function()
+  SyncNativeQuestTooltips()
   local focus = GetMouseFocus()
   -- abort on pfQuest nodes
   if focus and focus.title then
