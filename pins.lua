@@ -52,7 +52,11 @@ local SCALE_NEAR, SCALE_FAR = 40, 400 -- yards: <=near -> max, >=far -> min
 local NAV_RADIUS = 140 -- navigator orbit radius (UI units; configurable in stage 2)
 local NAV_SIZE = 22
 local PIN_HOLD = 0.25 -- visible/invisible hysteresis hold (spec)
-local BEAM_MIN, BEAM_MAX = 60, 300 -- beam height clamp (UI units)
+-- beam height clamp (UI units). First in-game contact showed 300 at max
+-- distance renders as a screen-tall pillar on a scaled UI -- the beam is a
+-- subtle locator shaft, not the dominant object; shorter and dimmer reads far
+-- better against the sky (maintainer screenshots, Barrens night).
+local BEAM_MIN, BEAM_MAX = 40, 170
 
 -- ---------------------------------------------------------------------------
 -- pure helpers (exposed on pfQuest.pins for the harness)
@@ -163,10 +167,11 @@ waypoint:SetHeight(BASE_SIZE)
 -- unreliable on untextured solids in-game.
 waypoint.beam = waypoint:CreateTexture(nil, "BORDER")
 waypoint.beam:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-waypoint.beam:SetWidth(6)
+waypoint.beam:SetWidth(4)
 waypoint.beam:SetHeight(120)
 waypoint.beam:SetPoint("BOTTOM", waypoint, "CENTER", 0, 0)
-waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], 0.75,
+-- 0.35 base alpha: at 0.75 the first in-game shots read as a solid column
+waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], 0.35,
                                accent[1], accent[2], accent[3], 0)
 -- born hidden: the .on dirty-flags below only HIDE what they have shown, so a
 -- region that starts shown with pinsbeam off would never be put away
