@@ -930,6 +930,7 @@ compass.CapInsert = CapInsert
 compass.SelectLabel = SelectLabel
 compass.BuildMarkers = BuildMarkers
 compass.list = list
+compass.markers = markers
 compass.CLASS = {
   CORPSE = CLASS_CORPSE, ROUTE = CLASS_ROUTE, TURNIN = CLASS_TURNIN,
   ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL, DUNGEON = CLASS_DUNGEON,

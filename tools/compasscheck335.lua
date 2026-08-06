@@ -236,5 +236,252 @@ pfQuest_config["compass"] = "1"
 okE, errE = fireOnUpdate()
 check(okE, "OnUpdate after re-enable%s", okE and "" or " -> " .. tostring(errE))
 
+-- ---------------------------------------------------------------------------
+-- (f) marker providers -- synthetic node tables in, expected marker set out
+-- (COMPASS-DESIGN.md "Stage 2: the marker taxonomy"). The node shape mirrors
+-- map.lua:643-651: pfMap.nodes[addon][zoneID]["x|y"][title] = meta with
+-- title/texture/qlvl/qmin/vertex/description/questid/qlogid. zoneID 113 was
+-- memoized by the OnUpdate fires above (GetRealZoneText -> GetMapIDByName).
+-- ---------------------------------------------------------------------------
+local C = compass.CLASS
+check(type(C) == "table" and C.CORPSE == 1 and C.ROUTE == 2,
+      "class constants exported (corpse=1 route=2)")
+
+local IMG = "pfQuest-Reforged\\img\\"
+local function node(title, tex, extra)
+  local t = { title = title, texture = tex and (IMG .. tex) or nil, vertex = { 0, 0, 0 } }
+  if extra then for k, v in pairs(extra) do t[k] = v end end
+  return t
+end
+
+-- one entry per class in the current zone, plus decoys that must NOT map
+pfMap.nodes = {
+  PFDB = {
+    [113] = {
+      ["62|48"] = { ["Turnin Quest"] = node("Turnin Quest", "complete", { description = "Turn it in" }) },
+      ["55|55"] = { ["Avail Quest"] = node("Avail Quest", "available", { qlvl = 72, qmin = 70 }) },
+      ["52|52"] = { ["Current Giver"] = node("Current Giver", "available_c") },
+      ["45|45"] = { ["Hard Quest"] = node("Hard Quest", "available", { qlvl = 78, qmin = 75 }) },
+      ["48|60"] = { ["Untextured"] = node("Untextured", nil) },
+    },
+    -- a different zone: must never leak into the current-zone scan
+    [999] = { ["10|10"] = { ["Elsewhere"] = node("Elsewhere", "complete") } },
+  },
+  PFQUEST = {
+    [113] = {
+      ["40|61"] = { ["Kill Quest"] = node("Kill Quest", "cluster_mob", { qlogid = 7, title = "Daily Test" }) },
+    },
+  },
+}
+-- badge seams: event id via the merged quest DB, daily via GetQuestLogTitle
+-- slot 8 (the fake serves qlogid 7 as "Daily Test"); dungeon entrance via the
+-- meta DB meeting stones (negative object ids, coords {x, y, zone, respawn})
+_G.pfDB = {
+  ["quests"] = { ["data"] = { [777] = { ["event"] = 12 } } },
+  ["meta"] = { ["meetingstone"] = { [-179597] = "AH" } },
+  ["objects"] = {
+    ["data"] = { [179597] = { ["coords"] = { { 30, 40, 113, 10 }, { 50, 50, 999, 10 } } } },
+    ["loc"] = { [179597] = "Meeting Stone RFC" },
+  },
+}
+-- rename the PFQUEST node title to match the daily fake's log slot
+pfMap.nodes.PFQUEST[113]["40|61"] = { ["Daily Test"] = node("Daily Test", "cluster_mob", { qlogid = 7 }) }
+
+local target = pfQuest.route.coords[1]
+local list = compass.list
+local function classcount(cls)
+  local n = 0
+  for i = 1, list.n do if list[i].class == cls then n = n + 1 end end
+  return n
+end
+local function findclass(cls)
+  for i = 1, list.n do if list[i].class == cls then return list[i] end end
+  return nil
+end
+
+pfQuest_config["compasscap"] = "8"
+compass.BuildMarkers(0.4, 0.6, target, false)
+
+check(findclass(C.ROUTE) ~= nil and findclass(C.ROUTE).key == target[3],
+      "provider: route target present as class ROUTE keyed by its node")
+check(findclass(C.TURNIN) ~= nil and findclass(C.TURNIN).title == "Turnin Quest",
+      "provider: complete texture maps to TURNIN")
+check(findclass(C.ACTIVE) ~= nil and findclass(C.ACTIVE).icon == IMG .. "cluster_mob",
+      "provider: cluster_mob maps to ACTIVE and the icon mirrors node.texture")
+check(classcount(C.AVAIL) == 2, "provider: 2 available nodes map to AVAIL (got %d)", classcount(C.AVAIL))
+local leaked = nil
+for i = 1, list.n do
+  local e = list[i]
+  if e.title == "Current Giver" or e.title == "Elsewhere" or e.title == "Untextured" then leaked = e.title end
+end
+check(leaked == nil, "provider: available_c / other-zone / untextured nodes excluded (leaked %s)", tostring(leaked))
+-- difficulty tint: qmin 75 > player 71 -> the faked GetQuestDifficultyColor red
+local hard
+for i = 1, list.n do if list[i].title == "Hard Quest" then hard = list[i] end end
+check(hard and near(hard.tr, 1) and near(hard.tg, 0.1),
+      "provider: too-high available quest tinted via GetQuestDifficultyColor")
+local avail
+for i = 1, list.n do if list[i].title == "Avail Quest" then avail = list[i] end end
+check(avail and near(avail.tr, 1) and near(avail.tg, 1) and near(avail.tb, 1),
+      "provider: takeable available quest stays untinted")
+check(findclass(C.ACTIVE).badge == true,
+      "provider: isDaily (GetQuestLogTitle slot 8, guarded) sets the badge")
+check(findclass(C.CORPSE) == nil, "provider: no corpse marker while alive")
+check(findclass(C.DUNGEON) == nil, "provider: dungeon entrances absent while compassdungeon=0")
+-- sorted invariant: class ascending across the whole list
+local sorted = true
+for i = 2, list.n do if list[i].class < list[i - 1].class then sorted = false end end
+check(sorted, "provider: list sorted by class ascending")
+
+-- event badge via the merged quest DB (db/quests-eventtags335.lua overlay)
+pfMap.nodes.PFDB[113]["55|55"]["Avail Quest"].questid = 777
+compass.BuildMarkers(0.4, 0.6, target, false)
+for i = 1, list.n do if list[i].title == "Avail Quest" then avail = list[i] end end
+check(avail and avail.badge == true, "provider: event quest id (eventtags overlay) sets the badge")
+
+-- dungeon entrances: toggle on -> exactly the current-zone stone appears
+pfQuest_config["compassdungeon"] = "1"
+compass.BuildMarkers(0.4, 0.6, target, false)
+local dun = findclass(C.DUNGEON)
+check(dun ~= nil and dun.title == "Meeting Stone RFC" and near(dun.x, 30) and near(dun.y, 40),
+      "provider: meta DB meeting stone in this zone maps to DUNGEON")
+check(classcount(C.DUNGEON) == 1, "provider: other-zone stone coords excluded")
+pfQuest_config["compassdungeon"] = "0"
+
+-- provider toggles: compassavail/compassturnin drop exactly their class
+pfQuest_config["compassavail"] = "0"
+pfQuest_config["compassturnin"] = "0"
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.AVAIL) == 0 and classcount(C.TURNIN) == 0,
+      "provider: compassavail/compassturnin=0 drop their classes")
+check(findclass(C.ACTIVE) ~= nil, "provider: ACTIVE unaffected by the toggles")
+pfQuest_config["compassavail"] = "1"
+pfQuest_config["compassturnin"] = "1"
+
+-- route-target dedupe: a node cell on the target's exact coords must not
+-- render twice (the ROUTE marker already stands there)
+pfMap.nodes.PFDB[113]["60|50"] = { [target[3].title] = node(target[3].title, "complete") }
+compass.BuildMarkers(0.4, 0.6, target, false)
+local attarget = 0
+for i = 1, list.n do
+  if near(list[i].x, 60) and near(list[i].y, 50) then attarget = attarget + 1 end
+end
+check(attarget == 1, "provider: node on the route target's coords deduped (got %d markers there)", attarget)
+pfMap.nodes.PFDB[113]["60|50"] = nil
+
+-- ---------------------------------------------------------------------------
+-- (g) corpse provider, driven headless through the faked seams (contract:
+-- shown ONLY while dead AND GetCorpseMapPosition is non-zero; highest class)
+-- ---------------------------------------------------------------------------
+dead, corpsex, corpsey = 1, 0.3, 0.35
+compass.BuildMarkers(0.4, 0.6, target, true)
+local corpse = findclass(C.CORPSE)
+check(corpse ~= nil and near(corpse.x, 30) and near(corpse.y, 35),
+      "corpse: dead + non-zero corpse position yields the CORPSE marker")
+check(list[1] == corpse, "corpse: sorts first (highest class of all)")
+dead, corpsex, corpsey = 1, 0, 0
+compass.BuildMarkers(0.4, 0.6, target, true)
+check(findclass(C.CORPSE) == nil, "corpse: 0,0 corpse position (other map) yields none")
+dead = nil
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(findclass(C.CORPSE) == nil, "corpse: none while alive")
+
+-- corpse owns the label unconditionally while dead (policy override)
+dead, corpsex, corpsey = 1, 0.3, 0.35
+compass.BuildMarkers(0.4, 0.6, target, true)
+local st = {}
+for i = 1, list.n do list[i].rel = 1.0 end -- corpse far off-center: still owns
+local own = compass.SelectLabel(list, st, 100)
+check(own ~= nil and own.class == C.CORPSE, "corpse: owns the label even off-center")
+dead = nil
+
+-- ---------------------------------------------------------------------------
+-- (h) label policy as a pure sequence -- (facing, markers) in, owner out
+-- (COMPASS-DESIGN.md "Label policy"; window 15deg, margin 4deg, hold 0.5s)
+-- ---------------------------------------------------------------------------
+local m1 = { key = "m1", class = 4, rel = 0.05 }
+local m2 = { key = "m2", class = 4, rel = 0.10 }
+local route = { key = "route", class = 2, rel = 1.0 }
+local slots = { n = 3, m1, m2, route }
+st = {}
+
+own = compass.SelectLabel(slots, st, 10.0)
+check(own == m1, "label t0: nearest-in-window owns (m1)")
+-- challenger far closer but hold not passed: incumbent keeps it (no thrash)
+m1.rel, m2.rel = 0.09, 0.01
+own = compass.SelectLabel(slots, st, 10.1)
+check(own == m1, "label t0.1: challenger blocked by the 0.5s hold")
+m1.rel, m2.rel = 0.10, 0.005
+own = compass.SelectLabel(slots, st, 10.3)
+check(own == m1, "label t0.3: still held")
+-- hold passed AND margin cleared: handover
+own = compass.SelectLabel(slots, st, 10.6)
+check(own == m2, "label t0.6: hold+margin cleared, m2 takes the label")
+-- immediately after, m1 marginally closer: new incumbent m2 keeps it
+m1.rel, m2.rel = 0.06, 0.065
+own = compass.SelectLabel(slots, st, 10.7)
+check(own == m2, "label t0.7: marginal flip suppressed (no thrash back)")
+-- margin cleared but within m2's fresh hold: still m2
+m1.rel, m2.rel = 0.001, 0.10
+own = compass.SelectLabel(slots, st, 10.9)
+check(own == m2, "label t0.9: margin alone insufficient inside the hold")
+own = compass.SelectLabel(slots, st, 11.2)
+check(own == m1, "label t1.2: hold expired, m1 takes it back")
+
+-- fallback: nothing in the window -> the ROUTE TARGET keeps the label even
+-- though another marker is nearer to center (both outside the window)
+m1.rel, m2.rel, route.rel = 0.9, 0.5, 1.2
+own = compass.SelectLabel(slots, st, 20.0)
+check(own == route, "label fallback: route target owns when the window is empty")
+
+-- tie inside the window breaks by class priority
+local t1 = { key = "t1", class = 5, rel = 0.1 }
+local t2 = { key = "t2", class = 3, rel = -0.1 }
+own = compass.SelectLabel({ n = 2, t1, t2 }, {}, 30.0)
+check(own == t2, "label tie: equal distance resolves by class (turn-in beats available)")
+
+-- ---------------------------------------------------------------------------
+-- (i) cap enforcement -- lowest class dropped first, nearest kept within class
+-- ---------------------------------------------------------------------------
+local caplist = { n = 0 }
+local seq = {
+  { class = 5, dist2 = 10 }, { class = 5, dist2 = 5 }, { class = 3, dist2 = 7 },
+  { class = 4, dist2 = 1 }, { class = 5, dist2 = 2 }, { class = 2, dist2 = 9 },
+}
+local evicted = 0
+for i = 1, 6 do
+  if compass.CapInsert(caplist, 4, seq[i]) then evicted = evicted + 1 end
+end
+check(caplist.n == 4 and evicted == 2, "cap: 6 candidates, cap 4 -> 2 evicted")
+check(caplist[1].class == 2 and caplist[2].class == 3 and caplist[3].class == 4,
+      "cap: higher classes all survive")
+check(caplist[4].class == 5 and near(caplist[4].dist2, 2),
+      "cap: nearest of the lowest class kept, farther ones dropped first")
+
+-- ---------------------------------------------------------------------------
+-- (j) end-to-end: drive the real OnUpdate over the synthetic zone and check
+-- the pooled widgets bind, clamp and label
+-- ---------------------------------------------------------------------------
+compass.BuildMarkers(0.4, 0.6, target, false)
+facing = facing + 0.01 -- defeat the dirty-skip
+okE, errE = fireOnUpdate()
+check(okE, "OnUpdate over the synthetic zone%s", okE and "" or " -> " .. tostring(errE))
+local shown = 0
+for i = 1, list.n do if compass.markers[i]:IsShown() then shown = shown + 1 end end
+check(shown == list.n and shown >= 5, "all %d selected markers render (%d shown)", list.n, shown)
+local anyclamped = nil
+for i = 1, list.n do if list[i].clamped then anyclamped = true end end
+check(anyclamped and true or false, "behind-the-player markers report clamped=true after a fire")
+-- indoors: 0,0 position hides every marker but keeps the strip
+posx, posy = 0, 0
+facing = facing + 0.01
+okE, errE = fireOnUpdate()
+check(okE, "OnUpdate indoors (0,0)%s", okE and "" or " -> " .. tostring(errE))
+shown = 0
+for i = 1, 12 do if compass.markers[i]:IsShown() then shown = shown + 1 end end
+check(shown == 0, "indoors: every marker hidden (position unknown, bearings would lie)")
+check(compass:IsShown() == true, "indoors: the strip itself stays up (facing still valid)")
+posx, posy = 0.4, 0.6
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

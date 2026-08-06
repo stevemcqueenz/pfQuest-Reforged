@@ -6,6 +6,16 @@ and the strip's feel must survive one in-game session before the marker taxonomy
 multiplies on top of it. This file records the full design so stage 2 is built
 to a spec, not improvised.
 
+**Stage 2 status (shipped on `dev`, in-game QA pending):** the full marker
+taxonomy below (corpse, route target, turn-ins, active objectives, available
+with difficulty tint, dungeon entrances via meta-DB meeting stones, daily/event
+badge), the diamond-plate housing with the ~115% owner cue, the view-driven
+label policy with hysteresis + crossfade + edge clamp, the objective
+description line (layout preference b), and the stage-2 settings inventory
+(`compassscale`, `compassavail`, `compassturnin`, `compassdungeon`,
+`compassdesc`, `compasscap`). Every numeric behavior is pinned in
+`tools/compasscheck335.lua`; visuals and feel stay in-game QA, as ever.
+
 ## Edge cases stage 1 already handles (each is a shipped-bug lesson)
 
 | Case | Behavior |
