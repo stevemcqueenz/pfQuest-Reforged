@@ -301,10 +301,17 @@ driver:SetScript("OnUpdate", function()
       dist:Hide()
       lastYards = nil
     else
-      local rounded = floor(yards + 0.5)
-      if rounded ~= lastYards then
-        lastYards = rounded
-        dist:SetText(rounded .. " yd")
+      -- Reforged: metric option. WoW's world unit is the yard; meters = yd * 0.9144.
+      -- Converted at DISPLAY time only -- everything internal stays in yards, so no
+      -- other consumer can be poisoned by a unit mixup. Dirty-check includes the
+      -- unit so flipping the option repaints without a target change.
+      local metric = pfQuest_config["compassmetric"] == "1"
+      local shown = metric and (yards * 0.9144) or yards
+      local rounded = floor(shown + 0.5)
+      local key = metric and -rounded or rounded
+      if key ~= lastYards then
+        lastYards = key
+        dist:SetText(rounded .. (metric and " m" or " yd"))
       end
       dist:Show()
     end

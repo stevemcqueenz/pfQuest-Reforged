@@ -109,6 +109,7 @@ pfQuest_defconfig = {
   { text = L["Display Event & Daily Quests"], default = "0", type = "checkbox", config = "showfestival" },
   { text = L["Compass Bar (HorizonCompass)"], default = "0", type = "checkbox", config = "compass" },
   { text = L["Compass Bar Width"], default = "420", type = "text", config = "compasswidth" },
+  { text = L["Compass Bar: Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
 
   { text = L["Map & Minimap"], default = nil, type = "header" },
   { text = L["Enable Minimap Nodes"], default = "1", type = "checkbox", config = "minimapnodes" },
