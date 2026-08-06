@@ -10,6 +10,8 @@ on:
   push:
     branches: ["awesome-wotlk-worldapi"]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -37,3 +39,13 @@ jobs:
           name: AwesomeWotlk-worldapi-${{ github.sha }}
           path: staging/*
           retention-days: 14
+      - name: Publish binaries to a git branch (fetchable where artifact storage is not)
+        shell: bash
+        run: |
+          cd staging
+          git init -q -b worldapi-binaries
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add -A
+          git commit -qm "WorldAPI build ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" worldapi-binaries
