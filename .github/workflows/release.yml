@@ -10,9 +10,14 @@ name: Release
 # (Legacy v8.1.0-reforged.N tags do not match the version pattern and are
 # ignored by the counter.)
 
+# A push to `dev` does NOT release: it builds the same zip and uploads it as a
+# workflow ARTIFACT (5-day retention) so experimental work is testable in-game
+# without touching main or the releases list. Same model as GW2_UI's development
+# branch.
+
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "dev"]
   workflow_dispatch:
     inputs:
       version:
@@ -43,6 +48,13 @@ jobs:
       - name: Resolve version (CI-computed, not human-picked)
         id: ver
         run: |
+          if [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            TAG="dev-$(git rev-parse --short HEAD)"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "version=$TAG" >> "$GITHUB_OUTPUT"
+            echo "Dev build: $TAG (no release will be published)"
+            exit 0
+          fi
           OVERRIDE="${{ github.event.inputs.version }}"
           if [ -n "$OVERRIDE" ]; then
             TAG="$OVERRIDE"
@@ -64,6 +76,7 @@ jobs:
           echo "Resolved release version: $TAG"
 
       - name: Abort if tag already exists
+        if: github.ref != 'refs/heads/dev'
         run: |
           if git rev-parse -q --verify "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null; then
             echo "::error::Tag ${{ steps.ver.outputs.tag }} already exists -- aborting."
@@ -87,7 +100,16 @@ jobs:
           zip -r -q "pfQuest-Reforged-${{ steps.ver.outputs.tag }}.zip" pfQuest-Reforged
           ls -la
 
+      - name: Upload dev artifact (no release)
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pfQuest-Reforged-${{ steps.ver.outputs.tag }}
+          path: dist/pfQuest-Reforged-${{ steps.ver.outputs.tag }}.zip
+          retention-days: 5
+
       - name: Build release notes
+        if: github.ref != 'refs/heads/dev'
         id: notes
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
@@ -105,6 +127,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish release
+        if: github.ref != 'refs/heads/dev'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
