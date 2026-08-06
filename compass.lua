@@ -392,6 +392,19 @@ degreeText:SetFont(font, 11, "OUTLINE")
 degreeText:SetTextColor(0.85, 0.85, 0.85, 1)
 degreeText:SetPoint("TOP", compass, "BOTTOM", 0, -3)
 
+-- objective description of the label owner (pfDatabase's precomputed
+-- meta.description, the same line the route arrow prints, route.lua:628):
+-- below the strip beside the degree readout -- spec layout preference (b).
+-- Fixed box so a long line clips at the strip's scale instead of running
+-- across the screen; sized in UpdateSettings.
+local descText = compass:CreateFontString(nil, "OVERLAY")
+descText:SetFont(font, 11, "OUTLINE")
+descText:SetTextColor(0.9, 0.9, 0.9, 1)
+descText:SetJustifyH("LEFT")
+descText:SetHeight(12)
+descText:SetPoint("LEFT", degreeText, "RIGHT", 10, 0)
+descText:Hide()
+
 local LETTERS8 = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
 -- ---------------------------------------------------------------------------
@@ -632,6 +645,7 @@ local lastOwnerKey
 local labelFade = 0 -- crossfade start; one label object, so the incoming side fades
 local FADE_TIME = 0.2
 local titleHalf, distHalf = 0, 0
+local lastDesc
 
 -- Reforged: the OnUpdate lives on a separate always-shown driver, not on the
 -- strip itself -- Hide()ing the strip (taxi/disable) would stop its own
@@ -660,8 +674,9 @@ driver:SetScript("OnUpdate", function()
   -- One hash lookup + compare inside the 0.02s cap; UpdateSettings runs only on
   -- an actual change.
   local widthCfg = pfQuest_config["compasswidth"]
-  if widthCfg ~= this.lastWidthCfg then
-    this.lastWidthCfg = widthCfg
+  local scaleCfg = pfQuest_config["compassscale"]
+  if widthCfg ~= this.lastWidthCfg or scaleCfg ~= this.lastScaleCfg then
+    this.lastWidthCfg, this.lastScaleCfg = widthCfg, scaleCfg
     compass:UpdateSettings()
   end
 
@@ -836,7 +851,8 @@ driver:SetScript("OnUpdate", function()
   if not owner then
     dist:Hide()
     title:Hide()
-    lastYards, lastTitle = nil, nil -- stale caches must not suppress the first repaint
+    descText:Hide()
+    lastYards, lastTitle, lastDesc = nil, nil, nil -- stale caches must not suppress the first repaint
   else
     if owner.title ~= lastTitle then
       lastTitle = owner.title
@@ -863,6 +879,20 @@ driver:SetScript("OnUpdate", function()
     dist:SetAlpha(owner.a * fadeMul)
     title:SetAlpha(owner.a * fadeMul)
     title:Show()
+
+    -- objective description line, re-formatted only when the owner's text
+    -- changes; the corpse and dungeon markers carry none and show none
+    if pfQuest_config["compassdesc"] ~= "0" and owner.desc and owner.desc ~= "" then
+      if owner.desc ~= lastDesc then
+        lastDesc = owner.desc
+        descText:SetText(owner.desc)
+      end
+      descText:SetAlpha(fadeMul)
+      descText:Show()
+    else
+      descText:Hide()
+      lastDesc = nil
+    end
 
     local yards = YardsTo(xp, yp, owner.x, owner.y, zoneID)
     if not yards then
@@ -920,6 +950,12 @@ function compass:UpdateSettings()
   -- between them by anchoring, no explicit width needed)
   bgLeft:SetWidth(w * 0.3)
   bgRight:SetWidth(w * 0.3)
+  -- description box rides the strip width so long lines clip with it
+  descText:SetWidth(w * 0.55)
+  -- Reforged: overall scale, 0.5..2 -- the trackerscale pattern (tracker.lua:752)
+  local s = tonumber(pfQuest_config and pfQuest_config["compassscale"]) or 1
+  if s < 0.5 then s = 0.5 elseif s > 2 then s = 2 end
+  if self:GetScale() ~= s then self:SetScale(s) end
   lastFacing = nil -- geometry changed: force a full reposition on the next tick
 end
 

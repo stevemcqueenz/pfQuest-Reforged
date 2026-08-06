@@ -110,6 +110,12 @@ pfQuest_defconfig = {
   { text = L["Compass Bar (HorizonCompass)"], default = "0", type = "checkbox", config = "compass" },
   { text = L["Compass Bar Width"], default = "420", type = "text", config = "compasswidth" },
   { text = L["Compass Bar: Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
+  { text = L["Compass Bar Scale"], default = "1", type = "text", config = "compassscale" },
+  { text = L["Compass Bar: Show Available Quests"], default = "1", type = "checkbox", config = "compassavail" },
+  { text = L["Compass Bar: Show Quest Turn-Ins"], default = "1", type = "checkbox", config = "compassturnin" },
+  { text = L["Compass Bar: Show Dungeon Entrances"], default = "0", type = "checkbox", config = "compassdungeon" },
+  { text = L["Compass Bar: Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
+  { text = L["Compass Bar: Marker Cap"], default = "8", type = "text", config = "compasscap" },
 
   { text = L["Map & Minimap"], default = nil, type = "header" },
   { text = L["Enable Minimap Nodes"], default = "1", type = "checkbox", config = "minimapnodes" },
