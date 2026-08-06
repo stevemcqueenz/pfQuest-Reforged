@@ -400,9 +400,12 @@ degreeText:SetPoint("TOP", compass, "BOTTOM", 0, -3)
 local descText = compass:CreateFontString(nil, "OVERLAY")
 descText:SetFont(font, 11, "OUTLINE")
 descText:SetTextColor(0.9, 0.9, 0.9, 1)
-descText:SetJustifyH("LEFT")
+descText:SetJustifyH("CENTER")
 descText:SetHeight(12)
-descText:SetPoint("LEFT", degreeText, "RIGHT", 10, 0)
+-- own line BELOW the degree readout (maintainer: beside it read as one run-on
+-- string, and the narrow box truncated real descriptions); centered with the
+-- full strip width available
+descText:SetPoint("TOP", degreeText, "BOTTOM", 0, -2)
 descText:Hide()
 
 local LETTERS8 = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
@@ -881,8 +884,11 @@ driver:SetScript("OnUpdate", function()
     title:Show()
 
     -- objective description line, re-formatted only when the owner's text
-    -- changes; the corpse and dungeon markers carry none and show none
-    if pfQuest_config["compassdesc"] ~= "0" and owner.desc and owner.desc ~= "" then
+    -- changes; the corpse and dungeon markers carry none and show none.
+    -- Suppressed while the owner is edge-clamped: the player is not facing it,
+    -- so "what to do there" is noise until they turn (maintainer direction);
+    -- the clamped marker's own title/distance still show the way
+    if pfQuest_config["compassdesc"] ~= "0" and owner.desc and owner.desc ~= "" and not owner.clamped then
       if owner.desc ~= lastDesc then
         lastDesc = owner.desc
         descText:SetText(owner.desc)
@@ -952,7 +958,7 @@ function compass:UpdateSettings()
   bgLeft:SetWidth(w * 0.3)
   bgRight:SetWidth(w * 0.3)
   -- description box rides the strip width so long lines clip with it
-  descText:SetWidth(w * 0.55)
+  descText:SetWidth(w)
   -- Reforged: overall scale, 0.5..2 -- the trackerscale pattern (tracker.lua:752)
   local s = tonumber(pfQuest_config and pfQuest_config["compassscale"]) or 1
   if s < 0.5 then s = 0.5 elseif s > 2 then s = 2 end
