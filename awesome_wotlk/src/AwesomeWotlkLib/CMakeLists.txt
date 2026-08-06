@@ -1,34 +1,53 @@
-project(AwesomeWotlkLib)
+project( AwesomeWotlkLib )
 
 add_library(
-    ${PROJECT_NAME} SHARED
-        "Entry.cpp"
+	${PROJECT_NAME} SHARED
+		"Entry.cpp"
 
-        GameClient.h
+		"GameClient.h" "Utils.h"
+		"Enums.h" "Types.h"
+		"D3D.h" "D3D.cpp"
+		"Camera.h" "Camera.cpp"
         "NamePlates.h" "NamePlates.cpp"
-        "Hooks.h" "Hooks.cpp"
-        "Misc.h" "Misc.cpp"
-        "BugFixes.h" "BugFixes.cpp"
-        "Utils.h" "Utils.cpp"
-        "CommandLine.cpp" "CommandLine.h"
-        "Inventory.cpp" "Inventory.h"
-        "UnitAPI.h" "UnitAPI.cpp"
-        "VoiceChat.h" "VoiceChat.cpp"
- "WorldAPI.h" "WorldAPI.cpp")
+		"Hooks.h" "Hooks.cpp"
+		"Misc.h" "Misc.cpp"
+		"BugFixes.h" "BugFixes.cpp"
+		"MSDF.h" "MSDF.cpp"
+		"MSDFValidator.h" "MSDFUtils.h" "MSDFShaders.h"
+		"MSDFCache.h" "MSDFCache.cpp"
+		"MSDFManager.h" "MSDFManager.cpp"
+		"MSDFFont.h" "MSDFFont.cpp"
+		"CommandLine.cpp" "CommandLine.h"
+		"Inventory.cpp" "Inventory.h"
+		"Item.h" "Item.cpp"
+		"UnitAPI.h" "UnitAPI.cpp"
+		"WorldAPI.h" "WorldAPI.cpp"
+		"Spell.h" "Spell.cpp"
+		"VFX.h" "VFX.cpp"
+		"VoiceChat.h" "VoiceChat.cpp"
+		"ReTools.h")
 
 target_include_directories(
     ${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/deps
+		${CMAKE_SOURCE_DIR}/deps
+		${CMAKE_SOURCE_DIR}/deps/skia/include
+		${CMAKE_SOURCE_DIR}/deps/msdfgen
+		${CMAKE_BINARY_DIR}/deps/msdfgen
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(
     ${PROJECT_NAME} PRIVATE
         Detours
+		msdfgen::msdfgen-core
+		msdfgen::msdfgen-ext
+		freetype
         ole32
         oleaut32
         uuid
         sapi
+		"${CMAKE_SOURCE_DIR}/deps/skia/skia.lib"
+		ankerl::unordered_dense
 )
 
 target_compile_definitions(

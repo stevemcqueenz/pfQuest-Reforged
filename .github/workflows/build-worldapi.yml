@@ -1,8 +1,11 @@
 name: Build AwesomeWotlk WorldAPI
 # Builds the vendored awesome_wotlk/ tree on THIS branch only. The 3.3.5a client
-# (build 12340) is 32-bit, hence Win32/x86. This branch exists as temporary
-# hosting: the session that produced it cannot create repos/forks, so the DLL
-# flavor lives here until a proper fork of FrostAtom/awesome_wotlk exists.
+# (build 12340) is 32-bit, hence Win32/x86. Base: noname08662/awesome_wotlk @ v37
+# (the release line the maintainer actually runs), plus the WorldAPI module.
+# Build shape mirrors upstream's own windows-release.yml (VS 2022, Win32,
+# host=x64 toolchain); the artifact packages the same runtime set upstream
+# ships: the DLL, the patcher, and deps/skia/skia.dll (a runtime dependency of
+# the MSDF font rendering -- the DLL does not load without it).
 on:
   push:
     branches: ["awesome-wotlk-worldapi"]
@@ -12,19 +15,22 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure (MSVC, Win32)
-        run: cmake -B out -S awesome_wotlk -A Win32
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+      - name: Configure (VS 2022, Win32)
+        run: cmake -S awesome_wotlk -B out -G "Visual Studio 17 2022" -A Win32 -T host=x64
       - name: Build Release
-        run: cmake --build out --config Release
-      - name: List binaries
+        run: cmake --build out --config Release -- /m
+      - name: Stage runtime set
         shell: bash
-        run: find awesome_wotlk/build out -name '*.dll' -o -name '*.exe' | sort || true
+        run: |
+          mkdir staging
+          find out -name 'AwesomeWotlkLib.dll' -exec cp {} staging/ \;
+          find out -name 'AwesomeWotlkPatch.exe' -exec cp {} staging/ \;
+          cp awesome_wotlk/deps/skia/skia.dll staging/
+          ls -la staging
       - uses: actions/upload-artifact@v4
         with:
           name: AwesomeWotlk-worldapi-${{ github.sha }}
-          path: |
-            awesome_wotlk/build/**/*.dll
-            awesome_wotlk/build/**/*.exe
-            out/**/Release/*.dll
-            out/**/Release/*.exe
+          path: staging/*
           retention-days: 14

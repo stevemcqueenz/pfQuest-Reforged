@@ -1,52 +1,59 @@
-# AwesomeWotlk — worldapi flavor (temporarily hosted here)
+# WorldAPI flavor of AwesomeWotLK
 
-This directory vendors [NoM0Re/awesome_wotlk](https://github.com/NoM0Re/awesome_wotlk)
-(GPLv3 — the actively maintained fork of FrostAtom/awesome_wotlk that this
-community's DLL line comes from; it carries the VoiceChat module and fixes the
-origin repo lacks) at fork commit `1442992`, plus one addition: **WorldAPI**
-(`src/AwesomeWotlkLib/WorldAPI.cpp/h`), exporting to Lua
+**Base: [noname08662/awesome_wotlk](https://github.com/noname08662/awesome_wotlk) @ v37**
+(the actively maintained community line; lineage FrostAtom -> someweirdhuman ->
+noname08662), verbatim, plus one added module. v37 is the exact release the
+maintainer runs, so swapping in this build loses nothing the installed r37 has
+-- interact keybinding, MSDF fonts, camera/nameplate work, all of it.
 
-    UnitPosition("unit")   -> x, y, z          (world yards)
-    WorldToScreen(x, y, z) -> sx, sy, visible  (UI space, origin bottom-left;
-                                                visible is 1/nil; coords are
-                                                returned even when not visible
-                                                so markers can edge-clamp)
+Why the base moved (third time, final): the first vendoring used
+FrostAtom/awesome_wotlk (the original, long stale), the second NoM0Re's fork of
+it -- both predate the community line's feature growth, and field testing
+caught it immediately: the Interact keybinding vanished from the keybinds UI
+because that whole feature only exists in the someweirdhuman/noname08662 line
+(introduced around its v25: "move keybinds (now only /interact) to c level").
+Building on the line users actually run is the only swap that is a pure
+superset.
 
-Both wrap functions the client already contains and the repo had already
-reverse-engineered (`WorldFrame_3Dto2D` @ 0x004F6D20, unit vtable
-`GetPosition`) but never exposed. Purpose: in-world waypoint markers
-(Skyrim-style pins) for pfQuest-Reforged / GW2_UI Reforged — the piece of the
-SuperWoW-style Waypoint-UI concept that pure Lua cannot do on 3.3.5a.
+## The added module: WorldAPI.cpp/h
 
-The module is byte-identical against FrostAtom or NoM0Re (GameClient.h is
-unchanged between them) and first compiled green on MSVC/Win32 (CI run #1)
-against the FrostAtom base before being rebased onto this one.
+Two Lua globals, exposing projection machinery the client already has
+(GameClient.h maps `CGWorldFrame::To2D` @ 0x004F6D20) but never exported:
 
-Version-global gotcha: both repos push `AwesomeWotlk = 1` as the Lua global;
-the "r37"-style numbers users know are RELEASE numbering. Addon-side feature
-detection must therefore use `type(WorldToScreen) == "function"`, never the
-version global.
+    UnitPosition("unit")  -> x, y, z          world yards
+    WorldToScreen(x,y,z)  -> sx, sy, visible  UI space, origin bottom-left
 
-## Why is a C++ project inside the pfQuest repo?
+`visible` is `1`/`nil` (kept from the first WorldAPI builds; reads the same as
+a boolean in `if visible then`). Coordinates are still returned when not
+visible so callers can edge-clamp (off-screen navigator arrows).
 
-Temporary hosting, nothing more. The session that produced this had no
-permission to create repos or forks, and the maintainer was on a phone.
+Integration is deliberately tiny: 2 new files + 1 line in
+`src/AwesomeWotlkLib/CMakeLists.txt` + 2 lines in `Entry.cpp`
+(include + `WorldAPI::initialize()`).
 
-**Migration plan:** fork NoM0Re/awesome_wotlk on GitHub -> apply the WorldAPI
-change there (2 new files + 2-line Entry.cpp + 1-line CMakeLists edit) ->
-delete this branch -> offer the two exports upstream as a suggestion.
+## Version detection (addon side)
 
-## Building
+Every lineage pushes `AwesomeWotlk = 1` as the version global; the r/v numbers
+are RELEASE naming, not queryable. Addons must feature-detect:
+`type(WorldToScreen) == "function"` -- never sniff versions.
 
-`.github/workflows/build-worldapi.yml` on this branch builds it (MSVC, Win32 —
-the 12340 client is 32-bit) and uploads the DLL + patcher as a 14-day artifact
-on every push to this branch. No local toolchain needed. The fork's own
-`windows-release.yml` sits inert inside this subdirectory (workflows only run
-from the repo root).
+## Install
 
-Omitted from the fork's tree: `docs/assets/wow_soft.jpg` (binary screenshot,
-not needed to build).
+Drop-in for an existing v37/r37 install: replace `AwesomeWotlkLib.dll` with the
+built one (rename the old one `.bak` first). No re-patch needed; `skia.dll`
+and the rest are unchanged from the v37 release (the CI artifact includes them
+anyway for a from-scratch install: run `AwesomeWotlkPatch.exe` on a clean
+`Wow.exe` copy in that case).
 
-## License
+## Purpose
 
-GPLv3, same as upstream (LICENSE included). All modifications GPL.
+The client-side half of in-world waypoint markers for pfQuest-Reforged /
+GW2_UI -- the piece pure Lua cannot do on 3.3.5a. The addon degrades to the
+compass strip / arrow when the exports are absent.
+
+## Migration plan
+
+This branch is temporary hosting (the driving session cannot create forks).
+Proper home: a fork of noname08662/awesome_wotlk carrying the `worldapi`
+branch, and ideally an upstream PR -- the module is small, self-contained and
+GPLv3 like its base.

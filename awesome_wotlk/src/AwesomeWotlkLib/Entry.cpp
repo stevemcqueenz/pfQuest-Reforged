@@ -1,68 +1,79 @@
 #include "BugFixes.h"
+#include "D3D.h"
+#include "Camera.h"
 #include "CommandLine.h"
 #include "NamePlates.h"
 #include "Misc.h"
 #include "Hooks.h"
 #include "Inventory.h"
+#include "Item.h"
+#include "MSDF.h"
+#include "Lua.h"
+#include "Spell.h"
 #include "UnitAPI.h"
 #include "WorldAPI.h"
-#include <Windows.h>
-#include <Detours/detours.h>
 #include "VoiceChat.h"
+#include <windows.h>
+#include <Detours/detours.h>
 
+#include "ReTools.h"
 
-static int lua_debugbreak(lua_State* L)
-{
-    if (IsDebuggerPresent())
-        DebugBreak();
-    return 0;
+namespace {
+int lua_debugbreak(lua_State* L) {
+	if (IsDebuggerPresent()) { DebugBreak(); }
+	return 0;
 }
 
-static int lua_openawesomewotlk(lua_State* L)
-{
-    lua_pushnumber(L, 1.f);
-    lua_setglobal(L, "AwesomeWotlk");
+int lua_openawesomewotlk(lua_State* L) {
+	Lua::lua_pushnumber(L, 37);
+	Lua::lua_setglobal(L, "AwesomeWotlk");
+
 #ifdef _DEBUG
-    lua_pushcfunction(L, lua_debugbreak);
-    lua_setglobal(L, "debugbreak");
+	Lua::lua_pushcfunction(L, lua_debugbreak);
+	Lua::lua_setglobal(L, "debugbreak");
 #endif
-    return 0;
+	return 0;
 }
 
-static void OnAttach()
-{
-//#ifdef _DEBUG
-//    system("pause");
-//    FreeConsole();
-//#endif
+void OnAttach() {
+	// Invalid function pointer hack
+	*reinterpret_cast<DWORD*>(0x00D415B8) = 1;
+	*reinterpret_cast<DWORD*>(0x00D415BC) = 0x7FFFFFFF;
 
-    // Invalid function pointer hack
-    *(DWORD*)0x00D415B8 = 1;
-    *(DWORD*)0x00D415BC = 0x7FFFFFFF;
+	// TOS/EULA Acceptance
+	*reinterpret_cast<DWORD*>(0x00B6AF54) = 1; // TOSAccepted
+	*reinterpret_cast<DWORD*>(0x00B6AF5C) = 1; // EULAAccepted
 
-    *(DWORD*)0x00B6AF54 = 1; // TOSAccepted = 1
-    *(DWORD*)0x00B6AF5C = 1; // EULAAccepted = 1
+	DetourTransactionBegin();
+	DetourUpdateThread(GetCurrentThread());
 
-    // Initialize modules
-    DetourTransactionBegin();
-    Hooks::initialize();
-    BugFixes::initialize();
-    CommandLine::initialize();
-    Inventory::initialize();
-    NamePlates::initialize();
-    Misc::initialize();
-    UnitAPI::initialize();
-    WorldAPI::initialize();
-    VoiceChat::initialize();
-    DetourTransactionCommit();
+	Hooks::initialize();
+	D3D::initialize();
+	Camera::initialize();
+	BugFixes::initialize();
+	CommandLine::initialize();
+	Inventory::initialize();
+	Item::initialize();
+	MSDF::initialize();
+	NamePlates::initialize();
+	Misc::initialize();
+	UnitAPI::initialize();
+	WorldAPI::initialize();
+	Spell::initialize();
+	VoiceChat::initialize();
 
-    // Register base
-    Hooks::FrameXML::registerLuaLib(lua_openawesomewotlk);
+	DetourTransactionCommit();
+
+	Hooks::FrameXML::registerLuaLib(lua_openawesomewotlk);
+}
 }
 
-int __stdcall DllMain(HMODULE hModule, DWORD reason, LPVOID)
-{
-    if (reason == DLL_PROCESS_ATTACH)
-        OnAttach();
-    return 1;
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
+	if (reason == DLL_PROCESS_ATTACH) {
+		DisableThreadLibraryCalls(hModule);
+		//Toolkit::ToolkitManager::Instance().Start();
+		OnAttach();
+	}
+	//else if (reason == DLL_PROCESS_DETACH) { if (lpReserved == nullptr) { Toolkit::ToolkitManager::Instance().Stop(); } }
+	return TRUE;
 }

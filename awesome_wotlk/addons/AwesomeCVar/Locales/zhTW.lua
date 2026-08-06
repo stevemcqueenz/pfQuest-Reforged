@@ -1,0 +1,148 @@
+-- File: zhTW.lua
+-- Language: Traditional Chinese
+local _, AwesomeCVar = ...
+
+if not AwesomeCVar.L then
+    AwesomeCVar.L = {}
+end
+
+local L = AwesomeCVar.L
+
+if GetLocale() == "zhTW" then
+    -- 常規
+    L.ADDON_NAME = "AwesomeCVar"
+    L.ADDON_NAME_SHORT = "Awesome CVar"
+    L.MAIN_FRAME_TITLE = "Awesome CVar 管理器"
+    L.RESET_TO = "重設為 %s"
+	L.MINIMAP_ICON = "小地圖圖示"
+	L.MINIMAP_TOOLTIP = "點擊開啟\n拖曳移動"
+	L.GAME_MENU_BUTTON = "遊戲選單按鈕"
+	L.OPEN_ADDON = "開啟 AwesomeCVar"
+
+    -- 彈出視窗
+    L.RELOAD_POPUP_TITLE = "需要重新載入介面"
+    L.RELOAD_POPUP_TEXT = "你所做的一項或多項修改需要重新載入介面 (ReloadUI) 才能生效。"
+    L.RESET_POPUP_TITLE = "確認重設預設值"
+    L.RESET_POPUP_TEXT = "你確定要將所有數值重設回預設設定嗎？"
+
+    -- 聊天訊息
+    L.MSG_LOADED = "Awesome CVar 已載入！輸入 /awesome 打開管理器。"
+    L.MSG_FRAME_RESET = "框架位置已重設至螢幕中心。"
+    L.MSG_SET_VALUE = "已將 %s 設置為 %s。"
+    L.MSG_FRAME_CREATE_ERROR = "無法創建 AwesomeCVar 框架！"
+    L.MSG_UNKNOWN_COMMAND = "未知指令。輸入 /awesome help 查看可用指令。"
+    L.MSG_HELP_HEADER = "Awesome CVar 指令列表:"
+    L.MSG_HELP_TOGGLE = "/awesome - 切換顯示/隱藏管理器"
+    L.MSG_HELP_SHOW = "/awesome show - 顯示管理器"
+    L.MSG_HELP_HIDE = "/awesome hide - 隱藏管理器"
+    L.MSG_HELP_RESET = "/awesome reset - 重設框架位置到中心"
+    L.MSG_HELP_HELP = "/awesome help - 顯示此幫助訊息"
+
+    -- CVar 分類
+    L.CATEGORY_CAMERA = "鏡頭"
+    L.CATEGORY_NAMEPLATES = "姓名板"
+    L.CATEGORY_TEXT_TO_SPEECH = "語音合成 (TTS)"
+    L.CATEGORY_INTERACTION = "互動"
+    L.CATEGORY_OTHER = "其他"
+
+    -- CVar 標籤與描述
+    L.CVAR_LABEL_INFO = "備註"
+    L.CVAR_LABEL_TTS_VOICE = "TTS 語音"
+    L.CVAR_LABEL_TTS_VOLUME = "TTS 音量"
+    L.CVAR_LABEL_TTS_SPEED = "TTS 語速"
+    L.CVAR_LABEL_CAMERA_FOV = "鏡頭視野 (FoV)"
+    L.CVAR_LABEL_STACKING_MODE = "姓名板堆疊模式"
+    L.CVAR_LABEL_MOUSEOVER = "姓名板鼠標懸停模式"
+    L.CVAR_LABEL_OCCLUSION_ALPHA = "姓名板被遮擋透明度"
+	L.CVAR_LABEL_OCCLUSION_MODE = "姓名板遮蔽模式"
+    L.CVAR_LABEL_NONTARGET_ALPHA = "非目標姓名板透明度"
+    L.CVAR_LABEL_ALPHA_SPEED = "姓名板透明度漸變速度"
+    L.CVAR_LABEL_CLAMP_MODE = "姓名板貼邊模式"
+	L.CVAR_LABEL_NAMEPLATE_DISTANCE = "姓名板顯示距離"
+    L.CVAR_LABEL_MAX_RAISE_DISTANCE = "堆疊最大垂直提升距離"
+    L.CVAR_LABEL_MAX_PULL_DISTANCE = "堆疊最大水平拉伸距離"
+    L.CVAR_LABEL_X_SPACE = "姓名板橫向間距"
+    L.CVAR_LABEL_Y_SPACE = "姓名板縱向間距"
+    L.CVAR_LABEL_V_OFFSET = "貼邊姓名板垂直偏移"
+	L.CVAR_LABEL_H_OFFSET = "貼邊姓名板水平偏移"
+    L.CVAR_LABEL_PLACEMENT = "姓名板佈局偏移"
+    L.CVAR_LABEL_SPEED_RAISE = "姓名板堆疊上升速度"
+    L.CVAR_LABEL_SPEED_LOWER = "姓名板堆疊下降速度"
+    L.CVAR_LABEL_SPEED_PULL = "姓名板堆疊水平拉伸速度"
+	L.CVAR_LABEL_INERTIA = "姓名板堆疊慣性"
+	L.CVAR_LABEL_HYST_DECAY = "姓名板配對分離速度"
+	L.CVAR_LABEL_HITBOX_ANCHOR = "姓名板碰撞盒錨點"
+    L.CVAR_LABEL_HITBOX_HEIGHT_ENEMY = "敵方姓名板點擊判定高度"
+    L.CVAR_LABEL_HITBOX_WIDTH_ENEMY = "敵方姓名板點擊判定寬度"
+    L.CVAR_LABEL_HITBOX_HEIGHT_FRIENDLY = "友好姓名板點擊判定高度"
+    L.CVAR_LABEL_HITBOX_WIDTH_FRIENDLY = "友好姓名板點擊判定寬度"
+    L.CVAR_LABEL_INTERACTION_MODE = "互動模式"
+    L.CVAR_LABEL_INTERACTION_ANGLE = "互動錐形角度 (度)"
+    L.CVAR_LABEL_STANCE_PATCH = "姿態/形態切換補丁"
+    L.CVAR_LABEL_SHOW_PLAYER = "自身角色模型渲染"
+    L.CVAR_LABEL_MSDF_MODE = "字體渲染模式 (需要重啟遊戲)"
+	L.CVAR_LABEL_OBJ_HIGHLIGHT = "物件高亮顯示"
+    L.CVAR_LABEL_CAMERA_INDIRECT_VISIBILITY = "鏡頭間接可見性"
+    L.CVAR_LABEL_CAMERA_INDIRECT_ALPHA = "鏡頭間接透明度"
+    L.CVAR_LABEL_CAMERA_DISTANCE_MAX = "鏡頭最大距離"
+	L.CVAR_LABEL_PORTRAIT = "頭像解析度"
+
+    L.DESC_INFO = "所有姓名板現在包含以下額外方法：\n- SetStackingEnabled(bool)\n- GetStackingEnabled()\n\n用法範例：\nif UnitExists('target') then\n C_NamePlate.GetNamePlateForUnit('target'):SetStackingEnabled(false)\nend\n\n注意：在 NAME_PLATE_CREATED 事件下\n調用這些方法過早，\n請改用 NAME_PLATE_UNIT_ADDED。\n"
+	L.DESC_STACKING_MODE = "“智能”模式允許姓名板在下方有足夠空間時跳過堆疊推擠，從而實現更緊湊的佈局，但會導致更頻繁的重新排列。"
+    L.DESC_MOUSEOVER = "“提升”選項會提高滑鼠懸停姓名板的層級，使其顯示在其他姓名板之上。\n當前目標的姓名板層級依然是最高的。"
+	L.DESC_INERTIA = "控制姓名板在堆疊時移動的物理重量感。\n數值越高響應越靈敏；數值越低移動越沉重、阻尼感越強。"
+	L.DESC_HYST_DECAY = "控制姓名板不再重疊後堆疊配對解除的速度。\n數值越高分離越快；數值越低配對維持時間越長。"
+	L.DESC_PLACEMENT = "垂直偏移比例值，用於將姓名板從其預設錨點位置移動。"
+	L.DESC_HITBOX_ANCHOR = "設置姓名板可點擊區域的垂直原點。\n根據你的UI插件錨定姓名板框架的方式進行調整（例如頂部或底部錨定）。"
+    L.DESC_ALPHA_BLEND = "控制姓名板切換到新透明度的動畫速度 (1 = 瞬間)。"
+    L.DESC_STANCE_PATCH = "允許在使用巨集時，透過單次點擊完成姿態/形態切換並施放技能。"
+    L.DESC_OCCLUSION_ALPHA = "控制姓名板被障礙物或地形遮擋時的透明度。正值會與目前非目標透明度相乘，負值則對被遮擋的透明度強制套用嚴格的最高上限。"
+	L.DESC_OCCLUSION_MODE = "控制當姓名板被地形或牆壁遮擋時，何時隱藏或淡出。"
+    L.DESC_CAMERA_INDIRECT_VISIBILITY = "允許鏡頭穿過某些世界物體而非被阻擋。"
+    L.DESC_CAMERA_INDIRECT_ALPHA = "設置鏡頭與玩家角色之間的遮擋物透明度。"
+    L.DESC_CAMERA_DISTANCE_MAX = "設置鏡頭可以從玩家身上拉遠的最大距離。"
+    L.DESC_MSDF = "開啟基於向量的字體渲染，大幅提升字型品質。"
+	L.DESC_OBJ_HIGHLIGHT = "強制在資源（草藥/礦石）和可互動的物件（如箱子或懸賞通緝令告示牌）上顯示閃爍光芒效果。"
+	L.DESC_PORTRAIT = "提高遊戲內所有頭像材質的著色解析度。"
+
+	-- CVar 模式選項
+	L.MODE_DISABLED = "已停用"
+	L.MODE_ENABLED = "已啟用"
+
+    L.MODE_STACKING_DISABLED = "重疊"
+    L.MODE_STACKING_ALL = "堆疊 (全部)"
+    L.MODE_STACKING_ENEMY = "堆疊 (敵人)"
+    L.MODE_STACKING_FRIENDLY = "堆疊 (友方)"
+    L.MODE_STACKING_SMART_ALL = "智能堆疊 (全部)"
+    L.MODE_STACKING_SMART_ENEMY = "智能堆疊 (敵人)"
+    L.MODE_STACKING_SMART_FRIENDLY = "智能堆疊 (友方)"
+
+    L.MODE_MOUSE_DISABLED = "預設"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY = "敵人點擊穿透"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY_RAISE_FRIENDLY = "敵人穿透 + 提升友方層級"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY_RAISE_FRIENDLY_COMBAT = "敵人穿透 + 提升友方 (戰鬥中)"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY = "友方點擊穿透"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY_RAISE_ENEMY = "友方穿透 + 提升敵人層級"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY_RAISE_ENEMY_COMBAT = "友方穿透 + 提升敵人 (戰鬥中)"
+    L.MODE_MOUSE_RAISE_OCCLUDED = "總是提升被遮擋的姓名板"
+    L.MODE_MOUSE_RAISE_OCCLUDED_COMBAT = "提升被遮擋姓名板 (僅戰鬥)"
+
+	L.MODE_CLAMP_ALL = "全部貼邊 (僅限頂部)"
+	L.MODE_CLAMP_BOSSES = "僅首領貼邊 (僅限頂部)"
+	L.MODE_CLAMP_ALL_EDGES = "全部貼邊 (所有邊緣)"
+	L.MODE_CLAMP_BOSSES_EDGES = "僅首領貼邊 (所有邊緣)"
+
+	L.MODE_OCCLUSION_ALWAYS = "總是遮蔽"
+	L.MODE_OCCLUSION_NOCOMBAT = "僅在非戰鬥狀態"
+
+    L.MODE_HITBOX_TOP = "頂部"
+    L.MODE_HITBOX_CENTER = "置中"
+    L.MODE_HITBOX_BOTTOM = "底部"
+
+    L.MODE_LABEL_PLAYER_RADIUS = "玩家半徑 20碼"
+    L.MODE_LABEL_CONE_ANGLE = "20碼內的錐形角度 (度)"
+
+	L.MODE_MSDF_ENABLED_UNSAFE = "啟用（不安全字型）— 由於距離場（distance fields）的計算方式，某些具有自相交輪廓的字型（例如 'diediedie'）可能會發生錯亂。"
+
+	L.MODE_HIGHLIGHTS_TRACKED = "僅已追蹤"
+end

@@ -1,0 +1,148 @@
+-- File: koKR.lua
+-- Language: Korean
+local _, AwesomeCVar = ...
+
+if not AwesomeCVar.L then
+    AwesomeCVar.L = {}
+end
+
+local L = AwesomeCVar.L
+
+if GetLocale() == "koKR" then
+    -- 일반
+    L.ADDON_NAME = "AwesomeCVar"
+    L.ADDON_NAME_SHORT = "Awesome CVar"
+    L.MAIN_FRAME_TITLE = "Awesome CVar 관리자"
+    L.RESET_TO = "%s(으)로 초기화"
+	L.MINIMAP_ICON = "미니맵 아이콘"
+	L.MINIMAP_TOOLTIP = "클릭하여 열기\n드래그하여 이동"
+	L.GAME_MENU_BUTTON = "게임 메뉴 버튼"
+	L.OPEN_ADDON = "AwesomeCVar 열기"
+
+    -- 팝업
+    L.RELOAD_POPUP_TITLE = "UI 재시작 필요"
+    L.RELOAD_POPUP_TEXT = "변경 사항 중 하나 이상을 적용하려면 UI 재시작(/reload)이 필요합니다."
+    L.RESET_POPUP_TITLE = "기본값 초기화 확인"
+    L.RESET_POPUP_TEXT = "모든 설정값을 기본값으로 초기화하시겠습니까?"
+
+    -- 채팅 메시지
+    L.MSG_LOADED = "Awesome CVar가 로드되었습니다! /awesome을 입력하여 관리자를 여세요."
+    L.MSG_FRAME_RESET = "프레임 위치가 화면 중앙으로 초기화되었습니다."
+    L.MSG_SET_VALUE = "%s을(를) %s(으)로 설정했습니다."
+    L.MSG_FRAME_CREATE_ERROR = "AwesomeCVar 프레임을 생성할 수 없습니다!"
+    L.MSG_UNKNOWN_COMMAND = "알 수 없는 명령어입니다. /awesome help를 입력하여 사용 가능한 명령어를 확인하세요."
+    L.MSG_HELP_HEADER = "Awesome CVar 명령어:"
+    L.MSG_HELP_TOGGLE = "/awesome - CVar 관리자 열기/닫기"
+    L.MSG_HELP_SHOW = "/awesome show - CVar 관리자 표시"
+    L.MSG_HELP_HIDE = "/awesome hide - CVar 관리자 숨기기"
+    L.MSG_HELP_RESET = "/awesome reset - 프레임 위치 초기화"
+    L.MSG_HELP_HELP = "/awesome help - 도움말 메시지 표시"
+
+    -- CVar 카테고리
+    L.CATEGORY_CAMERA = "카메라"
+    L.CATEGORY_NAMEPLATES = "이름표"
+    L.CATEGORY_TEXT_TO_SPEECH = "음성 변환(TTS)"
+    L.CATEGORY_INTERACTION = "상호작용"
+    L.CATEGORY_OTHER = "기타"
+
+    -- CVar 라벨 및 설명
+    L.CVAR_LABEL_INFO = "참고"
+    L.CVAR_LABEL_TTS_VOICE = "TTS 음성"
+    L.CVAR_LABEL_TTS_VOLUME = "TTS 음량"
+    L.CVAR_LABEL_TTS_SPEED = "TTS 속도"
+    L.CVAR_LABEL_CAMERA_FOV = "카메라 시야각(FoV)"
+    L.CVAR_LABEL_STACKING_MODE = "이름표 배열 모드"
+    L.CVAR_LABEL_MOUSEOVER = "이름표 마우스오버 모드"
+    L.CVAR_LABEL_OCCLUSION_ALPHA = "이름표 가려짐 투명도"
+	L.CVAR_LABEL_OCCLUSION_MODE = "이름표 가림 모드"
+    L.CVAR_LABEL_NONTARGET_ALPHA = "비대상 이름표 투명도"
+    L.CVAR_LABEL_ALPHA_SPEED = "이름표 투명도 변화 속도"
+    L.CVAR_LABEL_CLAMP_MODE = "이름표 고정 모드"
+    L.CVAR_LABEL_NAMEPLATE_DISTANCE = "이름표 표시 거리"
+    L.CVAR_LABEL_MAX_RAISE_DISTANCE = "상하 배열 최대 간격"
+    L.CVAR_LABEL_MAX_PULL_DISTANCE = "좌우 배열 최대 간격"
+    L.CVAR_LABEL_X_SPACE = "이름표 가로 간격"
+    L.CVAR_LABEL_Y_SPACE = "이름표 세로 간격"
+    L.CVAR_LABEL_V_OFFSET = "이름표 고정 수직 간격"
+	L.CVAR_LABEL_H_OFFSET = "이름표 고정 수평 간격"
+    L.CVAR_LABEL_PLACEMENT = "이름표 배치 오프셋"
+    L.CVAR_LABEL_SPEED_RAISE = "이름표 상단 이동 속도"
+    L.CVAR_LABEL_SPEED_LOWER = "이름표 하단 이동 속도"
+    L.CVAR_LABEL_SPEED_PULL = "이름표 가로 이동 속도"
+	L.CVAR_LABEL_INERTIA = "이름표 정렬 관성"
+	L.CVAR_LABEL_HYST_DECAY = "이름표 쌍 분리 속도"
+	L.CVAR_LABEL_HITBOX_ANCHOR = "이름표 히트박스 고정 위치"
+    L.CVAR_LABEL_HITBOX_HEIGHT_ENEMY = "적군 이름표 히트박스 높이"
+    L.CVAR_LABEL_HITBOX_WIDTH_ENEMY = "적군 이름표 히트박스 너비"
+    L.CVAR_LABEL_HITBOX_HEIGHT_FRIENDLY = "아군 이름표 히트박스 높이"
+    L.CVAR_LABEL_HITBOX_WIDTH_FRIENDLY = "아군 이름표 히트박스 너비"
+    L.CVAR_LABEL_INTERACTION_MODE = "상호작용 모드"
+    L.CVAR_LABEL_INTERACTION_ANGLE = "상호작용 원뿔 각도(도)"
+    L.CVAR_LABEL_STANCE_PATCH = "태세/형태 변환 패치"
+    L.CVAR_LABEL_SHOW_PLAYER = "내 캐릭터 모델 렌더링"
+    L.CVAR_LABEL_MSDF_MODE = "글꼴 렌더링 모드 (재시작 필요)"
+	L.CVAR_LABEL_OBJ_HIGHLIGHT = "오브젝트 강조"
+    L.CVAR_LABEL_CAMERA_INDIRECT_VISIBILITY = "카메라 간접 가시성"
+    L.CVAR_LABEL_CAMERA_INDIRECT_ALPHA = "카메라 간접 투명도"
+    L.CVAR_LABEL_CAMERA_DISTANCE_MAX = "카메라 최대 거리"
+	L.CVAR_LABEL_PORTRAIT = "초상화 해상도"
+
+    L.DESC_INFO = "모든 이름표에 다음 추가 메서드가 포함됩니다:\n- SetStackingEnabled(bool)\n- GetStackingEnabled()\n\n사용 예시:\nif UnitExists('target') then\n C_NamePlate.GetNamePlateForUnit('target'):SetStackingEnabled(false)\nend\n\n참고: NAME_PLATE_CREATED 시점은\n메서드 호출에 너무 이릅니다.\n대신 NAME_PLATE_UNIT_ADDED를 사용하세요.\n"
+	L.DESC_STACKING_MODE = "'스마트' 모드는 아래에 충분한 공간이 있는 경우 이름표가 쌓기 동작을 건너뛰도록 허용합니다. 결과적으로 레이아웃은 더 조밀해지지만 재배치가 더 자주 발생합니다."
+    L.DESC_MOUSEOVER = "'프레임 높이기' 옵션은 마우스 오버된 이름표의 프레임 레벨을 높여 다른 모든 이름표보다 위에 표시되게 합니다.\n현재 대상의 프레임 레벨은 여전히 가장 높게 유지됩니다."
+	L.DESC_INERTIA = "정렬 중 이름표 움직임의 물리적 무게감을 조절합니다.\n값이 높을수록 반응이 빨라지고, 낮을수록 더 무겁고 감쇠된 움직임을 나타냅니다."
+	L.DESC_HYST_DECAY = "이름표가 더 이상 겹치지 않을 때 정렬 쌍이 해제되는 속도를 조절합니다.\n값이 높을수록 빠르게 분리되고, 낮을수록 쌍이 더 오래 유지됩니다."
+	L.DESC_PLACEMENT = "이름표를 기본 앵커 지점에서 수직으로 이동시키는 비율 오프셋입니다."
+	L.DESC_HITBOX_ANCHOR = "이름표 클릭 영역의 수직 기준점을 설정합니다.\nUI 애드온이 이름표 프레임을 상단 또는 하단 기준으로 앵커할 경우 이 값을 맞게 조정하세요."
+    L.DESC_ALPHA_BLEND = "이름표가 새로운 투명도에 도달하는 속도를 조절합니다 (1 = 즉시)."
+    L.DESC_STANCE_PATCH = "매크로 사용 시 단 한 번의 클릭으로 태세/형태 변환과 기술 시전을 동시에 가능하게 합니다."
+    L.DESC_OCCLUSION_ALPHA = "장애물이나 지형에 의해 가려진 이름표의 불투명도를 조절합니다. 양수 값은 비대상 대상의 현재 불투명도에 곱해지며, 음수 값은 가려진 이름표의 불투명도에 절대적인 최대 상한선으로 적용됩니다."
+	L.DESC_OCCLUSION_MODE = "지형이나 벽에 가려졌을 때 이름표를 숨기거나 흐리게 처리할 타이밍을 제어합니다."
+    L.DESC_CAMERA_INDIRECT_VISIBILITY = "카메라가 지형지물에 막히지 않고 통과할 수 있게 합니다."
+    L.DESC_CAMERA_INDIRECT_ALPHA = "카메라와 캐릭터 사이를 가리는 물체의 투명도를 설정합니다."
+    L.DESC_CAMERA_DISTANCE_MAX = "카메라가 시점에서 멀어질 수 있는 최대 거리를 설정합니다."
+    L.DESC_MSDF = "벡터 기반 글꼴 렌더링을 활성화하여 글자 품질을 획기적으로 향상시킵니다."
+	L.DESC_OBJ_HIGHLIGHT = "자원(약초/광석) 및 상자나 현상 수배 게시판 같은 상호작용 가능한 오브젝트에 강제로 반짝임 효과를 적용합니다."
+	L.DESC_PORTRAIT = "게임 내 모든 초상화 텍스처의 렌더링 해상도를 높입니다."
+
+	-- CVar 모드 옵션
+	L.MODE_DISABLED = "비활성화됨"
+	L.MODE_ENABLED = "활성화됨"
+
+    L.MODE_STACKING_DISABLED = "중첩 (Overlapping)"
+    L.MODE_STACKING_ALL = "상하 배치 (모두)"
+    L.MODE_STACKING_ENEMY = "상하 배치 (적)"
+    L.MODE_STACKING_FRIENDLY = "상하 배치 (아군)"
+    L.MODE_STACKING_SMART_ALL = "스마트 상하 배치 (모두)"
+    L.MODE_STACKING_SMART_ENEMY = "스마트 상하 배치 (적)"
+    L.MODE_STACKING_SMART_FRIENDLY = "스마트 상하 배치 (아군)"
+
+    L.MODE_MOUSE_DISABLED = "기본값"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY = "적 선택 불가 (클릭 투과)"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY_RAISE_FRIENDLY = "적 투과 + 아군 프레임 높이기"
+    L.MODE_MOUSE_CLICKTHROUGH_ENEMY_RAISE_FRIENDLY_COMBAT = "적 투과 + 아군 높이기 (전투 중)"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY = "아군 선택 불가 (클릭 투과)"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY_RAISE_ENEMY = "아군 투과 + 적 프레임 높이기"
+    L.MODE_MOUSE_CLICKTHROUGH_FRIENDLY_RAISE_ENEMY_COMBAT = "아군 투과 + 적 높이기 (전투 중)"
+    L.MODE_MOUSE_RAISE_OCCLUDED = "가려진 이름표 항상 높이기"
+    L.MODE_MOUSE_RAISE_OCCLUDED_COMBAT = "가려진 이름표 높이기 (전투 중만)"
+
+	L.MODE_CLAMP_ALL = "모두 고정 (상단만)"
+	L.MODE_CLAMP_BOSSES = "우두머리만 고정 (상단만)"
+	L.MODE_CLAMP_ALL_EDGES = "모두 고정 (모든 가장자리)"
+	L.MODE_CLAMP_BOSSES_EDGES = "우두머리만 고정 (모든 가장자리)"
+
+	L.MODE_OCCLUSION_ALWAYS = "항상 가림"
+	L.MODE_OCCLUSION_NOCOMBAT = "비전투 중에만"
+
+    L.MODE_HITBOX_TOP = "상단"
+    L.MODE_HITBOX_CENTER = "중앙"
+    L.MODE_HITBOX_BOTTOM = "하단"
+
+	L.MODE_LABEL_PLAYER_RADIUS = "플레이어 반경 20yd"
+	L.MODE_LABEL_CONE_ANGLE = "20yd 내 원뿔 각도(도)"
+
+	L.MODE_MSDF_ENABLED_UNSAFE = "활성화 (불안정 글꼴) — 디스턴스 필드(distance fields) 계산 방식의 한계로 인해, 자체 교차하는 윤곽선을 가진 일부 글꼴(예: 'diediedie')은 깨질 수 있습니다."
+
+	L.MODE_HIGHLIGHTS_TRACKED = "추적 대상만"
+end
