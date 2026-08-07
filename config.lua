@@ -165,10 +165,16 @@ pfQuest_defconfig = {
 -- feature-detect by type, never a version global. Inserted after the compass
 -- section (its rows end at compasscap); reverse-order inserts land in reading
 -- order header/pins/size/minscale/maxscale/opacity/pointsize/beam/navradius/
--- navsize, so the section header comes first.
+-- navsize/multi/multicap/multibeam, so the section header comes first.
 if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Multi Waypoint Beams"], desc = L["Part of the multiple waypoints experiment"], default = "1", type = "checkbox", config = "pinsmultibeam" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Multi Waypoint Cap"], desc = L["1 to 8 extra pins, default 4"], default = "4", type = "text", config = "pinsmulticap" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Show Multiple Waypoints"], desc = L["Experimental, adds pins for nearby quest markers"], default = "0", type = "checkbox", config = "pinsmulti" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Navigator Size"], default = "100", type = "text", config = "pinsnavsize" })
       table.insert(pfQuest_defconfig, i + 1,
