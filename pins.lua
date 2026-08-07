@@ -63,6 +63,27 @@ local NEAR_ENTER, NEAR_LEAVE = 28, 33
 -- subtle locator shaft, not the dominant object; shorter and dimmer reads far
 -- better against the sky (maintainer screenshots, Barrens night).
 local BEAM_MIN, BEAM_MAX = 40, 170
+-- 0.35 base alpha: at 0.75 the first in-game shots read as a solid column
+local BEAM_ALPHA = 0.35
+
+-- multi-pin exploration (pinsmulti, experimental): every tunable of the
+-- ambient extras layer lives HERE so the in-game QA round-trip is a
+-- one-line-per-knob affair. Extras are plates only (no navigator, no state
+-- machine) drawn from the compass taxonomy; the route target keeps the full
+-- waypoint/pinpoint/navigator treatment.
+local MULTI_MAX = 8            -- widget pool ceiling; pinsmulticap clamps 1..this
+local MULTI_RADIUS = 300       -- yd: extras beyond this never show
+local MULTI_SOLID = 40         -- yd: full alpha inside this
+local MULTI_FLOOR = 0.35       -- alpha floor reached at MULTI_RADIUS
+local MULTI_MERGE = 28         -- UI units: screen-space overlap merge radius
+local MULTI_BASE = 20          -- extra plate px (pinpoint-sized: ambient, not dominant)
+local MULTI_NEAREST_DIST = true -- the single nearest extra shows a distance line
+-- subordinate beams (pinsmultibeam): same construction as the main beam but
+-- visually secondary so the route target keeps dominance -- ~60 percent of
+-- its base alpha, ~70 percent of its height clamp; the extra's distance-fade
+-- alpha multiplies in on top via frame-alpha inheritance
+local MULTI_BEAM_ALPHA = 0.2
+local MULTI_BEAM_MIN, MULTI_BEAM_MAX = 28, 119
 
 -- ---------------------------------------------------------------------------
 -- pure helpers (exposed on pfQuest.pins for the harness)
@@ -186,6 +207,51 @@ local function StepMode(state, visible, dist, now)
   return state.mode
 end
 
+-- extras fade ramp: solid inside MULTI_SOLID, linear down to the MULTI_FLOOR
+-- at MULTI_RADIUS (never to zero -- an invisible pin that still occupies a
+-- cap slot would be a bug, not a fade). pinsopacity multiplies at apply time.
+local function MultiAlpha(dist)
+  if dist <= MULTI_SOLID then return 1 end
+  if dist >= MULTI_RADIUS then return MULTI_FLOOR end
+  return 1 + (MULTI_FLOOR - 1) * (dist - MULTI_SOLID) / (MULTI_RADIUS - MULTI_SOLID)
+end
+
+-- screen-space overlap collapse for the extras (compass MergeOverlaps adapted
+-- to 2D): an extra whose plate center lands within mergeR of the ROUTE
+-- TARGET's drawn plate (rx/ry; nil while the navigator holds the target --
+-- extras near the orbit point are not actually overlapping anything) or of an
+-- earlier KEPT extra hides behind it. The list arrives sorted (class asc,
+-- dist asc, CapInsert semantics), so earlier = more important: route always
+-- wins, then priority/nearness. Merged or hidden extras suppress nothing
+-- (several markers at one spot ARE one destination -- the survivor marks it).
+-- Pure over slots: reads show/ux/uy, sets e.merged only.
+local function MergeScreenOverlaps(slots, rx, ry, mergeR)
+  local n = slots.n or 0
+  local r2 = mergeR * mergeR
+  for i = 1, n do
+    local e = slots[i]
+    e.merged = nil
+    if e.show then
+      if rx then
+        local dx, dy = e.ux - rx, e.uy - ry
+        if dx * dx + dy * dy < r2 then e.merged = true end
+      end
+      if not e.merged then
+        for k = 1, i - 1 do
+          local o = slots[k]
+          if o.show and not o.merged then
+            local dx, dy = e.ux - o.ux, e.uy - o.uy
+            if dx * dx + dy * dy < r2 then
+              e.merged = true
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- widgets, created once at load (zero allocations in the steady path).
 -- BACKGROUND strata: these are world-attached visuals and must never cover
@@ -213,8 +279,7 @@ waypoint.beam:SetTexture("Interface\\BUTTONS\\WHITE8X8")
 waypoint.beam:SetWidth(4)
 waypoint.beam:SetHeight(120)
 waypoint.beam:SetPoint("BOTTOM", waypoint, "CENTER", 0, 0)
--- 0.35 base alpha: at 0.75 the first in-game shots read as a solid column
-waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], 0.35,
+waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], BEAM_ALPHA,
                                accent[1], accent[2], accent[3], 0)
 -- born hidden: the .on dirty-flags below only HIDE what they have shown, so a
 -- region that starts shown with pinsbeam off would never be put away
@@ -376,6 +441,273 @@ local lastPinNode, pinText, lastPinDistKey
 local sizeMul, scaleMin, scaleMax, navRadius = 1, SCALE_MIN, SCALE_MAX, NAV_RADIUS
 local lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax, lastCfgOp, lastCfgNavR, lastCfgNavS
 
+-- multi settings + driver state in ONE table: the OnUpdate closure brushes
+-- Lua 5.1's 60-upvalue limit, so the multi layer contributes three upvalues
+-- (ms, MultiTick, MultiSleep) instead of eleven scattered locals
+local ms = {
+  MAX = MULTI_MAX,
+  on = false, cap = 4, beam = true, active = nil,
+  op = 1, -- pinsopacity snapshot, multiplied into the extras' distance fade
+  cfgOn = nil, cfgCap = nil, cfgBeam = nil, -- raw-string dirty keys
+  lastTarget = nil, lastQueue = nil, lastZone = nil, lastCap = nil,
+  nextRebuild = 0,
+}
+
+-- ---------------------------------------------------------------------------
+-- multi-pin extras (pinsmulti, experimental): an AMBIENT layer of up to
+-- pinsmulticap additional plates beyond the route target, drawn from the
+-- compass taxonomy via the shared pfQuest.compass.EachZoneNode walk --
+-- turn-ins (ready only), active objectives and available givers, honoring the
+-- compass's per-class toggles; dungeon entrances and the corpse never reach
+-- this layer (the walk yields neither, and the route already follows the
+-- corpse while dead). Plain conditions, no per-extra state machine, no
+-- navigator: an off-screen or out-of-radius extra simply hides.
+-- ---------------------------------------------------------------------------
+
+local mlist = { n = 0 }
+local mpool, mpoolsize = {}, 0
+local mframes = {}
+
+local function GetMEntry()
+  if mpoolsize > 0 then
+    local e = mpool[mpoolsize]
+    mpool[mpoolsize] = nil
+    mpoolsize = mpoolsize - 1
+    return e
+  end
+  return {}
+end
+
+local function RepoolM(e)
+  mpoolsize = mpoolsize + 1
+  mpool[mpoolsize] = e
+end
+
+-- pooled widgets, created ONCE on the first enabled tick (pinsmulti off costs
+-- zero frames): the compass plate housing, a subordinate beam and a distance
+-- fontstring only the nearest extra ever shows. Beam gradient base is
+-- MULTI_BEAM_ALPHA set once here -- the per-extra distance fade rides the
+-- FRAME's alpha, which children inherit, so the steady path never re-issues
+-- SetGradientAlpha.
+local function BuildMultiPool()
+  for i = 1, MULTI_MAX do
+    local f = CreateFrame("Frame", nil, UIParent)
+    f:SetFrameStrata("BACKGROUND")
+    f:SetWidth(MULTI_BASE)
+    f:SetHeight(MULTI_BASE)
+    f.beam = f:CreateTexture(nil, "BORDER")
+    f.beam:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+    f.beam:SetWidth(3)
+    f.beam:SetHeight(MULTI_BEAM_MIN)
+    f.beam:SetPoint("BOTTOM", f, "CENTER", 0, 0)
+    f.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], MULTI_BEAM_ALPHA,
+                            accent[1], accent[2], accent[3], 0)
+    f.beam:Hide() -- born hidden (the .on dirty-flag rule)
+    f.fill = f:CreateTexture(nil, "ARTWORK")
+    f.fill:SetTexture(PATH .. "\\img\\marker_fill")
+    f.fill:SetAllPoints(f)
+    f.fill:SetVertexColor(bg[1], bg[2], bg[3], 0.9)
+    f.edge = f:CreateTexture(nil, "ARTWORK")
+    f.edge:SetTexture(PATH .. "\\img\\marker_edge")
+    f.edge:SetAllPoints(f)
+    f.edge:SetVertexColor(accent[1], accent[2], accent[3], 1)
+    f.icon = f:CreateTexture(nil, "OVERLAY")
+    f.icon:SetWidth(12)
+    f.icon:SetHeight(12)
+    f.icon:SetPoint("CENTER", f, "CENTER", 0, 0)
+    f.dtext = f:CreateFontString(nil, "OVERLAY")
+    f.dtext:SetFont(font, 11, "OUTLINE")
+    f.dtext:SetTextColor(0.9, 0.9, 0.9, 1)
+    f.dtext:SetPoint("TOP", f, "BOTTOM", 0, -2)
+    f.dtext:Hide()
+    f:Hide()
+    mframes[i] = f
+  end
+end
+
+-- rebuild sink for EachZoneNode, a fixed closure (zero rebuild allocations);
+-- ranking is CapInsert semantics (class asc, dist asc) in WORLD YARDS, and
+-- the show radius culls here so cap slots never go to unreachable extras
+local sinkPx, sinkPy, sinkW, sinkH, sinkSkipX, sinkSkipY, sinkCapInsert
+local MULTI_RADIUS2 = MULTI_RADIUS * MULTI_RADIUS
+local function MultiSink(x, y, class, tab)
+  -- the route target's own cell already wears the full waypoint treatment
+  if sinkSkipX and x == sinkSkipX and y == sinkSkipY then return end
+  local dx = (x / 100 - sinkPx) * sinkW
+  local dy = (y / 100 - sinkPy) * sinkH
+  local d2 = dx * dx + dy * dy
+  if d2 > MULTI_RADIUS2 then return end
+  local e = GetMEntry()
+  e.class, e.key, e.x, e.y, e.dist2 = class, tab, x, y, d2
+  e.show = nil
+  local ev = sinkCapInsert(mlist, ms.cap, e)
+  if ev then RepoolM(ev) end
+end
+
+local function RebuildMulti(pxf, pyf, target)
+  for i = 1, mlist.n do
+    RepoolM(mlist[i])
+    mlist[i] = nil
+  end
+  mlist.n = 0
+  mlist.rebind = true
+  -- the provider lives in compass.lua (the module, NOT the compass setting:
+  -- EachZoneNode is a plain function, live whether the strip is enabled or
+  -- not); without it, or without zone size data, extras honestly stay empty
+  local api = pfQuest.compass
+  if not api or not api.EachZoneNode then return end
+  local size = pfMap and pfMap.minimap_sizes and pfMap.minimap_sizes[zoneID]
+  if not size or not size[1] or not size[2] then return end
+  sinkCapInsert = api.CapInsert
+  sinkPx, sinkPy, sinkW, sinkH = pxf, pyf, size[1], size[2]
+  sinkSkipX = target and target[1] or nil
+  sinkSkipY = target and target[2] or nil
+  api.EachZoneNode(zoneID, MultiSink)
+end
+
+local function MultiSleep()
+  if not ms.active then return end
+  ms.active = nil
+  ms.nextRebuild = 0 -- wake rebuilds immediately
+  ms.lastTarget, ms.lastQueue, ms.lastZone = nil, nil, nil
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    if f then
+      if f.on then
+        f.on = nil
+        f:Hide()
+      end
+      if f.dtext.on then
+        f.dtext.on = nil
+        f.dtext:Hide()
+      end
+    end
+  end
+end
+
+-- per-tick extras pass: project + fade + merge + apply for at most MULTI_MAX
+-- plates inside the existing 0.02s cap. rx/ry is the route pin's drawn plate
+-- position (nil in navigator mode). Strings/sizes/show-hide all dirty-keyed;
+-- the SetPoint cannot be (the camera moves every frame).
+local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
+  if not mframes[1] then BuildMultiPool() end
+  ms.active = true
+
+  -- rebuild triggers, the compass driver's set: route-target identity, node
+  -- writes (pfMap.queue_update), zone change, cap change, 1s heartbeat
+  local queue = pfMap and pfMap.queue_update
+  if target ~= ms.lastTarget or queue ~= ms.lastQueue
+     or zoneID ~= ms.lastZone or ms.cap ~= ms.lastCap
+     or now > ms.nextRebuild then
+    ms.lastTarget, ms.lastQueue = target, queue
+    ms.lastZone, ms.lastCap = zoneID, ms.cap
+    ms.nextRebuild = now + 1
+    RebuildMulti(pxf, pyf, target)
+  end
+
+  local n = mlist.n
+  for i = 1, n do
+    local e = mlist[i]
+    e.show = nil
+    local ex, ey = PercentToWorld(pxf, pyf, e.x, e.y, wx, wy, zoneID)
+    if ex then
+      local sx, sy, vis = WorldToScreen(ex, ey, wz)
+      if sx and vis then
+        local dxw, dyw = ex - wx, ey - wy
+        local d = sqrt(dxw * dxw + dyw * dyw)
+        -- the player moves between rebuilds: re-check the show radius live
+        if d <= MULTI_RADIUS then
+          e.show = true
+          e.dist = d
+          e.ux, e.uy = ToUiCoords(sx, sy, uiw, uih)
+        end
+      end
+    end
+  end
+  MergeScreenOverlaps(mlist, rx, ry, MULTI_MERGE)
+
+  local rebind = mlist.rebind
+  mlist.rebind = nil
+  local nearestIdx, nearestDist
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    local e = i <= n and mlist[i] or nil
+    if e and e.show and not e.merged then
+      if rebind or f.key ~= e.key then
+        f.key = e.key
+        BindIcon(f.icon, e.key)
+      end
+      f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", e.ux, e.uy)
+      -- extras shrink with range exactly like the main pin (same clamps)
+      local size = floor(MULTI_BASE * sizeMul * ScaleForDistance(e.dist, scaleMin, scaleMax) + 0.5)
+      if size ~= f.lastSize then
+        f.lastSize = size
+        f:SetWidth(size)
+        f:SetHeight(size)
+        local isz = floor(size * 0.6 + 0.5)
+        f.icon:SetWidth(isz)
+        f.icon:SetHeight(isz)
+      end
+      local a = MultiAlpha(e.dist) * ms.op
+      if a ~= f.lastA then
+        f.lastA = a
+        f:SetAlpha(a)
+      end
+      -- subordinate beam: distance-driven height like the main beam, tighter
+      -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance
+      if ms.beam then
+        local bh = floor(e.dist + 0.5)
+        if bh < MULTI_BEAM_MIN then bh = MULTI_BEAM_MIN
+        elseif bh > MULTI_BEAM_MAX then bh = MULTI_BEAM_MAX end
+        if bh ~= f.lastBeamH then
+          f.lastBeamH = bh
+          f.beam:SetHeight(bh)
+        end
+        if not f.beam.on then
+          f.beam.on = true
+          f.beam:Show()
+        end
+      elseif f.beam.on then
+        f.beam.on = nil
+        f.beam:Hide()
+      end
+      if not f.on then
+        f.on = true
+        f:Show()
+      end
+      if MULTI_NEAREST_DIST and (not nearestDist or e.dist < nearestDist) then
+        nearestDist, nearestIdx = e.dist, i
+      end
+    elseif f.on then
+      f.on = nil
+      f:Hide()
+    end
+  end
+
+  -- the single nearest shown extra gets a small distance line (exploration
+  -- knob MULTI_NEAREST_DIST); everything else is plate+icon only
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    if i == nearestIdx then
+      local metric = pfQuest_config["compassmetric"] == "1"
+      local shownD = metric and (nearestDist * 0.9144) or nearestDist
+      local rounded = floor(shownD + 0.5)
+      local key = metric and -rounded or rounded
+      if key ~= f.lastDistKey then
+        f.lastDistKey = key
+        f.dtext:SetText(rounded .. (metric and " m" or " yd"))
+      end
+      if not f.dtext.on then
+        f.dtext.on = true
+        f.dtext:Show()
+      end
+    elseif f.dtext and f.dtext.on then
+      f.dtext.on = nil
+      f.dtext:Hide()
+    end
+  end
+end
+
 local driver = CreateFrame("Frame", nil, UIParent)
 pins.driver = driver
 
@@ -388,6 +720,7 @@ local function Sleep()
   waypoint:Hide()
   pinpoint:Hide()
   navigator:Hide()
+  MultiSleep()
 end
 
 driver:SetScript("OnUpdate", function()
@@ -411,19 +744,30 @@ driver:SetScript("OnUpdate", function()
   local cfgOp = pfQuest_config["pinsopacity"]
   local cfgNavR = pfQuest_config["pinsnavradius"]
   local cfgNavS = pfQuest_config["pinsnavsize"]
+  local cfgMulti = pfQuest_config["pinsmulti"]
+  local cfgMultiCap = pfQuest_config["pinsmulticap"]
+  local cfgMultiBeam = pfQuest_config["pinsmultibeam"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
-     or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS then
+     or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
+     or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
+     or cfgMultiBeam ~= ms.cfgBeam then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
+    ms.cfgOn, ms.cfgCap, ms.cfgBeam = cfgMulti, cfgMultiCap, cfgMultiBeam
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
     -- a crossed pair collapses to the max value instead of inverting the ramp
     if scaleMin > scaleMax then scaleMin = scaleMax end
     navRadius = Clamp(cfgNavR, 50, 400, 140)
-    -- whole-tier opacity: one SetAlpha per element, every child rides along
+    ms.on = cfgMulti == "1"
+    ms.cap = Clamp(cfgMultiCap, 1, ms.MAX, 4)
+    ms.beam = cfgMultiBeam ~= "0"
+    -- whole-tier opacity: one SetAlpha per element, every child rides along;
+    -- the extras multiply it into their distance fade per tick instead
     local a = Clamp(cfgOp, 10, 100, 100) / 100
+    ms.op = a
     waypoint:SetAlpha(a)
     pinpoint:SetAlpha(a)
     navigator:SetAlpha(a)
@@ -506,9 +850,11 @@ driver:SetScript("OnUpdate", function()
   end
 
   local uiw, uih = UIParent:GetWidth(), UIParent:GetHeight()
+  -- the projected target point in UI units, shared by all three modes (and
+  -- by the extras' merge pass as the route pin's drawn position)
+  local ux, uy = ToUiCoords(sx, sy, uiw, uih)
 
   if mode == "waypoint" then
-    local ux, uy = ToUiCoords(sx, sy, uiw, uih)
     waypoint:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ux, uy)
 
     -- distance-based plate scale, dirty on the rounded pixel size
@@ -585,7 +931,6 @@ driver:SetScript("OnUpdate", function()
       lastEtaKey = nil
     end
   elseif mode == "pinpoint" then
-    local ux, uy = ToUiCoords(sx, sy, uiw, uih)
     pinpoint:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ux, uy)
 
     -- descending chevron animation: linear fall over ~1.1s, staggered half a
@@ -631,7 +976,6 @@ driver:SetScript("OnUpdate", function()
     -- navigator: orbit the screen center at a fixed radius along the target's
     -- screen direction -- the invisible-but-updating WorldToScreen coords ARE
     -- the bearing (spec)
-    local ux, uy = ToUiCoords(sx, sy, uiw, uih)
     local a = NavigatorAngle(ux, uy, uiw * 0.5, uih * 0.5)
     navigator:SetPoint("CENTER", UIParent, "BOTTOMLEFT",
                        uiw * 0.5 + cos(a) * navRadius, uih * 0.5 + sin(a) * navRadius)
@@ -640,6 +984,18 @@ driver:SetScript("OnUpdate", function()
       lastNavAngle = a
       AimChevron(navigator.chevron, a)
     end
+  end
+
+  -- multi-pin extras (experimental ambient layer): in navigator mode the
+  -- route pin is drawn at the orbit point, not at ux/uy, so no merge ref
+  if ms.on then
+    if mode == "navigator" then
+      MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, nil, nil)
+    else
+      MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, ux, uy)
+    end
+  elseif ms.active then
+    MultiSleep()
   end
 end)
 
@@ -656,3 +1012,16 @@ pins.EtaFor = EtaFor
 pins.FormatEta = FormatEta
 pins.NavigatorAngle = NavigatorAngle
 pins.StepMode = StepMode
+pins.MultiAlpha = MultiAlpha
+pins.MergeScreenOverlaps = MergeScreenOverlaps
+pins.multilist = mlist
+pins.multiframes = mframes
+-- the tunables, exposed so the harness can pin relationships (extras beams
+-- subordinate to the main beam) without transcribing constants
+pins.tunables = {
+  BEAM_ALPHA = BEAM_ALPHA, BEAM_MIN = BEAM_MIN, BEAM_MAX = BEAM_MAX,
+  MULTI_MAX = MULTI_MAX, MULTI_RADIUS = MULTI_RADIUS, MULTI_SOLID = MULTI_SOLID,
+  MULTI_FLOOR = MULTI_FLOOR, MULTI_MERGE = MULTI_MERGE, MULTI_BASE = MULTI_BASE,
+  MULTI_NEAREST_DIST = MULTI_NEAREST_DIST, MULTI_BEAM_ALPHA = MULTI_BEAM_ALPHA,
+  MULTI_BEAM_MIN = MULTI_BEAM_MIN, MULTI_BEAM_MAX = MULTI_BEAM_MAX,
+}
