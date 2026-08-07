@@ -127,7 +127,7 @@ synthesis IS the sane default; a mode knob would just relitigate it).
 
 ## Units
 
-`compassmetric` config ("Compass Bar: Metric Distances (meters)"), default off
+`compassmetric` config ("Metric Distances (meters)" in the Compass Bar settings section), default off
 (yards — WoW's native unit). Conversion at display time only.
 
 ## Explicitly out of scope (and why)

@@ -54,6 +54,13 @@ local reset = {
 }
 
 -- default config
+-- Reforged: the flat option list outgrew a single column (60+ rows once the
+-- tracker, compass and pins landed), so rows are grouped into sections by the
+-- "header" entries and the config window shows ONE section at a time behind a
+-- sidebar (see CreateConfigEntries). Only ORDER and header placement changed
+-- here -- every config key, default and widget type is identical to the old
+-- flat list, so saved variables stay compatible. `desc` is an optional
+-- one-line hint rendered under the caption of a non-obvious row.
 pfQuest_defconfig = {
   { -- 1: All Quests; 2: Tracked; 3: Manual; 4: Hide
     config = "trackingmethod",
@@ -71,28 +78,25 @@ pfQuest_defconfig = {
   { text = L["General"], default = nil, type = "header" },
   { text = L["Enable World Map Menu"], default = "1", type = "checkbox", config = "worldmapmenu" },
   { text = L["Enable Minimap Button"], default = "1", type = "checkbox", config = "minimapbutton" },
+  { text = L["Enable Quest Log Buttons"], default = "1", type = "checkbox", config = "questlogbuttons" },
+  { text = L["Enable Quest Link Support"], default = "1", type = "checkbox", config = "questlinks" },
+  { text = L["Show Level On Quest Log"], default = "0", type = "checkbox", config = "questloglevel" },
+
+  { text = L["Quest Tracker"], default = nil, type = "header" },
   -- Default the pfQuest tracker OFF when GW2 UI is present -- GW2 UI has its
   -- own quest tracker and the maintainer wants that one used instead. Only a
   -- NEW/never-set value picks this up (existing saved configs keep their
   -- choice), and standalone installs still default it ON.
   { text = L["Enable Quest Tracker"], default = (pfQuestTheme and pfQuestTheme.gw2) and "0" or "1", type = "checkbox", config = "showtracker" },
-  { text = L["Enable Quest Log Buttons"], default = "1", type = "checkbox", config = "questlogbuttons" },
-  { text = L["Enable Quest Link Support"], default = "1", type = "checkbox", config = "questlinks" },
-  { text = L["Show Database IDs"], default = "0", type = "checkbox", config = "showids" },
-  { text = L["Draw Favorites On Login"], default = "0", type = "checkbox", config = "favonlogin" },
-  { text = L["Minimum Item Drop Chance"], default = "1", type = "text", config = "mindropchance" },
-  { text = L["Show Tooltips"], default = "1", type = "checkbox", config = "showtooltips" },
-  { text = L["Show Help On Tooltips"], default = "1", type = "checkbox", config = "tooltiphelp" },
   { text = L["Show Level On Quest Tracker"], default = "1", type = "checkbox", config = "trackerlevel" },
-  { text = L["Show Level On Quest Log"], default = "0", type = "checkbox", config = "questloglevel" },
-
-  { text = L["Questing"], default = nil, type = "header" },
-  { text = L["Quest Tracker Visibility"], default = "0", type = "text", config = "trackeralpha" },
+  { text = L["Quest Tracker Visibility"], desc = L["Row background opacity from 0 to 1"], default = "0", type = "text", config = "trackeralpha" },
   { text = L["Quest Tracker Font Size"], default = "12", type = "text", config = "trackerfontsize" },
   { text = L["Quest Tracker Max Width"], default = "300", type = "text", config = "trackerwidth" },
   { text = L["Quest Tracker Scale"], default = "1", type = "text", config = "trackerscale" },
   { text = L["Quest Tracker Progress Bars"], default = "1", type = "checkbox", config = "trackerbars" },
   { text = L["Quest Tracker Unfold Objectives"], default = "0", type = "checkbox", config = "trackerexpand" },
+
+  { text = L["Map & Minimap"], default = nil, type = "header" },
   { text = L["Quest Objective Spawn Points (World Map)"], default = "1", type = "checkbox", config = "showspawn" },
   {
     text = L["Quest Objective Spawn Points (Mini Map)"],
@@ -102,23 +106,14 @@ pfQuest_defconfig = {
   },
   { text = L["Quest Objective Icons (World Map)"], default = "1", type = "checkbox", config = "showcluster" },
   { text = L["Quest Objective Icons (Mini Map)"], default = "0", type = "checkbox", config = "showclustermini" },
+  { text = L["Enable Minimap Nodes"], default = "1", type = "checkbox", config = "minimapnodes" },
   { text = L["Display Available Quest Givers"], default = "1", type = "checkbox", config = "allquestgivers" },
   { text = L["Display Current Quest Givers"], default = "1", type = "checkbox", config = "currentquestgivers" },
   { text = L["Display Low Level Quest Givers"], default = "0", type = "checkbox", config = "showlowlevel" },
   { text = L["Display Level+3 Quest Givers"], default = "0", type = "checkbox", config = "showhighlevel" },
   { text = L["Display Event & Daily Quests"], default = "0", type = "checkbox", config = "showfestival" },
-  { text = L["Compass Bar (HorizonCompass)"], default = "0", type = "checkbox", config = "compass" },
-  { text = L["Compass Bar Width"], default = "420", type = "text", config = "compasswidth" },
-  { text = L["Compass Bar: Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
-  { text = L["Compass Bar Scale"], default = "1", type = "text", config = "compassscale" },
-  { text = L["Compass Bar: Show Available Quests"], default = "1", type = "checkbox", config = "compassavail" },
-  { text = L["Compass Bar: Show Quest Turn-Ins"], default = "1", type = "checkbox", config = "compassturnin" },
-  { text = L["Compass Bar: Show Dungeon Entrances"], default = "0", type = "checkbox", config = "compassdungeon" },
-  { text = L["Compass Bar: Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
-  { text = L["Compass Bar: Marker Cap"], default = "8", type = "text", config = "compasscap" },
 
-  { text = L["Map & Minimap"], default = nil, type = "header" },
-  { text = L["Enable Minimap Nodes"], default = "1", type = "checkbox", config = "minimapnodes" },
+  { text = L["Node Appearance"], default = nil, type = "header" },
   { text = L["Use Icons For Tracking Nodes"], default = "1", type = "checkbox", config = "trackingicons" },
   { text = L["Use Monochrome Cluster Icons"], default = "0", type = "checkbox", config = "clustermono" },
   { text = L["Use Cut-Out Minimap Node Icons"], default = "1", type = "checkbox", config = "cutoutminimap" },
@@ -128,8 +123,24 @@ pfQuest_defconfig = {
   { text = L["Minimap Node Transparency"], default = "1.0", type = "text", config = "minimaptransp" },
   { text = L["World Map Node Size"], default = "14", type = "slider", config = "worldmapNodeSize", min = 8, max = 24, step = 1, format = "%dpx" },
   { text = L["Minimap Node Size"], default = "14", type = "slider", config = "minimapNodeSize", min = 8, max = 24, step = 1, format = "%dpx" },
-  { text = L["Node Fade Transparency"], default = "0.3", type = "text", config = "nodefade" },
+  { text = L["Node Fade Transparency"], desc = L["Node opacity while faded, 0 to 1"], default = "0.3", type = "text", config = "nodefade" },
   { text = L["Highlight Nodes On Mouseover"], default = "1", type = "checkbox", config = "mouseover" },
+
+  { text = L["Tooltips"], default = nil, type = "header" },
+  { text = L["Show Tooltips"], default = "1", type = "checkbox", config = "showtooltips" },
+  { text = L["Show Help On Tooltips"], default = "1", type = "checkbox", config = "tooltiphelp" },
+  { text = L["Show Database IDs"], default = "0", type = "checkbox", config = "showids" },
+
+  { text = L["Compass Bar"], default = nil, type = "header" },
+  { text = L["Enable Compass Bar"], desc = L["Quest directions on a bar at the top of the screen"], default = "0", type = "checkbox", config = "compass" },
+  { text = L["Bar Width"], default = "420", type = "text", config = "compasswidth" },
+  { text = L["Bar Scale"], default = "1", type = "text", config = "compassscale" },
+  { text = L["Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
+  { text = L["Show Available Quests"], default = "1", type = "checkbox", config = "compassavail" },
+  { text = L["Show Quest Turn-Ins"], default = "1", type = "checkbox", config = "compassturnin" },
+  { text = L["Show Dungeon Entrances"], default = "0", type = "checkbox", config = "compassdungeon" },
+  { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
+  { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], default = "8", type = "text", config = "compasscap" },
 
   { text = L["Routes"], default = nil, type = "header" },
   { text = L["Show Route Between Objects"], default = "1", type = "checkbox", config = "routes" },
@@ -140,7 +151,9 @@ pfQuest_defconfig = {
   { text = L["Show Arrow Along Routes"], default = "1", type = "checkbox", config = "arrow" },
   { text = L["Arrow Scale"], default = "1.0", type = "slider", config = "arrowscale", min = 0.5, max = 3.0, step = 0.1 },
 
-  { text = L["User Data"], default = nil, type = "header" },
+  { text = L["Database & Advanced"], default = nil, type = "header" },
+  { text = L["Draw Favorites On Login"], default = "0", type = "checkbox", config = "favonlogin" },
+  { text = L["Minimum Item Drop Chance"], desc = L["Hide drops below this percent chance"], default = "1", type = "text", config = "mindropchance" },
   { text = L["Reset Configuration"], default = "1", type = "button", func = reset.config },
   { text = L["Reset Quest History"], default = "1", type = "button", func = reset.history },
   { text = L["Reset Cache"], default = "1", type = "button", func = reset.cache },
@@ -148,31 +161,34 @@ pfQuest_defconfig = {
 }
 
 -- In-world pins (docs/PINS-DESIGN.md, stage 2): the tier is hidden ENTIRELY
--- without the WorldAPI DLL, settings rows included -- feature-detect by type,
--- never a version global. Inserted after the compass block so the questing
--- section stays grouped; reverse-order inserts land in reading order
--- pins/size/minscale/maxscale/opacity/pointsize/beam/navradius/navsize.
+-- without the WorldAPI DLL, settings rows AND its sidebar section included --
+-- feature-detect by type, never a version global. Inserted after the compass
+-- section (its rows end at compasscap); reverse-order inserts land in reading
+-- order header/pins/size/minscale/maxscale/opacity/pointsize/beam/navradius/
+-- navsize, so the section header comes first.
 if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world navigator size"], default = "100", type = "text", config = "pinsnavsize" })
+        { text = L["Navigator Size"], default = "100", type = "text", config = "pinsnavsize" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world navigator orbit radius"], default = "140", type = "text", config = "pinsnavradius" })
+        { text = L["Navigator Orbit Radius"], default = "140", type = "text", config = "pinsnavradius" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pin light beam"], default = "1", type = "checkbox", config = "pinsbeam" })
+        { text = L["Pin Light Beam"], default = "1", type = "checkbox", config = "pinsbeam" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pinpoint size"], default = "100", type = "text", config = "pinspointsize" })
+        { text = L["Pinpoint Size"], default = "100", type = "text", config = "pinspointsize" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pin opacity"], default = "100", type = "text", config = "pinsopacity" })
+        { text = L["Pin Opacity"], default = "100", type = "text", config = "pinsopacity" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pin maximum scale"], default = "150", type = "text", config = "pinsmaxscale" })
+        { text = L["Maximum Pin Scale"], default = "150", type = "text", config = "pinsmaxscale" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pin minimum scale"], default = "50", type = "text", config = "pinsminscale" })
+        { text = L["Minimum Pin Scale"], default = "50", type = "text", config = "pinsminscale" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world pin size"], default = "100", type = "text", config = "pinssize" })
+        { text = L["Pin Size"], desc = L["Percent, 100 is the default size"], default = "100", type = "text", config = "pinssize" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["In-world waypoint pins"], default = "0", type = "checkbox", config = "pins" })
+        { text = L["Enable Waypoint Pins"], desc = L["Needs the WorldAPI DLL (WorldToScreen)"], default = "0", type = "checkbox", config = "pins" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world Pins"], default = nil, type = "header" })
       break
     end
   end
