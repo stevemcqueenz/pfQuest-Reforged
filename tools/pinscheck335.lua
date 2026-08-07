@@ -36,6 +36,10 @@ local wts
 _G.GetPlayerMapPosition = function() return posx, posy end
 _G.GetRealZoneText = function() return zonename end
 _G.GetUnitSpeed = function() return speed end
+-- corpse seam (A1): alive by default; the corpse-override block flips these
+local dead, corpsex, corpsey = nil, 0, 0
+_G.UnitIsDeadOrGhost = function() return dead end
+_G.GetCorpseMapPosition = function() return corpsex, corpsey end
 -- the stub's GetTime is frozen at 1000; the pins perf cap (perfTick = now +
 -- 0.02, route.lua:515 idiom) would then skip every fire after the first, so
 -- advance time on each read to keep the real per-frame path exercised.

@@ -434,6 +434,18 @@ local zoneName, zoneID
 local state = {}
 local shownMode
 local speedAvg
+-- corpse override target (A1, docs/PINS-DESIGN.md): ONE persistent tuple in
+-- the route target's {x, y, node} shape, coords rewritten in place per tick --
+-- the identity stays stable so the icon/text rebinds fire once, not per
+-- frame. The node mirrors the compass corpse marker (the same skull art,
+-- compass.lua:640); PinpointText falls through to the title, so the pinpoint
+-- reads "Your corpse" at near range. Carried on the pins table, NOT a new
+-- local: the OnUpdate closure sits at Lua 5.1's 60-upvalue limit and pins is
+-- already captured.
+pins.corpseTarget = { 0, 0, {
+  title = pfQuest_Loc and pfQuest_Loc["Your corpse"] or "Your corpse",
+  texture = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+} }
 local lastNode, lastWaySize, lastBeamH, lastDistKey, lastEtaKey, lastNavAngle
 local lastPinNode, pinText, lastPinDistKey
 -- parsed settings snapshot, refreshed only when a raw config string changes
@@ -795,7 +807,30 @@ driver:SetScript("OnUpdate", function()
   local pxf, pyf = GetPlayerMapPosition("player")
   -- 0,0 = indoors/instance/other map viewed: the percent->world anchor pair
   -- is invalid, so every pin position would lie (compass indoor rule)
-  if not target or (pxf == 0 and pyf == 0) then
+  if pxf == 0 and pyf == 0 then
+    Sleep()
+    return
+  end
+
+  -- corpse pylon (A1): while dead/ghost the tier targets the CORPSE with
+  -- absolute priority (the compass CLASS_CORPSE rule), unconditional while
+  -- pins are on -- nothing else matters mid-corpse-run, so the extras hide
+  -- too (the corpseRun gate below). GetCorpseMapPosition returns map
+  -- fractions and 0,0 when the corpse is on another map (both 3.3.5a-native,
+  -- the compass.lua:635 seam); read as globals, not upvalue-cached locals --
+  -- this OnUpdate closure brushes Lua 5.1's 60-upvalue limit.
+  local corpseRun
+  if UnitIsDeadOrGhost("player") then
+    corpseRun = true
+    local cx, cy = GetCorpseMapPosition()
+    if cx and cy and not (cx == 0 and cy == 0) then
+      local ct = pins.corpseTarget
+      ct[1], ct[2] = cx * 100, cy * 100
+      target = ct
+    end
+  end
+
+  if not target then
     Sleep()
     return
   end
@@ -987,8 +1022,12 @@ driver:SetScript("OnUpdate", function()
   end
 
   -- multi-pin extras (experimental ambient layer): in navigator mode the
-  -- route pin is drawn at the orbit point, not at ux/uy, so no merge ref
-  if ms.on then
+  -- route pin is drawn at the orbit point, not at ux/uy, so no merge ref.
+  -- While dead the extras hide ENTIRELY (A1 corpse-run rule): the corpse is
+  -- the only thing that matters, ambient plates are noise next to it.
+  if corpseRun then
+    if ms.active then MultiSleep() end
+  elseif ms.on then
     if mode == "navigator" then
       MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, nil, nil)
     else
