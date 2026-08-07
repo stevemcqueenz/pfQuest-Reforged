@@ -529,6 +529,60 @@ local function TintFor(class, tab, plevel)
   return 1, 1, 1
 end
 
+-- shared taxonomy walk (the strip AND the in-world multi-pins, pins.lua):
+-- enumerate the zone's classified pfMap cells -- one candidate per coord cell
+-- (the minimap shows one pin there too), the most important classified node
+-- winning within a cell, the compassavail/compassturnin toggles honored --
+-- and hand each to sink(x, y, class, tab). Selection POLICY (cap, ranking
+-- metric, show radius) deliberately stays per-consumer: the strip ranks in
+-- aspect-corrected map percent, the pins in world yards.
+local function EachZoneNode(zid, sink)
+  if not zid or not pfMap or not pfMap.nodes then return end
+  local showAvail = pfQuest_config["compassavail"] ~= "0"
+  local showTurnin = pfQuest_config["compassturnin"] ~= "0"
+  for _, zones in pairs(pfMap.nodes) do
+    local zone = zones[zid]
+    if zone then
+      for coords, cell in pairs(zone) do
+        local best, bestclass
+        for _, tab in pairs(cell) do
+          local class = ClassifyNode(tab.texture)
+          if class == CLASS_AVAIL and not showAvail then class = nil end
+          if class == CLASS_TURNIN and not showTurnin then class = nil end
+          if class and (not bestclass or class < bestclass) then
+            best, bestclass = tab, class
+          end
+        end
+        if best then
+          local x, y = ParseCoords(coords)
+          sink(x, y, bestclass, best)
+        end
+      end
+    end
+  end
+end
+
+-- BuildMarkers' sink for EachZoneNode: a fixed closure (zero rebuild
+-- allocations) -- per-walk state travels in these upvalues, set right before
+-- the walk
+local walkPx, walkPy, walkPlevel, walkTarget, walkCap
+local function StripSink(x, y, class, tab)
+  -- the route-target marker already stands on this cell
+  if walkTarget and x == walkTarget[1] and y == walkTarget[2] then return end
+  local e = GetEntry()
+  e.class, e.key, e.title = class, tab, tab.title
+  e.x, e.y = x, y
+  e.icon = tab.texture
+  e.tr, e.tg, e.tb = TintFor(class, tab, walkPlevel)
+  e.badge = IsEventOrDaily(tab)
+  e.desc = tab.description
+  e.qlvl = tab.qlvl
+  local dx, dy = (x - walkPx) * 1.5, y - walkPy
+  e.dist2 = dx * dx + dy * dy
+  local ev = CapInsert(list, walkCap, e)
+  if ev then Repool(ev) end
+end
+
 -- dungeon entrances: the meta DB's meeting stones stand at instance portals
 -- (db/meta.lua "meetingstone", negative object ids). Static per zone, so the
 -- object-coord scan runs once per zone change, never per rebuild.
@@ -611,45 +665,11 @@ local function BuildMarkers(xp, yp, target, dead)
     if ev then Repool(ev) end
   end
 
-  -- zone scan: one marker per coord cell (the minimap shows one pin there
-  -- too); within a cell the most important classified node wins
-  if zoneID and pfMap and pfMap.nodes then
-    local showAvail = pfQuest_config["compassavail"] ~= "0"
-    local showTurnin = pfQuest_config["compassturnin"] ~= "0"
-    for _, zones in pairs(pfMap.nodes) do
-      local zone = zones[zoneID]
-      if zone then
-        for coords, cell in pairs(zone) do
-          local best, bestclass
-          for _, tab in pairs(cell) do
-            local class = ClassifyNode(tab.texture)
-            if class == CLASS_AVAIL and not showAvail then class = nil end
-            if class == CLASS_TURNIN and not showTurnin then class = nil end
-            if class and (not bestclass or class < bestclass) then
-              best, bestclass = tab, class
-            end
-          end
-          if best then
-            local x, y = ParseCoords(coords)
-            -- the route-target marker already stands on this cell
-            if not (target and x == target[1] and y == target[2]) then
-              local e = GetEntry()
-              e.class, e.key, e.title = bestclass, best, best.title
-              e.x, e.y = x, y
-              e.icon = best.texture
-              e.tr, e.tg, e.tb = TintFor(bestclass, best, plevel)
-              e.badge = IsEventOrDaily(best)
-              e.desc = best.description
-              e.qlvl = best.qlvl
-              local dx, dy = (x - px) * 1.5, y - py
-              e.dist2 = dx * dx + dy * dy
-              local ev = CapInsert(list, cap, e)
-              if ev then Repool(ev) end
-            end
-          end
-        end
-      end
-    end
+  -- zone scan via the shared taxonomy walk (per-cell classification lives in
+  -- EachZoneNode; the strip's ranking/pooling lives in StripSink)
+  if zoneID then
+    walkPx, walkPy, walkPlevel, walkTarget, walkCap = px, py, plevel, target, cap
+    EachZoneNode(zoneID, StripSink)
   end
 
   -- dungeon entrances (default off: ambient info)
@@ -984,6 +1004,7 @@ compass.CapInsert = CapInsert
 compass.SelectLabel = SelectLabel
 compass.MergeOverlaps = MergeOverlaps
 compass.BuildMarkers = BuildMarkers
+compass.EachZoneNode = EachZoneNode
 compass.list = list
 compass.markers = markers
 compass.CLASS = {

@@ -119,7 +119,9 @@ ok("%s loads and builds its frame", COMPASS_FILE)
 local compass = pfQuest and pfQuest.compass
 check(type(compass) == "table", "pfQuest.compass exists (contract: public surface)")
 local missing = 0
-for _, m in ipairs({ "ProjectOffset", "BearingTo", "YardsTo", "UpdateSettings" }) do
+-- EachZoneNode is the SHARED taxonomy provider (pins.lua consumes it too):
+-- its presence is part of the contract, not an implementation detail
+for _, m in ipairs({ "ProjectOffset", "BearingTo", "YardsTo", "UpdateSettings", "EachZoneNode" }) do
   local has = compass and type(compass[m]) == "function"
   check(has, "pfQuest.compass.%s is a function", m)
   if not has then missing = missing + 1 end
