@@ -349,40 +349,89 @@ function pfQuestConfig:MigrateHistory()
   end
 end
 
-local maxh, maxw = 0, 0
-local width, height = 230, 22
+-- Reforged: sectioned layout. The old renderer flowed ALL rows into 22-row
+-- columns, which stopped scaling once the tracker/compass/pins options landed
+-- (60+ rows, three dense columns). Headers now define sections; each section
+-- gets a sidebar button on the left and its rows render in a single pane on
+-- the right, one section visible at a time. Plain frames and buttons only --
+-- no scroll frames, no templates beyond UICheckButtonTemplate (as before).
+local rowheight = 24
+local descheight = 14
 local maxtext = 130
 local configframes = {}
+local sections = {}
+
+function pfQuestConfig:ShowSection(index)
+  local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }
+  for i = 1, getn(sections) do
+    local active = (i == index)
+    local rows = sections[i].rows
+    for j = 1, getn(rows) do
+      if active then
+        rows[j]:Show()
+      else
+        rows[j]:Hide()
+      end
+    end
+    if sections[i].tab then
+      if active then
+        sections[i].tab.text:SetTextColor(a[1], a[2], a[3], 1)
+      else
+        sections[i].tab.text:SetTextColor(1, 1, 1, 1)
+      end
+    end
+  end
+
+  if sections[index] then
+    pfQuestConfig.sectiontitle:SetText(sections[index].name)
+    pfQuestConfig.activesection = index
+  end
+end
+
 function pfQuestConfig:CreateConfigEntries(config)
   local count = 1
   local hasSlider = false
+  local section = nil
 
   for _, data in pairs(config) do
-    if data.type then
+    -- header: opens a new section instead of rendering a row
+    if data.type == "header" then
+      section = { name = data.text, rows = {} }
+      table.insert(sections, section)
+
+    elseif data.type then
       -- basic frame
       local frame = CreateFrame("Frame", "pfQuestConfig" .. count, pfQuestConfig)
+      frame:Hide()
       configframes[data.text] = frame
+      if section then
+        table.insert(section.rows, frame)
+      end
 
       -- caption
       frame.caption = frame:CreateFontString("Status", "LOW", "GameFontWhite")
       frame.caption:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
-      frame.caption:SetPoint("LEFT", 20, 0)
       frame.caption:SetJustifyH("LEFT")
       frame.caption:SetText(data.text)
       maxtext = max(maxtext, frame.caption:GetStringWidth())
 
-      -- header
-      if data.type == "header" then
-        frame.caption:SetPoint("LEFT", 10, 0)
-        -- Reforged: read the shared theme accent (gold under GW2 UI, teal
-        -- standalone) instead of a hardcoded teal, so the config matches the
-        -- rest of the addon's palette.
-        local a = pfQuestTheme and pfQuestTheme.accent or { 0.3, 1, 0.8 }
-        frame.caption:SetTextColor(a[1], a[2], a[3])
-        frame.caption:SetFont(pfUI.font_default, pfUI_config.global.font_size + 2, "OUTLINE")
+      -- optional hint line below the caption for non-obvious rows
+      if data.desc then
+        frame.tall = true
+        frame.caption:SetPoint("TOPLEFT", 8, -4)
+        frame.desc = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+        frame.desc:SetFont(pfUI.font_default, pfUI_config.global.font_size - 2, "OUTLINE")
+        frame.desc:SetPoint("TOPLEFT", 8, -19)
+        frame.desc:SetJustifyH("LEFT")
+        frame.desc:SetTextColor(0.6, 0.6, 0.6, 1)
+        frame.desc:SetText(data.desc)
+        maxtext = max(maxtext, frame.desc:GetStringWidth())
+      else
+        frame.caption:SetPoint("LEFT", 8, 0)
+      end
 
       -- checkbox
-      elseif data.type == "checkbox" then
+      if data.type == "checkbox" then
         frame.input = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
         frame.input:SetNormalTexture("")
         frame.input:SetPushedTexture("")
@@ -391,7 +440,7 @@ function pfQuestConfig:CreateConfigEntries(config)
 
         frame.input:SetWidth(16)
         frame.input:SetHeight(16)
-        frame.input:SetPoint("RIGHT", -20, 0)
+        frame.input:SetPoint("RIGHT", -8, 0)
 
         frame.input.config = data.config
         if pfQuest_config[data.config] == "1" then
@@ -407,15 +456,37 @@ function pfQuestConfig:CreateConfigEntries(config)
 
           pfQuest:ResetAll()
         end)
+
+        -- Reforged: the whole row is the hit target, not just the 16px box.
+        -- An overlay button above the checkbox forwards clicks via :Click()
+        -- (native Button method, 1.12+), so the label toggles too and the
+        -- caption lights up in the accent color on hover.
+        frame.hit = CreateFrame("Button", nil, frame)
+        frame.hit:SetAllPoints(frame)
+        frame.hit:SetFrameLevel(frame.input:GetFrameLevel() + 1)
+        frame.hit.input = frame.input
+        frame.hit.caption = frame.caption
+        frame.hit:SetScript("OnClick", function()
+          this.input:Click()
+        end)
+        frame.hit:SetScript("OnEnter", function()
+          local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }
+          this.caption:SetTextColor(a[1], a[2], a[3], 1)
+        end)
+        frame.hit:SetScript("OnLeave", function()
+          this.caption:SetTextColor(1, 1, 1, 1)
+        end)
       elseif data.type == "text" then
         -- input field
         frame.input = CreateFrame("EditBox", nil, frame)
         local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }; frame.input:SetTextColor(a[1], a[2], a[3], 1)
         frame.input:SetJustifyH("RIGHT")
         frame.input:SetTextInsets(5, 5, 5, 5)
-        frame.input:SetWidth(32)
+        -- Reforged: 50px instead of 32 -- three-digit values (compass width
+        -- 420, pin percents) did not fit the old box.
+        frame.input:SetWidth(50)
         frame.input:SetHeight(16)
-        frame.input:SetPoint("RIGHT", -20, 0)
+        frame.input:SetPoint("RIGHT", -8, 0)
         frame.input:SetFontObject(GameFontNormal)
         frame.input:SetAutoFocus(false)
         frame.input:SetScript("OnEscapePressed", function(self)
@@ -444,7 +515,7 @@ function pfQuestConfig:CreateConfigEntries(config)
         frame.input:SetOrientation("HORIZONTAL")
         frame.input:SetWidth(60)
         frame.input:SetHeight(16)
-        frame.input:SetPoint("RIGHT", -20, 0)
+        frame.input:SetPoint("RIGHT", -8, 0)
         frame.input:EnableMouse(true)
         frame.input:SetMinMaxValues(minval, maxval)
         frame.input:SetValueStep(data.step)
@@ -452,7 +523,10 @@ function pfQuestConfig:CreateConfigEntries(config)
         frame.input.thumb = frame.input:GetThumbTexture()
         frame.input.thumb:SetHeight(14)
         frame.input.thumb:SetWidth(8)
-        frame.input.thumb:SetTexture(0.3, 1, 0.8, 0.5)
+        -- Reforged: thumb follows the theme accent (gold under GW2 UI)
+        -- instead of hardcoded teal.
+        local ta = pfQuestTheme and pfQuestTheme.accent or { 0.3, 1, 0.8 }
+        frame.input.thumb:SetTexture(ta[1], ta[2], ta[3], 0.5)
         pfUI.api.CreateBackdrop(frame.input, nil, true)
 
         frame.input.config = config
@@ -498,9 +572,9 @@ function pfQuestConfig:CreateConfigEntries(config)
         hasSlider = true
       elseif data.type == "button" and data.func then
         frame.input = CreateFrame("Button", nil, frame)
-        frame.input:SetWidth(32)
+        frame.input:SetWidth(44)
         frame.input:SetHeight(16)
-        frame.input:SetPoint("RIGHT", -20, 0)
+        frame.input:SetPoint("RIGHT", -8, 0)
         frame.input:SetScript("OnClick", data.func)
         frame.input.text = frame.input:CreateFontString("Caption", "LOW", "GameFontWhite")
         frame.input.text:SetAllPoints(frame.input)
@@ -523,34 +597,77 @@ function pfQuestConfig:CreateConfigEntries(config)
     end
   end
 
-  -- update sizes / positions
-  width = maxtext + (hasSlider and 140 or 100)
-  local column, row = 1, 0
-
-  for _, data in pairs(config) do
-    if data.type then
-      -- empty line for headers, next column for > 20 entries
-      row = row + (data.type == "header" and row > 1 and 2 or 1)
-      if row > 22 and data.type == "header" then
-        column, row = column + 1, 1
-      end
-
-      -- update max size values
-      maxw, maxh = max(maxw, column), max(maxh, row)
-
-      -- align frames to sizings
-      local spacer = (column - 1) * 20
-      local x, y = (column - 1) * width, -(row - 1) * height
-      local frame = configframes[data.text]
-      frame:SetWidth(width)
-      frame:SetHeight(height)
-      frame:SetPoint("TOPLEFT", pfQuestConfig, "TOPLEFT", x + spacer + 10, y - 40)
-    end
+  -- sidebar: one button per section
+  local a = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1, 0.8 }
+  local sidebarwidth = 110
+  for i = 1, getn(sections) do
+    local tab = CreateFrame("Button", "pfQuestConfigTab" .. i, pfQuestConfig)
+    tab:SetHeight(24)
+    tab:SetID(i)
+    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+    tab.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+    tab.text:SetPoint("LEFT", 8, 0)
+    tab.text:SetJustifyH("LEFT")
+    tab.text:SetText(sections[i].name)
+    sidebarwidth = max(sidebarwidth, tab.text:GetStringWidth() + 24)
+    pfUI.api.SkinButton(tab, a[1], a[2], a[3])
+    tab:SetScript("OnClick", function()
+      pfQuestConfig:ShowSection(this:GetID())
+    end)
+    sections[i].tab = tab
   end
 
-  local spacer = (maxw - 1) * 20
-  pfQuestConfig:SetWidth(maxw * width + spacer + 20)
-  pfQuestConfig:SetHeight(maxh * height + 100)
+  for i = 1, getn(sections) do
+    sections[i].tab:SetWidth(sidebarwidth)
+    sections[i].tab:SetPoint("TOPLEFT", 10, -36 - (i - 1) * 26)
+  end
+
+  -- pane geometry: sidebar left, section title + rows right
+  local panewidth = maxtext + (hasSlider and 150 or 110)
+  local paneleft = 10 + sidebarwidth + 14
+
+  -- vertical separator between sidebar and pane
+  pfQuestConfig.separator = pfQuestConfig:CreateTexture(nil, "BORDER")
+  pfQuestConfig.separator:SetTexture(a[1], a[2], a[3], 0.15)
+  pfQuestConfig.separator:SetWidth(1)
+  pfQuestConfig.separator:SetPoint("TOPLEFT", 10 + sidebarwidth + 7, -36)
+
+  -- active section title above the rows, underlined in the accent color
+  pfQuestConfig.sectiontitle = pfQuestConfig:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+  pfQuestConfig.sectiontitle:SetFont(pfUI.font_default, pfUI_config.global.font_size + 2, "OUTLINE")
+  pfQuestConfig.sectiontitle:SetPoint("TOPLEFT", paneleft + 8, -42)
+  pfQuestConfig.sectiontitle:SetJustifyH("LEFT")
+  pfQuestConfig.sectiontitle:SetTextColor(a[1], a[2], a[3], 1)
+
+  pfQuestConfig.sectionline = pfQuestConfig:CreateTexture(nil, "BORDER")
+  pfQuestConfig.sectionline:SetTexture(a[1], a[2], a[3], 0.35)
+  pfQuestConfig.sectionline:SetHeight(1)
+  pfQuestConfig.sectionline:SetPoint("TOPLEFT", paneleft, -60)
+  pfQuestConfig.sectionline:SetWidth(panewidth)
+
+  -- lay out each section's rows from the pane top; sections overlap, only
+  -- the active one is shown (ShowSection)
+  local contentheight = 0
+  for i = 1, getn(sections) do
+    local y = 0
+    local rows = sections[i].rows
+    for j = 1, getn(rows) do
+      local h = rows[j].tall and (rowheight + descheight) or rowheight
+      rows[j]:SetWidth(panewidth)
+      rows[j]:SetHeight(h)
+      rows[j]:SetPoint("TOPLEFT", pfQuestConfig, "TOPLEFT", paneleft, -68 - y)
+      y = y + h
+    end
+    contentheight = max(contentheight, y)
+  end
+
+  -- window size: fixed, driven by the tallest section and the sidebar
+  local body = max(68 + contentheight, 36 + getn(sections) * 26)
+  pfQuestConfig:SetWidth(max(paneleft + panewidth + 14, 360))
+  pfQuestConfig:SetHeight(body + 52)
+  pfQuestConfig.separator:SetHeight(body - 30)
+
+  pfQuestConfig:ShowSection(1)
 end
 
 function pfQuestConfig:UpdateConfigEntries()
