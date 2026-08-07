@@ -157,5 +157,50 @@ check(okb, "DoLayout() with progress bars disabled%s", okb and "" or " -> errore
 pfQuest_config["trackerbars"] = "1"
 pfQuest_config["trackerscale"] = "1"
 
+-- ---------------------------------------------------------------------------
+-- enable-mid-session sliver (QA screenshot): tracker.lua hides the tracker at
+-- load, and everything above -- ButtonAdd, ButtonEvent, DoLayout with its
+-- closing bar-Refresh pass -- ran while it was HIDDEN, exactly like a session
+-- where the tracker option is off. On 3.3.5a a two-point-anchored region does
+-- not resolve its width inside a hidden hierarchy (GetWidth lies until shown),
+-- so every fill painted during that phase is wrong; when the player then
+-- enables the tracker, the dark track snaps to full width (it is anchored, it
+-- self-heals on show) but the fill keeps its stale explicit width -- the
+-- sliver. The tracker must re-apply the bars when it becomes visible.
+-- ---------------------------------------------------------------------------
+local byTitle = {}
+for _, b in pairs(tracker.buttons or {}) do
+  if not b.empty and b.title then byTitle[b.title] = b end
+end
+local full, partial = byTitle["Distress Call"], byTitle["Nick of Time"]
+
+check(full and full.bar and full.bar.pct and full.bar.pct >= 0.999,
+      "the 8/8 quest carries pct=1 on its bar (got %s)",
+      tostring(full and full.bar and full.bar.pct))
+check(not tracker:IsShown(), "tracker is still hidden (the disabled-tracker session)")
+check(full and full.bar.track:GetWidth() == 0,
+      "hidden hierarchy: track width unresolved (got %s)",
+      tostring(full and full.bar.track:GetWidth()))
+
+-- the player enables the tracker mid-session
+tracker:Show()
+_G.this = tracker
+tracker:Fire("OnShow")
+_G.this = nil
+
+local trackw = full and full.bar.track:GetWidth() or 0
+check(trackw > 50, "shown: track width resolves (got %s)", tostring(trackw))
+local fillw = full and full.bar.fill:GetWidth() or 0
+check(full and full.bar.fill:IsShown() and math.abs(fillw - trackw) < 0.5,
+      "100%% fill spans the track after enabling mid-session (fill %s vs track %s)",
+      tostring(fillw), tostring(trackw))
+if partial then
+  local ptrack = partial.bar.track:GetWidth() or 0
+  local pfill = partial.bar.fill:GetWidth() or 0
+  check(partial.bar.fill:IsShown() and math.abs(pfill - ptrack * 0.3) < 0.5,
+        "3/10 fill is 30%% of the track after enabling (fill %s vs track %s)",
+        tostring(pfill), tostring(ptrack))
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

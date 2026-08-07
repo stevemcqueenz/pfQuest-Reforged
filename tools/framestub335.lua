@@ -61,11 +61,24 @@ local function applySize(o)
   function o.GetAlpha(s) return s.alpha or 1 end
   function o.ClearAllPoints(s) s.points = {} end
   function o.SetAllPoints(s, rel) s.anchorTo = rel; s.fullWidth = true end
+  -- 3.3.5a fact: a region whose size derives from two-point anchors does NOT
+  -- resolve while its frame hierarchy is hidden -- GetWidth() lies (0/stale)
+  -- until the frame is actually shown. That is the mechanism behind the
+  -- enable-mid-session sliver bug (bars refreshed while the tracker was
+  -- hidden), so the stub models it instead of resolving anchors regardless.
+  local function effectivelyShown(o)
+    while o do
+      if o.shown == false then return false end
+      o = o.parent
+    end
+    return true
+  end
   local function anchoredWidth(s)
     local p = s.points
     local left = p.LEFT or p.TOPLEFT or p.BOTTOMLEFT
     local right = p.RIGHT or p.TOPRIGHT or p.BOTTOMRIGHT
     if not (left and right) then return nil end
+    if not effectivelyShown(s) then return nil end
     local host = s.anchorTo
     local hw = host and host.GetWidth and host:GetWidth() or 0
     if hw <= 0 then return nil end
@@ -87,7 +100,8 @@ local function applySize(o)
 end
 
 local function mkFontString(parent)
-  local fs = { w = 0, h = 12, shown = true, text = "" }
+  -- parent kept: effective visibility (and thus anchor resolution) walks it
+  local fs = { w = 0, h = 12, shown = true, text = "", parent = parent }
   applySize(fs)
   function fs.SetText(s, t) s.text = t or ""
     -- width proportional to text length: the tracker sizes itself from this
@@ -97,8 +111,8 @@ local function mkFontString(parent)
   return setmetatable(fs, { __index = methodTable(FRAME_NOOPS) })
 end
 
-local function mkTexture()
-  local t = { w = 0, h = 0, shown = true }
+local function mkTexture(parent)
+  local t = { w = 0, h = 0, shown = true, parent = parent }
   applySize(t)
   function t.SetTexture(s, ...) s.tex = ... end
   function t.GetTexture(s) return s.tex end
@@ -120,7 +134,7 @@ function M.CreateFrame(ftype, name, parent, template)
   function f.GetScale(s) return s.scale or 1 end
   function f.CreateFontString(s, ...) local fs = mkFontString(s)
     s.children[#s.children + 1] = fs; return fs end
-  function f.CreateTexture(s, ...) local t = mkTexture()
+  function f.CreateTexture(s, ...) local t = mkTexture(s)
     s.children[#s.children + 1] = t; return t end
   function f.GetName(s) return s.name end
   function f.GetParent(s) return s.parent end

@@ -224,6 +224,15 @@ tracker:SetScript("OnShow", function()
     this:ClearAllPoints()
     this:SetPoint(unpack(pfQuest_config.trackerpos))
   end
+
+  -- Reforged: rows keep refreshing while the tracker is hidden (disabled
+  -- tracker option), but on 3.3.5a a two-point-anchored region does not
+  -- resolve its width inside a hidden hierarchy -- the bars' track width
+  -- read 0/stale, so every fill painted then is a sliver (QA screenshot:
+  -- enable mid-session, 100% quests showed ~20px of green). The widths are
+  -- real again the moment the tracker is visible, so re-run the layout here;
+  -- DoLayout ends by re-applying every bar from the resolved track width.
+  tracker.DoLayout()
 end)
 
 tracker:SetScript("OnHide", function()
