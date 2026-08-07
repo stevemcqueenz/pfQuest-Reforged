@@ -140,6 +140,13 @@ pfQuest_defconfig = {
   { text = L["Show Quest Turn-Ins"], default = "1", type = "checkbox", config = "compassturnin" },
   { text = L["Show Dungeon Entrances"], default = "0", type = "checkbox", config = "compassdungeon" },
   { text = L["Show Rare Spawns"], desc = L["Ambient rare mob spawn points from the database"], default = "0", type = "checkbox", config = "compassrares" },
+  -- Utility POIs (phase B3): a row cluster INSIDE the Compass Bar section,
+  -- not a sidebar section of its own -- two rows do not carry a tab, and the
+  -- In-world Pins insertion below anchors on compasscap staying this
+  -- section's last row. These govern only the AMBIENT mode; the minimap
+  -- tracking mirror and /way flight|mail|inn|repair work regardless.
+  { text = L["Show Utility POIs"], desc = L["Ambient flight, mail, inn and repair markers"], default = "0", type = "checkbox", config = "compasspoi" },
+  { text = L["Utility POIs Only In Cities"], desc = L["Ambient utility POIs only inside capital cities"], default = "1", type = "checkbox", config = "poicityonly" },
   { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
   { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], default = "8", type = "text", config = "compasscap" },
 
