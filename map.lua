@@ -561,6 +561,21 @@ function pfMap:GetMapNameByID(id)
   return pfDB["zones"]["loc"][id] or nil
 end
 
+-- Memoized current-player-zone id: GetMapIDByName is a linear scan over every
+-- zone name in the DB and three Reforged surfaces (compass, pins, waypoint)
+-- need the answer per tick -- one cache here so their behavior can never
+-- drift (review finding). Returns id AND the raw zone text so callers that
+-- key their own rebuild triggers on the text (compass) stay exact.
+local playerZoneName, playerZoneID
+function pfMap:PlayerZoneID()
+  local rz = GetRealZoneText()
+  if rz ~= playerZoneName then
+    playerZoneName = rz
+    playerZoneID = pfMap:GetMapIDByName(rz)
+  end
+  return playerZoneID, playerZoneName
+end
+
 function pfMap:GetMapIDByName(search)
   for id, name in pairs(pfDB["zones"]["loc"]) do
     if name == search then

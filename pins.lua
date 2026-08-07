@@ -132,6 +132,7 @@ local function ScaleForDistance(dist, smin, smax)
   return smax + (smin - smax) * (dist - SCALE_NEAR) / (SCALE_FAR - SCALE_NEAR)
 end
 
+
 -- defensive settings parse (compass width idiom): a garbage string falls to
 -- the default, a number outside [lo, hi] clamps to the edge
 local function Clamp(v, lo, hi, def)
@@ -265,6 +266,20 @@ end
 -- ---------------------------------------------------------------------------
 
 local pins = {}
+
+-- display-time metric conversion shared by every distance line (waypoint,
+-- pinpoint fallback, extras) -- three hand-copies had already drifted into
+-- review findings. Returns the rounded display value, a signed dirty key
+-- (negative = metric, so flipping the option repaints without a distance
+-- change) and the unit suffix. A pins-table FIELD, not a file local: the
+-- driver closure sits at Lua 5.1's 60-upvalue ceiling and pins is already
+-- captured there.
+function pins.DistDisplay(dist)
+  local metric = pfQuest_config["compassmetric"] == "1"
+  local shown = metric and (dist * 0.9144) or dist
+  local rounded = floor(shown + 0.5)
+  return rounded, metric and -rounded or rounded, metric and " m" or " yd"
+end
 pfQuest.pins = pins
 
 local waypoint = CreateFrame("Frame", nil, UIParent)
@@ -848,13 +863,10 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
       lineDist = e.dist
     end
     if lineDist then
-      local metric = pfQuest_config["compassmetric"] == "1"
-      local shownD = metric and (lineDist * 0.9144) or lineDist
-      local rounded = floor(shownD + 0.5)
-      local key = metric and -rounded or rounded
+      local rounded, key, unit = pins.DistDisplay(lineDist)
       if key ~= f.lastDistKey then
         f.lastDistKey = key
-        f.dtext:SetText(rounded .. (metric and " m" or " yd"))
+        f.dtext:SetText(rounded .. unit)
       end
       if not f.dtext.on then
         f.dtext.on = true
@@ -994,13 +1006,9 @@ driver:SetScript("OnUpdate", function()
     end
   end
 
-  -- GetMapIDByName is a linear DB scan -- memoize by zone text (map.lua:1322).
+  -- current zone id via the shared memoizer (map.lua PlayerZoneID).
   -- Moved above the waypoint ladder: its zone gate needs zoneID.
-  local rz = GetRealZoneText()
-  if rz ~= zoneName then
-    zoneName = rz
-    zoneID = pfMap and pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
-  end
+  zoneID = pfMap and pfMap.PlayerZoneID and pfMap:PlayerZoneID() or nil
 
   -- custom waypoint (A2, waypoint.lua): preferred over the route target but
   -- NEVER over the corpse; only in its own zone (a cross-zone projection
@@ -1122,15 +1130,11 @@ driver:SetScript("OnUpdate", function()
       waypoint.beam:Hide()
     end
 
-    -- distance text: yards, or meters when compassmetric is on -- the same
-    -- display-time-only conversion as the strip (compass.lua:909)
-    local metric = pfQuest_config["compassmetric"] == "1"
-    local shownD = metric and (dist * 0.9144) or dist
-    local rounded = floor(shownD + 0.5)
-    local key = metric and -rounded or rounded
+    -- distance text: yards, or meters when compassmetric is on (DistDisplay)
+    local rounded, key, unit = pins.DistDisplay(dist)
     if key ~= lastDistKey then
       lastDistKey = key
-      waypoint.dist:SetText(rounded .. (metric and " m" or " yd"))
+      waypoint.dist:SetText(rounded .. unit)
     end
 
     -- ETA: distance over a short running average of GetUnitSpeed, so brief
@@ -1189,15 +1193,11 @@ driver:SetScript("OnUpdate", function()
       lastPinDistKey = nil
     end
     if not pinText then
-      -- last fallback: the same distance line as the waypoint (display-time
-      -- metric conversion, compass.lua:909), dirty on the rounded key
-      local metric = pfQuest_config["compassmetric"] == "1"
-      local shownD = metric and (dist * 0.9144) or dist
-      local rounded = floor(shownD + 0.5)
-      local key = metric and -rounded or rounded
+      -- last fallback: the same distance line as the waypoint (DistDisplay)
+      local rounded, key, unit = pins.DistDisplay(dist)
       if key ~= lastPinDistKey then
         lastPinDistKey = key
-        pinpoint.text:SetText(rounded .. (metric and " m" or " yd"))
+        pinpoint.text:SetText(rounded .. unit)
         FitPinPanel()
       end
     end

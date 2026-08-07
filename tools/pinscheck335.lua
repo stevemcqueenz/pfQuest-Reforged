@@ -103,6 +103,8 @@ local zonemap = { Testzone = 113, Nowhere = 999 }
 _G.pfMap = {
   minimap_sizes = { [113] = { 5450, 3633.3 } },
   GetMapIDByName = function(self, name) return zonemap[name] end,
+  -- mirrors map.lua's shared memoizer (id, zone text) the surfaces now call
+  PlayerZoneID = function(self) local rz = GetRealZoneText() return zonemap[rz], rz end,
   str2rgb = function() return 0.5, 0.5, 0.5 end,
   -- the zone node store the shared provider scans (pfMap.nodes[addon][zid]
   -- [coords][title] = meta) plus its rebuild trigger; filled per test case

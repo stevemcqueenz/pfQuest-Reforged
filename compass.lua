@@ -993,13 +993,15 @@ driver:SetScript("OnUpdate", function()
   local xp, yp = GetPlayerMapPosition("player")
   local facing = GetFacing()
 
-  -- GetMapIDByName is a linear scan over every zone name in the DB -- memoize
-  -- by the raw zone-text string, same as the minimap loop (map.lua:1322)
+  -- current zone via the shared memoizer (map.lua PlayerZoneID); the rebuild
+  -- trigger keys on the raw zone TEXT exactly as before (a nil-id pair of
+  -- unmapped zones must still rebuild on transition)
   local rebuild
-  local rz = GetRealZoneText()
-  if rz ~= zoneName then
-    zoneName = rz
-    zoneID = pfMap and pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
+  local zid, zname = nil, nil
+  if pfMap and pfMap.PlayerZoneID then zid, zname = pfMap:PlayerZoneID() end
+  if zname ~= zoneName then
+    zoneName = zname
+    zoneID = zid
     rebuild = true
   end
 

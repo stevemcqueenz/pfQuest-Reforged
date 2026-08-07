@@ -90,6 +90,8 @@ pfQuest.route.arrow.distance = pfQuest.route.arrow:CreateFontString()
 _G.pfMap = setmetatable({
   minimap_sizes = { [113] = { 5450, 3633.3 } },
   GetMapIDByName = function() return mapid end,
+  -- mirrors map.lua's shared memoizer (id, zone text) the surfaces now call
+  PlayerZoneID = function(self) return mapid, GetRealZoneText() end,
   -- the zone node store the providers scan: pfMap.nodes[addon][zoneID]
   -- [coords]["title"] = node meta (map.lua:643-651); empty by default, test
   -- blocks fill it per case

@@ -149,15 +149,9 @@ function waypoint.Clear(reached)
   end
 end
 
--- current PLAYER zone id, memoized by zone text (map.lua:1322 idiom)
-local zoneName, zoneID
+-- current PLAYER zone id -- the shared memoizer (map.lua PlayerZoneID)
 local function CurrentZoneID()
-  local rz = GetRealZoneText()
-  if rz ~= zoneName then
-    zoneName = rz
-    zoneID = pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
-  end
-  return zoneID
+  return pfMap and pfMap.PlayerZoneID and pfMap:PlayerZoneID() or nil
 end
 
 -- the /way argument grammar, one string so the three notice sites can never
