@@ -105,3 +105,22 @@ db/minimap-wotlk335.lua fit derivation). Settings: `pins` (off), `pinssize`
 `tools/pinscheck335.lua` (check.sh gate 6). In-game QA gates: the ToUiCoords
 1024x768-base conclusion (one-line fix in `pins.lua` if widescreen drifts)
 and the beam's SetGradientAlpha look on untextured solids.
+
+## Stage 2 status (shipped on `dev`, in-game QA pending)
+
+The Pinpoint near-range handoff and the full settings surface. The state
+machine is three states now (waypoint / pinpoint / navigator, still pure and
+harness-driven): within ~30 yards the Waypoint hands off to the Pinpoint -- a
+smaller plate at the exact spot whose text is the OBJECTIVE line
+(`meta.description`, the same precomputed field the compass label and the
+route arrow print), falling back to the quest/node title and finally to the
+distance line, so it is never empty. The handoff carries the stage-1 ~0.25s
+hold PLUS a distance hysteresis band (enter below 28 yd, leave above 33 yd, a
+Schmitt trigger keyed on the committed mode) so walking along the threshold
+cannot flicker-swap; both mechanisms are negative-tested in the harness
+(zeroing either one fails its check). New settings, all live and defensively
+clamped: `pinsminscale` (50) / `pinsmaxscale` (150) wired into the distance
+scaling, `pinsopacity` (100) whole-tier alpha, `pinspointsize` (100),
+`pinsnavradius` (140), `pinsnavsize` (100). Rows exist only when the DLL is
+present, like stage 1. In-game QA gates unchanged from stage 1, plus the
+pinpoint handoff feel at the 28/33 band on a live client.
