@@ -148,3 +148,14 @@ expected marker set out (type, priority, clamped state). The corpse provider is
 drivable headless (fake `GetCorpseMapPosition`/`UnitIsDeadOrGhost`). Label
 policy is pure (list in, chosen-one out) — pin it numerically. Visuals stay
 in-game QA, as ever.
+
+## Phase A additions (shipped on `dev`, in-game QA pending)
+
+The taxonomy gained three classes: CLASS_WAYPOINT (2, the user's /way point
+from waypoint.lua -- star art in the accent tint, label as title, also the
+empty-window label fallback ahead of the route target), CLASS_RARE (8,
+below dungeon: the `pfDB.meta.rares` curated list resolved through the
+units DB, scanned once per zone change like the meeting stones, behind
+`compassrares`, default off) and CLASS_PARTY (9, exported for the pins
+tier only -- the strip never renders party members). ROUTE through DUNGEON
+shifted by one; consumers read `compass.CLASS`, never literals.

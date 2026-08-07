@@ -171,7 +171,7 @@ if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Show Party Members"], desc = L["Class colored plates on same zone party members"], default = "0", type = "checkbox", config = "pinsparty" })
+        { text = L["Show Party Members"], desc = L["Nearby party members, dead ones get a beam and distance"], default = "0", type = "checkbox", config = "pinsparty" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Dungeon Entrance Pins"], desc = L["Meeting stones join the extra pins"], default = "0", type = "checkbox", config = "pinsdungeon" })
       table.insert(pfQuest_defconfig, i + 1,

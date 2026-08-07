@@ -178,3 +178,52 @@ Open questions for the in-game QA round-trip:
 - Should extras carry titles? Hover is out per the compass no-mouse rule, so
   it would have to be always-on text -- likely too noisy; the nearest-only
   distance line is the current compromise.
+
+## Phase A (shipped on `dev`, in-game QA pending)
+
+**Corpse pylon (A1).** While `UnitIsDeadOrGhost("player")` and
+`GetCorpseMapPosition` returns non-zero, the pins tier retargets the CORPSE
+with the full waypoint/pinpoint/navigator treatment (skull icon, pinpoint
+text "Your corpse"); absolute priority, mirroring the compass CLASS_CORPSE
+rule, reverting on unghost. The multi-pin extras sleep entirely during the
+corpse run. No setting: unconditional while pins are on.
+
+**Custom waypoint (A2, `waypoint.lua`).** `/way 45 67 [label]` (map percent
+of the current zone; `/way` clears) or ALT+left-click on the world map
+canvas (ALT, not CTRL: holding CTRL over the map is already the
+hide-cluster gesture; ALT-clicking near the placed point clears). Stored in
+`pfQuest_config.customwaypoint = { x, y, zone, label }`, one point,
+persists relogs. Pins prefer it over the route target but never over the
+corpse; the compass renders it as CLASS_WAYPOINT (star art, accent tint,
+between corpse and route). Auto-clears within ~15 yd with a chat notice.
+
+**The route arrow DOES follow the waypoint, with zero route.lua changes.**
+Finding: no synthetic route.coords entry is needed -- pfQuest already has
+the machinery. The waypoint registers as a real pfMap node whose meta
+carries `arrow = true`, which `map.lua:1230` unconditionally admits into
+the route candidates on every UpdateNodes pass, and `route.SetTarget` on
+the stored node orders it first. The node also renders on the world map and
+minimap for free; clicking it (or ALT-clicking near it) clears the
+waypoint.
+
+**Ambient extras (A3/A5).** Rare spawns (`compassrares`, off) and dungeon
+meeting stones (`pinsdungeon`, off) join the multi-pin extras when
+`pinsmulti` is on, via per-zone cached DB scans in compass.lua (rares are
+NOT pfMap nodes unless explicitly tracked; `pfDB.meta.rares` is the curated
+unit-id list, vanilla+TBC coverage).
+
+**Party pins (A4, amended).** `pinsparty` (off; party only, never raid)
+rides the DLL's own `UnitPosition` on the party tokens: direct world
+coords, no zone-size dependency, and the ONE guidance surface that keeps
+working indoors and in dungeons, where `GetPlayerMapPosition` reads 0,0
+and the whole percent tier stands down (the driver sleeps the main
+elements but keeps ticking the world-anchored party layer). Alive members
+are quiet class-colored dot plates: no beam, no text, lowest merge
+priority. A DEAD member -- the primary use case is finding a body to
+resurrect in a dungeon -- is elevated above the ambient info classes
+(sorts between AVAIL and DUNGEON), wears the corpse pylon's skull art
+still class-tinted so identity survives, and carries a subordinate beam
+(independent of the `pinsmultibeam` experiment knob) plus its own distance
+line. An unresolvable member (other instance, out of object-manager range)
+simply has no pin: honest degrade, nothing fabricated. Positions poll at
+the rebuild cadence and project per tick like every other extra.

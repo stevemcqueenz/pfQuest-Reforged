@@ -559,37 +559,54 @@ local function MultiSink(x, y, class, tab)
   if d2 > MULTI_RADIUS2 then return end
   local e = GetMEntry()
   e.class, e.key, e.x, e.y, e.dist2 = class, tab, x, y, d2
+  -- pooled entry: a stale world flavor from a former party entry would
+  -- misroute the per-tick projection
+  e.wx, e.wy, e.wz = nil, nil, nil
   e.show = nil
   local ev = sinkCapInsert(mlist, ms.cap, e)
   if ev then RepoolM(ev) end
 end
 
--- party plates (A4, pinsparty): same-zone party members as small
--- class-colored plates -- no beam, no text, no navigator, lowest merge
--- priority. Positions are polled here at the rebuild cadence (the 1s
--- heartbeat; GetPlayerMapPosition takes party tokens on 3.3.5a, milkyway
--- api-functions.ts:24048 "a unit in the player's party or raid") and
--- projected per tick like every other extra. Party only, not raid; members
--- reporting 0,0 (other zone/instance) skip. One persistent node per slot,
--- vertex rewritten from RAID_CLASS_COLORS via the UnitClass FILE token (the
--- 3.3.5a 2-return shape -- never a classID third return).
+-- party plates (A4, pinsparty; amended): party members as small
+-- class-colored plates, positions from the DLL's OWN UnitPosition on the
+-- party tokens -- direct world yards, no zone-size dependency, and it keeps
+-- resolving INDOORS and in dungeons where GetPlayerMapPosition reads 0,0,
+-- which is the point: party pins are the one surface that works in
+-- instances. An unresolvable member (other instance, out of object-manager
+-- range) simply has no pin -- honest degrade, nothing fabricated. Polled at
+-- the rebuild cadence (1s heartbeat), projected per tick like every extra.
+-- Party only, not raid. One persistent node per slot, vertex rewritten from
+-- RAID_CLASS_COLORS via the UnitClass FILE token (the 3.3.5a 2-return
+-- shape -- never a classID third return).
+--   ALIVE member: quiet class-colored dot plate; no beam, no text.
+--   DEAD member (the maintainer's use case: find and resurrect a body in a
+--   dungeon): the skull art the corpse pylon already speaks
+--   (UI-TargetingFrame-Skull, no skull TGA ships in img/), still vertex-
+--   tinted in the class color so identity survives; priority ABOVE the
+--   ambient info classes (between AVAIL 6 and DUNGEON 7, hence 6.5 --
+--   classes only ever compare, they never index); a subordinate beam and a
+--   distance line so a healer can spot the body across the room.
 local partyNodes = {}
 local CLASS_PARTY = (pfQuest.compass and pfQuest.compass.CLASS and pfQuest.compass.CLASS.PARTY) or 9
-local function AddPartyEntries()
+local CLASS_PARTY_DEAD = 6.5
+local SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+local function AddPartyEntries(wx, wy)
   if GetNumRaidMembers() > 0 then return end
   local n = GetNumPartyMembers()
   if not n or n < 1 then return end
   if n > 4 then n = 4 end
   for i = 1, n do
     local unit = "party" .. i
-    local px, py = GetPlayerMapPosition(unit)
-    if px and py and not (px == 0 and py == 0) then
+    local mx, my, mzz = UnitPosition(unit)
+    if mx then
+      local pdead = UnitIsDeadOrGhost(unit)
       local node = partyNodes[i]
       if not node then
-        node = { texture = PATH .. "\\img\\node", vertex = { 1, 1, 1 } }
+        node = { vertex = { 1, 1, 1 } }
         partyNodes[i] = node
       end
       node.title = UnitName(unit)
+      node.texture = pdead and SKULL or (PATH .. "\\img\\node")
       local _, class = UnitClass(unit)
       local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
       local v = node.vertex
@@ -598,33 +615,44 @@ local function AddPartyEntries()
       else
         v[1], v[2], v[3] = 1, 1, 1
       end
-      MultiSink(px * 100, py * 100, CLASS_PARTY, node)
+      local dx, dy = mx - wx, my - wy
+      local d2 = dx * dx + dy * dy
+      if d2 <= MULTI_RADIUS2 then
+        local e = GetMEntry()
+        e.class = pdead and CLASS_PARTY_DEAD or CLASS_PARTY
+        e.key = node
+        e.x, e.y = nil, nil
+        e.wx, e.wy, e.wz = mx, my, mzz
+        e.dist2 = d2
+        e.show = nil
+        local ev = sinkCapInsert(mlist, ms.cap, e)
+        if ev then RepoolM(ev) end
+      end
     end
   end
 end
 
-local function RebuildMulti(pxf, pyf, target)
+local function RebuildMulti(pxf, pyf, target, wx, wy)
   for i = 1, mlist.n do
     RepoolM(mlist[i])
     mlist[i] = nil
   end
   mlist.n = 0
   mlist.rebind = true
-  -- the provider lives in compass.lua (the module, NOT the compass setting:
-  -- EachZoneNode is a plain function, live whether the strip is enabled or
-  -- not); without it, or without zone size data, extras honestly stay empty
   local api = pfQuest.compass
-  if not api or not api.EachZoneNode then return end
-  local size = pfMap and pfMap.minimap_sizes and pfMap.minimap_sizes[zoneID]
-  if not size or not size[1] or not size[2] then return end
+  if not api or not api.CapInsert then return end
   sinkCapInsert = api.CapInsert
-  sinkPx, sinkPy, sinkW, sinkH = pxf, pyf, size[1], size[2]
-  sinkSkipX = target and target[1] or nil
-  sinkSkipY = target and target[2] or nil
-  -- the quest taxonomy (and its rare/dungeon companions) belongs to the
-  -- pinsmulti experiment; party plates ride the same machinery but activate
-  -- on their own toggle, so each source gates itself
-  if ms.on then
+  -- the percent-anchored sources (quest taxonomy + rare/dungeon companions)
+  -- belong to the pinsmulti experiment and need an active main-tier target
+  -- (which implies a valid map anchor) plus zone size data; without either
+  -- they honestly stay empty. The provider lives in compass.lua (the
+  -- module, NOT the compass setting: EachZoneNode is a plain function, live
+  -- whether the strip is enabled or not).
+  local size = pfMap and pfMap.minimap_sizes and pfMap.minimap_sizes[zoneID]
+  if ms.on and target and api.EachZoneNode and size and size[1] and size[2] then
+    sinkPx, sinkPy, sinkW, sinkH = pxf, pyf, size[1], size[2]
+    sinkSkipX = target and target[1] or nil
+    sinkSkipY = target and target[2] or nil
     api.EachZoneNode(zoneID, MultiSink)
     -- A3 rare spawns: the compass's per-zone cached rare provider joins the
     -- extras when its strip toggle is on (compassrares governs the class
@@ -638,9 +666,10 @@ local function RebuildMulti(pxf, pyf, target)
       api.EachZoneDungeon(zoneID, MultiSink)
     end
   end
-  -- A4 party members
+  -- A4 party members: world-anchored, so no map anchor and no size data
+  -- needed -- this source works indoors
   if ms.party then
-    AddPartyEntries()
+    AddPartyEntries(wx, wy)
   end
 end
 
@@ -681,16 +710,24 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
     ms.lastTarget, ms.lastQueue = target, queue
     ms.lastZone, ms.lastCap = zoneID, ms.cap
     ms.nextRebuild = now + 1
-    RebuildMulti(pxf, pyf, target)
+    RebuildMulti(pxf, pyf, target, wx, wy)
   end
 
   local n = mlist.n
   for i = 1, n do
     local e = mlist[i]
     e.show = nil
-    local ex, ey = PercentToWorld(pxf, pyf, e.x, e.y, wx, wy, zoneID)
+    -- world-flavor entries (party, A4) carry their own DLL coords and z;
+    -- percent entries derive world yards off the player's anchor pair
+    local ex, ey, ez
+    if e.wx then
+      ex, ey, ez = e.wx, e.wy, e.wz or wz
+    else
+      ex, ey = PercentToWorld(pxf, pyf, e.x, e.y, wx, wy, zoneID)
+      ez = wz
+    end
     if ex then
-      local sx, sy, vis = WorldToScreen(ex, ey, wz)
+      local sx, sy, vis = WorldToScreen(ex, ey, ez)
       if sx and vis then
         local dxw, dyw = ex - wx, ey - wy
         local d = sqrt(dxw * dxw + dyw * dyw)
@@ -734,8 +771,18 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
       end
       -- subordinate beam: distance-driven height like the main beam, tighter
       -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance.
-      -- Party plates never beam (A4: plates only)
-      if ms.beam and e.class ~= CLASS_PARTY then
+      -- ALIVE party plates never beam; a DEAD member always beams (the
+      -- find-the-body cue, independent of the pinsmultibeam experiment
+      -- knob); everything else follows pinsmultibeam
+      local wantBeam
+      if e.class == CLASS_PARTY then
+        wantBeam = nil
+      elseif e.class == CLASS_PARTY_DEAD then
+        wantBeam = true
+      else
+        wantBeam = ms.beam
+      end
+      if wantBeam then
         local bh = floor(e.dist + 0.5)
         if bh < MULTI_BEAM_MIN then bh = MULTI_BEAM_MIN
         elseif bh > MULTI_BEAM_MAX then bh = MULTI_BEAM_MAX end
@@ -755,8 +802,9 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         f.on = true
         f:Show()
       end
-      -- party plates carry no text (A4), so they never take the line
-      if MULTI_NEAREST_DIST and e.class ~= CLASS_PARTY
+      -- party plates never take the nearest-extra line (A4): alive ones
+      -- carry no text at all, dead ones own a line of their own below
+      if MULTI_NEAREST_DIST and e.class ~= CLASS_PARTY and e.class ~= CLASS_PARTY_DEAD
          and (not nearestDist or e.dist < nearestDist) then
         nearestDist, nearestIdx = e.dist, i
       end
@@ -767,12 +815,21 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
   end
 
   -- the single nearest shown extra gets a small distance line (exploration
-  -- knob MULTI_NEAREST_DIST); everything else is plate+icon only
+  -- knob MULTI_NEAREST_DIST), and every shown DEAD party member gets its
+  -- own (A4 amendment: the healer wants the range to the body); everything
+  -- else is plate+icon only
   for i = 1, MULTI_MAX do
     local f = mframes[i]
+    local e = i <= n and mlist[i] or nil
+    local lineDist
     if i == nearestIdx then
+      lineDist = nearestDist
+    elseif e and f.on and e.show and not e.merged and e.class == CLASS_PARTY_DEAD then
+      lineDist = e.dist
+    end
+    if lineDist then
       local metric = pfQuest_config["compassmetric"] == "1"
-      local shownD = metric and (nearestDist * 0.9144) or nearestDist
+      local shownD = metric and (lineDist * 0.9144) or lineDist
       local rounded = floor(shownD + 0.5)
       local key = metric and -rounded or rounded
       if key ~= f.lastDistKey then
@@ -793,16 +850,22 @@ end
 local driver = CreateFrame("Frame", nil, UIParent)
 pins.driver = driver
 
-local function Sleep()
-  if not pins.on then return end
-  pins.on = nil
-  shownMode = nil
-  state.mode, state.pending = nil, nil -- wake adopts the raw flag instantly
-  speedAvg = nil
-  waypoint:Hide()
-  pinpoint:Hide()
-  navigator:Hide()
-  MultiSleep()
+-- mainOnly = true puts only the MAIN tier (waypoint/pinpoint/navigator) to
+-- sleep: the party layer is world-anchored (A4 amendment) and may keep
+-- ticking while the percent tier cannot render (indoors/dungeons). One
+-- function, not two -- the driver OnUpdate closure sits at Lua 5.1's
+-- 60-upvalue limit and a second sleep helper pushed it over.
+local function Sleep(mainOnly)
+  if pins.on then
+    pins.on = nil
+    shownMode = nil
+    state.mode, state.pending = nil, nil -- wake adopts the raw flag instantly
+    speedAvg = nil
+    waypoint:Hide()
+    pinpoint:Hide()
+    navigator:Hide()
+  end
+  if not mainOnly then MultiSleep() end
 end
 
 driver:SetScript("OnUpdate", function()
@@ -884,12 +947,12 @@ driver:SetScript("OnUpdate", function()
   local coords = pfQuest.route.coords
   local target = coords and coords[1] and coords[1][4] and coords[1] or nil
   local pxf, pyf = GetPlayerMapPosition("player")
-  -- 0,0 = indoors/instance/other map viewed: the percent->world anchor pair
-  -- is invalid, so every pin position would lie (compass indoor rule)
-  if pxf == 0 and pyf == 0 then
-    Sleep()
-    return
-  end
+  -- 0,0 = indoors/instance/other map viewed: every PERCENT-anchored pin
+  -- position would lie (compass indoor rule), so the main tier and the
+  -- percent extras stand down -- but NOT the whole driver anymore: the
+  -- party layer rides the DLL's own world coords and keeps working in
+  -- dungeons (A4 amendment; that is its primary use case)
+  local anchored = not (pxf == 0 and pyf == 0)
 
   -- corpse pylon (A1): while dead/ghost the tier targets the CORPSE with
   -- absolute priority (the compass CLASS_CORPSE rule), unconditional while
@@ -901,11 +964,13 @@ driver:SetScript("OnUpdate", function()
   local corpseRun
   if UnitIsDeadOrGhost("player") then
     corpseRun = true
-    local cx, cy = GetCorpseMapPosition()
-    if cx and cy and not (cx == 0 and cy == 0) then
-      local ct = pins.corpseTarget
-      ct[1], ct[2] = cx * 100, cy * 100
-      target = ct
+    if anchored then
+      local cx, cy = GetCorpseMapPosition()
+      if cx and cy and not (cx == 0 and cy == 0) then
+        local ct = pins.corpseTarget
+        ct[1], ct[2] = cx * 100, cy * 100
+        target = ct
+      end
     end
   end
 
@@ -920,7 +985,7 @@ driver:SetScript("OnUpdate", function()
   -- custom waypoint (A2, waypoint.lua): preferred over the route target but
   -- NEVER over the corpse; only in its own zone (a cross-zone projection
   -- would lie). Same persistent-tuple idiom as the corpse target.
-  if not corpseRun and pfQuest.waypoint then
+  if anchored and not corpseRun and pfQuest.waypoint then
     local wp = pfQuest.waypoint.Get()
     if wp and wp.zone == zoneID then
       local wt = pins.wayTarget
@@ -929,19 +994,36 @@ driver:SetScript("OnUpdate", function()
     end
   end
 
-  if not target then
-    Sleep()
-    return
-  end
+  -- without the map anchor no percent target (route/waypoint/corpse) can
+  -- render, whatever the ladder picked
+  if not anchored then target = nil end
 
   local wx, wy, wz = UnitPosition("player")
   if not wx then
     Sleep()
     return
   end
+
+  if not target then
+    -- nothing for the main tier: it sleeps alone; the world-anchored party
+    -- layer may keep ticking (unless the corpse run silences all extras)
+    Sleep(true)
+    if ms.party and not corpseRun then
+      MultiTick(now, wx, wy, wz, pxf, pyf, UIParent:GetWidth(), UIParent:GetHeight(), nil, nil, nil)
+    else
+      MultiSleep()
+    end
+    return
+  end
+
   local tX, tY = PercentToWorld(pxf, pyf, target[1], target[2], wx, wy, zoneID)
   if not tX then
-    Sleep()
+    Sleep(true)
+    if ms.party and not corpseRun then
+      MultiTick(now, wx, wy, wz, pxf, pyf, UIParent:GetWidth(), UIParent:GetHeight(), nil, nil, nil)
+    else
+      MultiSleep()
+    end
     return
   end
 

@@ -103,7 +103,7 @@ local CLASS_ACTIVE   = 5 -- cluster_* objective nodes for questlog quests
 local CLASS_AVAIL    = 6 -- available (!) quest givers
 local CLASS_DUNGEON  = 7 -- meta DB meeting stones (instance portals), default off
 local CLASS_RARE     = 8 -- rare spawns from the meta DB rares list, default off
-local CLASS_PARTY    = 9 -- same-zone party members; PINS-ONLY (the strip never renders it)
+local CLASS_PARTY    = 9 -- party members; pins-only, the strip never renders it
 
 -- classify a pfMap node by its minimap texture -- the node loop's own visual
 -- language (map.lua layers table). Plain find, no patterns (perf idiom).
