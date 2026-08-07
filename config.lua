@@ -173,6 +173,8 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Party Members"], desc = L["Class colored plates on same zone party members"], default = "0", type = "checkbox", config = "pinsparty" })
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Show Dungeon Entrance Pins"], desc = L["Meeting stones join the extra pins"], default = "0", type = "checkbox", config = "pinsdungeon" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Multi Waypoint Beams"], desc = L["Part of the multiple waypoints experiment"], default = "1", type = "checkbox", config = "pinsmultibeam" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Multi Waypoint Cap"], desc = L["1 to 8 extra pins, default 4"], default = "4", type = "text", config = "pinsmulticap" })

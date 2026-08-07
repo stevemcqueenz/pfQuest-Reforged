@@ -612,6 +612,8 @@ local function BuildDungeonList(zone)
             dungeons[n] = d
             d.x, d.y = c[1], c[2]
             d.title = (loc and loc[id]) or L["Meeting Stone"]
+            -- node-shaped so the pins extras can BindIcon the entry directly
+            d.texture = PATH .. "\\img\\tracking\\meetingstone"
           end
         end
       end
@@ -745,7 +747,7 @@ local function BuildMarkers(xp, yp, target, dead)
       local e = GetEntry()
       e.class, e.key, e.title = CLASS_DUNGEON, d, d.title
       e.x, e.y = d.x, d.y
-      e.icon = PATH .. "\\img\\tracking\\meetingstone"
+      e.icon = d.texture
       e.tr, e.tg, e.tb = 1, 1, 1
       e.badge, e.desc, e.qlvl = nil, nil, nil
       local dx, dy = (d.x - px) * 1.5, d.y - py
@@ -1105,6 +1107,17 @@ function compass.EachZoneRare(zid, sink)
   for i = 1, rarelist.n do
     local d = rarelist[i]
     sink(d.x, d.y, CLASS_RARE, d)
+  end
+end
+
+-- per-zone dungeon-entrance provider for the pins extras (A5): the same
+-- cached meeting-stone list the strip consumes
+function compass.EachZoneDungeon(zid, sink)
+  if not zid then return end
+  BuildDungeonList(zid)
+  for i = 1, dungeons.n do
+    local d = dungeons[i]
+    sink(d.x, d.y, CLASS_DUNGEON, d)
   end
 end
 

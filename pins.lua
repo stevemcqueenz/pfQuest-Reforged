@@ -465,8 +465,10 @@ local ms = {
   on = false, cap = 4, beam = true, active = nil,
   rares = false, -- A3: compassrares extras (with pinsmulti)
   party = false, -- A4: pinsparty plates (activates the layer on its own)
+  dungeon = false, -- A5: pinsdungeon meeting stones (with pinsmulti)
   op = 1, -- pinsopacity snapshot, multiplied into the extras' distance fade
-  cfgOn = nil, cfgCap = nil, cfgBeam = nil, cfgRares = nil, cfgParty = nil, -- raw-string dirty keys
+  cfgOn = nil, cfgCap = nil, cfgBeam = nil, cfgRares = nil, cfgParty = nil,
+  cfgDungeon = nil, -- raw-string dirty keys
   lastTarget = nil, lastQueue = nil, lastZone = nil, lastCap = nil,
   nextRebuild = 0,
 }
@@ -629,6 +631,11 @@ local function RebuildMulti(pxf, pyf, target)
     -- across both surfaces; the pins path additionally needs pinsmulti)
     if ms.rares and api.EachZoneRare then
       api.EachZoneRare(zoneID, MultiSink)
+    end
+    -- A5 dungeon entrances: the exclusion is conditional now -- meeting
+    -- stones join the extras behind pinsdungeon (with pinsmulti)
+    if ms.dungeon and api.EachZoneDungeon then
+      api.EachZoneDungeon(zoneID, MultiSink)
     end
   end
   -- A4 party members
@@ -824,16 +831,17 @@ driver:SetScript("OnUpdate", function()
   local cfgMultiBeam = pfQuest_config["pinsmultibeam"]
   local cfgRares = pfQuest_config["compassrares"]
   local cfgParty = pfQuest_config["pinsparty"]
+  local cfgDungeon = pfQuest_config["pinsdungeon"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
      or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
      or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares
-     or cfgParty ~= ms.cfgParty then
+     or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
-    ms.cfgParty = cfgParty
+    ms.cfgParty, ms.cfgDungeon = cfgParty, cfgDungeon
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
@@ -845,6 +853,7 @@ driver:SetScript("OnUpdate", function()
     ms.beam = cfgMultiBeam ~= "0"
     ms.rares = cfgRares == "1"
     ms.party = cfgParty == "1"
+    ms.dungeon = cfgDungeon == "1"
     ms.nextRebuild = 0 -- extras source set may have changed: rebuild now
     -- whole-tier opacity: one SetAlpha per element, every child rides along;
     -- the extras multiply it into their distance fade per tick instead
