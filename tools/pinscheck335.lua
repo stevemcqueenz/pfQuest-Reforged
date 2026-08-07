@@ -1040,6 +1040,38 @@ check(way.Get() ~= nil, "auto-clear: a far point never clears")
 way.HandleCommand("")
 
 -- ---------------------------------------------------------------------------
+-- (A2 review fix) PLAYER_ENTERING_WORLD re-place must not clobber an arrow
+-- target the user picked AFTER setting the waypoint: the node visual
+-- re-registers, the user's target survives; a waypoint that still OWNED the
+-- arrow keeps it across the loading screen.
+-- ---------------------------------------------------------------------------
+local function wpew()
+  _G.this = wd
+  _G.event = "PLAYER_ENTERING_WORLD"
+  wd:Fire("OnEvent")
+  _G.this, _G.event = nil, nil
+end
+way.HandleCommand("41 60.5 Hold")
+check(pfQuest.route.settarget ~= nil, "pew scene: the fresh waypoint owns the arrow")
+local userpick = { title = "User Pick" }
+pfQuest.route.SetTarget(userpick)
+wpew()
+check(pfQuest.route.settarget == userpick,
+      "PEW: the user's later arrow choice survives the loading screen")
+check(pfMap.nodes["PFWAY"] ~= nil and pfMap.nodes["PFWAY"][113] ~= nil
+      and pfMap.nodes["PFWAY"][113]["41|60.5"] ~= nil,
+      "PEW: the waypoint map node still re-registers (visual intact)")
+-- waypoint re-set: it owns the arrow again, and PEW then re-asserts it
+way.HandleCommand("41 60.5 Hold")
+local owned = pfQuest.route.settarget
+check(owned ~= nil and owned ~= userpick, "pew scene: re-set waypoint reclaims the arrow")
+wpew()
+check(pfQuest.route.settarget ~= userpick and pfQuest.route.settarget ~= nil
+      and pfQuest.route.settarget.arrow == true,
+      "PEW: a waypoint that owned the arrow keeps it across the loading screen")
+way.HandleCommand("")
+
+-- ---------------------------------------------------------------------------
 -- (A3) rare spawns join the extras behind compassrares (with pinsmulti)
 -- ---------------------------------------------------------------------------
 local function countTitle(t)

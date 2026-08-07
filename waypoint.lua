@@ -90,7 +90,9 @@ end
 -- preseeded to GetLayerByTexture(nil) = 1 so SetTarget's captured layer
 -- matches what UpdateNode later recomputes -- IsTarget compares field
 -- values, and a nil-vs-1 mismatch would silently drop the target ordering.
-local function PlaceMapNode()
+-- skiptarget re-creates the node VISUAL without re-asserting the arrow
+-- (review fix: the PEW rebuild must not clobber a later user target).
+local function PlaceMapNode(skiptarget)
   local wp = waypoint.Get()
   if not wp or not pfMap.AddNode then return end
   pfMap:DeleteNode("PFWAY")
@@ -111,7 +113,7 @@ local function PlaceMapNode()
   mapnode = pfMap.nodes["PFWAY"] and pfMap.nodes["PFWAY"][wp.zone]
     and pfMap.nodes["PFWAY"][wp.zone][coords]
     and pfMap.nodes["PFWAY"][wp.zone][coords][title] or nil
-  if mapnode and pfQuest.route.SetTarget then
+  if mapnode and not skiptarget and pfQuest.route.SetTarget then
     pfQuest.route.SetTarget(mapnode)
   end
   if pfMap.UpdateNodes then pfMap:UpdateNodes() end
@@ -316,11 +318,20 @@ local driver = CreateFrame("Frame", nil, UIParent)
 waypoint.driver = driver
 driver:RegisterEvent("PLAYER_ENTERING_WORLD")
 driver:SetScript("OnEvent", function()
-  -- saved point survives relogs; rebuild the map node and the pins binding
+  -- saved point survives relogs; rebuild the map node and the pins binding.
+  -- Review fix: PLAYER_ENTERING_WORLD also fires on every mid-session
+  -- loading screen (instance portal, boat, BG), where an unconditional
+  -- PlaceMapNode re-asserted SetTarget and silently clobbered an arrow
+  -- target the user picked AFTER setting the waypoint. Re-assert only when
+  -- the waypoint still OWNED the arrow: IsTarget compares field values
+  -- (route.lua:194), so the old node answers correctly across the
+  -- re-creation; mapnode == nil means fresh login//reload, where route
+  -- state is empty and the waypoint rightfully claims the arrow.
   local wp = waypoint.Get()
   if wp then
     BuildPinNode(wp.label)
-    PlaceMapNode()
+    local owned = not mapnode or (pfQuest.route.IsTarget and pfQuest.route.IsTarget(mapnode))
+    PlaceMapNode(not owned)
   end
 end)
 driver:SetScript("OnUpdate", function()
