@@ -28,6 +28,10 @@ local speed = 7
 -- module once WITHOUT them first)
 local wpx, wpy, wpz = -7188.48, -3803.71, 9.08
 local scrx, scry, scrvis = 614.4, 343.49, 1
+-- optional per-coordinate WorldToScreen override for the multi-pin checks:
+-- extras need DISTINCT deterministic screen points, the fixed scrx/scry pair
+-- cannot provide that. nil = the classic fixed-return behavior.
+local wts
 
 _G.GetPlayerMapPosition = function() return posx, posy end
 _G.GetRealZoneText = function() return zonename end
@@ -59,14 +63,33 @@ _G.pfMap = {
   minimap_sizes = { [113] = { 5450, 3633.3 } },
   GetMapIDByName = function(self, name) return zonemap[name] end,
   str2rgb = function() return 0.5, 0.5, 0.5 end,
+  -- the zone node store the shared provider scans (pfMap.nodes[addon][zid]
+  -- [coords][title] = meta) plus its rebuild trigger; filled per test case
+  nodes = {},
+  queue_update = 0,
 }
 _G.pfQuestTheme = {
   accent = { 0.2, 1.0, 0.8 },
   bg = { 0.08, 0.08, 0.08 },
 }
 _G.pfUI = { font_default = "Fonts\\FRIZQT__.TTF" }
+_G.pfQuest_Loc = setmetatable({}, { __index = function(_, k) return tostring(k) end })
 UIParent:SetWidth(1024)
 UIParent:SetHeight(768)
+
+-- ---------------------------------------------------------------------------
+-- the shared taxonomy provider lives in compass.lua (EachZoneNode); load the
+-- REAL module so the multi-pin path runs end-to-end against the actual
+-- provider, never a stub of it. The compass driver itself stays dormant
+-- (pfQuest_config carries no compass="1"), proving pins do not depend on the
+-- strip being ENABLED -- only on the module being loaded.
+-- ---------------------------------------------------------------------------
+local cok, cerr = pcall(dofile, "compass.lua")
+if not cok then
+  fail("compass.lua (shared provider) could not be loaded: %s", tostring(cerr))
+  print(string.format("\n%d checks, %d failure(s)", checks, failures))
+  os.exit(1)
+end
 
 -- ---------------------------------------------------------------------------
 -- (d) feature-detect -- contract: without the DLL exports the file is fully
@@ -84,7 +107,10 @@ check(pfQuest.pins == nil, "DLL absent: no public surface (pfQuest.pins stays ni
 
 -- install the DLL fakes and load for real
 _G.UnitPosition = function() return wpx, wpy, wpz end
-_G.WorldToScreen = function() return scrx, scry, scrvis end
+_G.WorldToScreen = function(x, y, z)
+  if wts then return wts(x, y, z) end
+  return scrx, scry, scrvis
+end
 
 loaded, err = pcall(dofile, PINS_FILE)
 if not loaded then
@@ -524,6 +550,275 @@ check(pt ~= nil and near(pt.x, 512 + math.cos(ang) * 50) and near(pt.y, 384 + ma
 pfQuest_config["pinsnavradius"] = nil
 pfQuest_config["pinsnavsize"] = nil
 scrvis = 1
+
+-- ===========================================================================
+-- MULTI-PIN exploration (pinsmulti, docs/PINS-DESIGN.md multi-pin note):
+-- an ambient layer of up to pinsmulticap extra plates from the shared
+-- compass taxonomy -- distance-culled, distance-faded, screen-merged, with
+-- subordinate beams. Everything below drives the REAL provider (compass.lua
+-- loaded above) through the real driver OnUpdate.
+-- ===========================================================================
+
+local T = pins.tunables
+check(type(T) == "table" and type(T.MULTI_RADIUS) == "number",
+      "pins.tunables exposed (the one-block-of-knobs contract)")
+
+-- ---------------------------------------------------------------------------
+-- (b) distance fade ramp, pure: endpoints and monotonicity
+-- ---------------------------------------------------------------------------
+check(near(pins.MultiAlpha(0), 1), "multi fade: solid (1.0) at 0 yd")
+check(near(pins.MultiAlpha(T.MULTI_SOLID), 1), "multi fade: still solid at the near edge (%d yd)", T.MULTI_SOLID)
+check(near(pins.MultiAlpha(T.MULTI_RADIUS), T.MULTI_FLOOR),
+      "multi fade: floor (%.2f) at the show radius", T.MULTI_FLOOR)
+check(near(pins.MultiAlpha(T.MULTI_RADIUS * 10), T.MULTI_FLOOR),
+      "multi fade: never below the floor beyond the radius")
+local mid = pins.MultiAlpha((T.MULTI_SOLID + T.MULTI_RADIUS) / 2)
+check(mid < 1 and mid > T.MULTI_FLOOR, "multi fade: strictly inside the band mid-ramp")
+local mono, prev = true, pins.MultiAlpha(T.MULTI_SOLID)
+for d = T.MULTI_SOLID + 5, T.MULTI_RADIUS, 5 do
+  local a = pins.MultiAlpha(d)
+  if a > prev + 1e-9 then mono = false end
+  prev = a
+end
+check(mono, "multi fade: monotonically non-increasing across the ramp")
+
+-- ---------------------------------------------------------------------------
+-- (a) screen-space merge, pure: route-wins, priority/nearest-wins, chain,
+-- hidden extras neither merge nor suppress, navigator mode (no route ref)
+-- ---------------------------------------------------------------------------
+local mslots = {
+  { show = true, ux = 100, uy = 100 }, -- kept (most important, first)
+  { show = true, ux = 110, uy = 100 }, -- 10 from kept 1 -> merged
+  { show = true, ux = 130, uy = 100 }, -- 20 from MERGED 2, 30 from 1 -> kept (chain)
+  { show = true, ux = 400, uy = 310 }, -- near the route ref -> merged (route wins)
+  { show = nil, ux = 100, uy = 100 },  -- hidden: neither merged nor suppressing
+  n = 5,
+}
+pins.MergeScreenOverlaps(mslots, 405, 300, 28)
+check(not mslots[1].merged, "merge: first (most important) extra kept")
+check(mslots[2].merged, "merge: extra within radius of a nearer kept extra hides")
+check(not mslots[3].merged, "merge: merged extras suppress nothing (chain case)")
+check(mslots[4].merged, "merge: the route target's plate always wins")
+check(not mslots[5].merged, "merge: a hidden extra is not marked merged")
+local mslots2 = { { show = nil, ux = 50, uy = 50 }, { show = true, ux = 52, uy = 50 }, n = 2 }
+pins.MergeScreenOverlaps(mslots2, nil, nil, 28)
+check(not mslots2[2].merged, "merge: a hidden extra does not suppress a shown one")
+local mslots3 = { { show = true, ux = 405, uy = 300 }, n = 1 }
+pins.MergeScreenOverlaps(mslots3, nil, nil, 28)
+check(not mslots3[1].merged, "merge: no route ref (navigator mode) suppresses nothing")
+
+-- ---------------------------------------------------------------------------
+-- (d) pinsmulti off (the default): zero extra frames created OR shown --
+-- the pool must not even exist until the first enabled tick
+-- ---------------------------------------------------------------------------
+local mcreated = 0
+local realCF = _G.CreateFrame
+_G.CreateFrame = function(...) mcreated = mcreated + 1 return realCF(...) end
+fire()
+fire()
+check(mcreated == 0 and pins.multiframes[1] == nil,
+      "pinsmulti off: zero extra frames created (pool not built)")
+check(pins.multilist.n == 0, "pinsmulti off: extras list stays empty")
+
+-- ---------------------------------------------------------------------------
+-- the synthetic zone. Player at map 40,60 (fractions 0.4,0.6); zone 113 is
+-- 5450x3633.3 yd, so 1% of map-x = 54.5 yd (world-Y axis) and 1% of map-y =
+-- 36.3 yd (world-X axis). Route target at 42,61 (~115 yd, waypoint mode).
+-- Expected distances are derived through the module's own public math, never
+-- hand-transcribed.
+-- ---------------------------------------------------------------------------
+local IMG = "pfQuest-Reforged\\img\\"
+local function mknode(title, tex)
+  return { title = title, texture = tex and (IMG .. tex) or nil, vertex = { 0, 0, 0 } }
+end
+local nodeReady = mknode("Ready Turnin", "complete_c")   -- 41|60: ~54 yd, class TURNIN
+local nodeActive = mknode("Kill Area", "cluster_mob")    -- 42|60: ~109 yd, class ACTIVE
+local nodeAvail1 = mknode("Giver Near", "available")     -- 43|60: ~163 yd, class AVAIL
+local nodeAvail2 = mknode("Giver Far", "available")      -- 44|60: ~218 yd, class AVAIL
+local nodeBeyond = mknode("Beyond Radius", "available")  -- 47|60: ~381 yd > 300 -> culled
+local nodeUnready = mknode("Unfinished Ender", "complete") -- 40|61: not-ready -> excluded
+local nodeAtRoute = mknode("At Route Plate", "available") -- 42|61.2: merges into the route pin
+local nodeOnCell = mknode("On Target Cell", "available") -- 42|61: the route cell -> deduped
+pfMap.nodes = {
+  PFDB = {
+    [113] = {
+      ["41|60"] = { ["Ready Turnin"] = nodeReady },
+      ["42|60"] = { ["Kill Area"] = nodeActive },
+      ["43|60"] = { ["Giver Near"] = nodeAvail1 },
+      ["44|60"] = { ["Giver Far"] = nodeAvail2 },
+      ["47|60"] = { ["Beyond Radius"] = nodeBeyond },
+      ["40|61"] = { ["Unfinished Ender"] = nodeUnready },
+      ["42|61.2"] = { ["At Route Plate"] = nodeAtRoute },
+      ["42|61"] = { ["On Target Cell"] = nodeOnCell },
+    },
+  },
+}
+pfMap.queue_update = 1
+pfQuest.route.coords = { { 42, 61, { title = "Multi Target" }, 25.5 } }
+
+-- deterministic per-coordinate projection: world deltas spread across the
+-- screen (54.5 UI units per 1% of map-x, beyond the 28-unit merge radius),
+-- everything visible unless wtsInvis says otherwise
+local wtsInvis
+wts = function(x, y, z)
+  local v = 1
+  if wtsInvis and wtsInvis(x, y) then v = nil end
+  return 500 + (y - wpy), 300 + (x - wpx), v
+end
+
+local function worldOf(x, y) return pins.PercentToWorld(posx, posy, x, y, wpx, wpy, 113) end
+local function distOf(x, y)
+  local ex, ey = worldOf(x, y)
+  return math.sqrt((ex - wpx) ^ 2 + (ey - wpy) ^ 2)
+end
+local dReady, dActive, dAvail1 = distOf(41, 60), distOf(42, 60), distOf(43, 60)
+check(distOf(47, 60) > T.MULTI_RADIUS, "harness scene: the far giver sits beyond the show radius (%.0f yd)", distOf(47, 60))
+check(dReady < T.MULTI_RADIUS, "harness scene: the nearest extra sits inside it (%.0f yd)", dReady)
+
+-- enable, cap 8: the pool builds ONCE (exactly MULTI_MAX frames), the list
+-- fills through the real EachZoneNode walk
+pfQuest_config["pinsmulti"] = "1"
+pfQuest_config["pinsmulticap"] = "8"
+-- the navradius checks above left the committed mode at navigator; walk the
+-- ~0.25s hysteresis hold so the route target is back in waypoint mode (its
+-- plate position is the extras' merge reference)
+for i = 1, 8 do fire() end
+_G.CreateFrame = realCF
+check(mcreated == T.MULTI_MAX, "enable: pool built once, exactly %d frames (got %d)", T.MULTI_MAX, mcreated)
+check(pins.waypoint:IsShown() == true, "enable: the route target keeps its full waypoint treatment")
+
+local ml = pins.multilist
+check(ml.n == 5, "cap 8: 5 extras listed (radius, readiness and route-cell cull the other 3; got %d)", ml.n)
+local keys = {}
+for i = 1, ml.n do keys[ml[i].key] = i end
+check(keys[nodeBeyond] == nil, "radius cull: the beyond-radius giver never enters the list")
+check(keys[nodeUnready] == nil, "readiness: the not-ready ender never enters the list (shared ClassifyNode)")
+check(keys[nodeOnCell] == nil, "dedupe: the route target's own cell never enters the list")
+check(ml[1] and ml[1].key == nodeReady and ml[2] and ml[2].key == nodeActive,
+      "ordering: CapInsert semantics, class ascending first (turn-in, then objective)")
+check(keys[nodeAtRoute] == 3 and keys[nodeAvail1] == 4 and keys[nodeAvail2] == 5,
+      "ordering: within a class nearest-first in world yards")
+
+-- rendering: unmerged in-radius extras show; the one on the route plate merges
+local mf = pins.multiframes
+check(mf[1]:IsShown() and mf[2]:IsShown() and mf[4]:IsShown() and mf[5]:IsShown(),
+      "render: all four clear extras shown")
+check(ml[3].merged == true and mf[3]:IsShown() == false,
+      "render: the extra on the route plate merges away (route wins, end to end)")
+
+-- fade: alpha follows MultiAlpha(dist) * pinsopacity(=1); farther = fainter
+check(near(mf[1]:GetAlpha(), pins.MultiAlpha(dReady)),
+      "fade: nearest extra at MultiAlpha(%.0f yd) (got %s)", dReady, tostring(mf[1]:GetAlpha()))
+check(near(mf[4]:GetAlpha(), pins.MultiAlpha(dAvail1)),
+      "fade: far extra at MultiAlpha(%.0f yd)", dAvail1)
+check(mf[4]:GetAlpha() < mf[1]:GetAlpha(), "fade: farther extra is fainter")
+
+-- scale: extras shrink with range through the same ScaleForDistance clamps
+check(mf[1]:GetWidth() == math.floor(T.MULTI_BASE * pins.ScaleForDistance(dReady, 0.5, 1.5) + 0.5),
+      "scale: extra plate rides ScaleForDistance (got %s)", tostring(mf[1]:GetWidth()))
+check(mf[4]:GetWidth() < mf[1]:GetWidth(), "scale: farther extra is smaller")
+
+-- nearest-only distance line
+check(mf[1].dtext:IsShown() == true and mf[1].dtext:GetText() == math.floor(dReady + 0.5) .. " yd",
+      "nearest extra shows the distance line (got %s)", tostring(mf[1].dtext:GetText()))
+check(mf[2].dtext:IsShown() == false and mf[4].dtext:IsShown() == false,
+      "all other extras carry no text (plate+icon only)")
+
+-- ---------------------------------------------------------------------------
+-- subordinate beams (pinsmultibeam, default on)
+-- ---------------------------------------------------------------------------
+check(mf[1].beam:IsShown() == true, "beams: shown by default on a shown extra")
+check(mf[1].beam:GetHeight() == math.floor(dReady + 0.5),
+      "beams: height follows distance inside the clamp (got %s)", tostring(mf[1].beam:GetHeight()))
+check(mf[4].beam:GetHeight() == T.MULTI_BEAM_MAX,
+      "beams: far extra clamps to the subordinate max height")
+-- (b) the beam is a CHILD of the plate frame, so the extra's distance-fade
+-- alpha (checked above on the frame) multiplies its fixed gradient base
+check(mf[1].beam.parent == mf[1] and mf[4].beam.parent == mf[4],
+      "beams: alpha rides the plate's fade alpha (child of the faded frame)")
+-- (c) the subordinate constants stay below the main beam's
+check(T.MULTI_BEAM_ALPHA < T.BEAM_ALPHA, "beams: base alpha subordinate to the main beam")
+check(T.MULTI_BEAM_MAX < T.BEAM_MAX and T.MULTI_BEAM_MIN < T.BEAM_MIN,
+      "beams: height clamp subordinate to the main beam")
+-- (a) toggle off: every beam hides, every plate stays
+pfQuest_config["pinsmultibeam"] = "0"
+fire()
+-- a hidden plate's beam is invisible through parentage regardless of its own
+-- flag (and the flag reconciles on the next show), so the contract is about
+-- EFFECTIVE visibility: no shown plate may carry a shown beam
+local beamsOff, platesOn = true, true
+for i = 1, ml.n do
+  if mf[i]:IsShown() and mf[i].beam:IsShown() then beamsOff = false end
+  if not ml[i].merged and not mf[i]:IsShown() then platesOn = false end
+end
+check(beamsOff, "pinsmultibeam=0: every visible extra's beam hidden")
+check(platesOn, "pinsmultibeam=0: the plates stay up")
+pfQuest_config["pinsmultibeam"] = "1"
+fire()
+check(mf[1].beam:IsShown() == true, "pinsmultibeam back on: beams return")
+
+-- ---------------------------------------------------------------------------
+-- (e) extras hidden when the WorldToScreen visible flag is nil (no navigator
+-- for extras -- off-screen ambient pins simply vanish)
+-- ---------------------------------------------------------------------------
+local aX, aY = worldOf(41, 60)
+wtsInvis = function(x, y) return math.abs(x - aX) < 0.01 and math.abs(y - aY) < 0.01 end
+fire()
+check(mf[1]:IsShown() == false, "invisible extra: hidden, no navigator handoff")
+check(mf[2]:IsShown() == true, "invisible extra: the others are unaffected")
+check(mf[2].dtext:IsShown() == true and mf[1].dtext:IsShown() == false,
+      "invisible extra: the distance line moves to the new nearest")
+wtsInvis = nil
+fire()
+check(mf[1]:IsShown() == true, "extra returns when its projection is visible again")
+
+-- ---------------------------------------------------------------------------
+-- (c) cap: clamped 1..8, garbage falls to the default 4, list re-ranks
+-- ---------------------------------------------------------------------------
+pfQuest_config["pinsmulticap"] = "2"
+fire()
+fire()
+check(ml.n == 2 and ml[1].key == nodeReady and ml[2].key == nodeActive,
+      "pinsmulticap 2: only the two most important extras remain")
+check(mf[3]:IsShown() == false and mf[4]:IsShown() == false and mf[5]:IsShown() == false,
+      "pinsmulticap 2: the dropped extras' frames hide")
+pfQuest_config["pinsmulticap"] = "99"
+fire()
+fire()
+check(ml.n == 5, "pinsmulticap 99 clamps to the pool ceiling (all 5 candidates back)")
+pfQuest_config["pinsmulticap"] = "abc"
+fire()
+fire()
+check(ml.n == 4 and keys ~= nil and ml[4].key == nodeAvail1,
+      "pinsmulticap garbage falls to the default 4 (farthest giver dropped)")
+pfQuest_config["pinsmulticap"] = "8"
+fire()
+fire()
+
+-- ---------------------------------------------------------------------------
+-- off again: not a one-way door, and the whole tier still sleeps together
+-- ---------------------------------------------------------------------------
+mcreated = 0
+_G.CreateFrame = function(...) mcreated = mcreated + 1 return realCF(...) end
+pfQuest_config["pinsmulti"] = "0"
+fire()
+local anyShown = false
+for i = 1, T.MULTI_MAX do if mf[i]:IsShown() then anyShown = true end end
+check(not anyShown, "pinsmulti back to 0: every extra hidden")
+check(pins.waypoint:IsShown() == true, "pinsmulti off: the route waypoint is untouched")
+pfQuest_config["pinsmulti"] = "1"
+fire()
+fire()
+check(mf[1]:IsShown() == true, "re-enable: extras return")
+check(mcreated == 0, "re-enable: the pool is reused, never rebuilt (created once)")
+_G.CreateFrame = realCF
+-- pins="0" master switch puts the extras to sleep with the rest of the tier
+pfQuest_config["pins"] = "0"
+fire()
+anyShown = false
+for i = 1, T.MULTI_MAX do if mf[i]:IsShown() then anyShown = true end end
+check(not anyShown, "pins=0: extras sleep with the whole tier")
+pfQuest_config["pins"] = "1"
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
