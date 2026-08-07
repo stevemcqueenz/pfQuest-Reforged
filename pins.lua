@@ -268,10 +268,36 @@ pinpoint.icon = pinpoint:CreateTexture(nil, "OVERLAY")
 pinpoint.icon:SetWidth(12)
 pinpoint.icon:SetHeight(12)
 pinpoint.icon:SetPoint("CENTER", pinpoint, "CENTER", 0, 0)
-pinpoint.text = pinpoint:CreateFontString(nil, "OVERLAY")
+-- objective text rides in a themed panel (Waypoint-UI video reference: bare
+-- text floats unreadably over world clutter; the box is what makes it legible)
+pinpoint.panel = CreateFrame("Frame", nil, pinpoint)
+if theme and theme.SkinPanel then theme.SkinPanel(pinpoint.panel) end
+pinpoint.panel:SetPoint("TOP", pinpoint, "BOTTOM", 0, -4)
+pinpoint.panel:SetHeight(20)
+pinpoint.panel:SetWidth(60)
+pinpoint.text = pinpoint.panel:CreateFontString(nil, "OVERLAY")
 pinpoint.text:SetFont(font, 12, "OUTLINE")
 pinpoint.text:SetTextColor(0.9, 0.9, 0.9, 1)
-pinpoint.text:SetPoint("TOP", pinpoint, "BOTTOM", 0, -3)
+pinpoint.text:SetPoint("CENTER", pinpoint.panel, "CENTER", 0, 0)
+-- panel hugs whatever the text currently says (+padding); called from every
+-- SetText site so the box never lags the string
+local function FitPinPanel()
+  local w = pinpoint.text:GetStringWidth() or 40
+  pinpoint.panel:SetWidth(w + 16)
+end
+pinpoint.FitPanel = FitPinPanel
+-- animated go-here chevrons (Waypoint-UI video reference, rendered with OUR
+-- arrow art): two marks pointing DOWN above the plate, descending and fading
+-- on staggered phases. Cost: two SetPoint + two SetAlpha per tick, and only
+-- while pinpoint is the committed mode.
+pinpoint.chev1 = pinpoint:CreateTexture(nil, "OVERLAY")
+pinpoint.chev2 = pinpoint:CreateTexture(nil, "OVERLAY")
+for _, t in pairs({ pinpoint.chev1, pinpoint.chev2 }) do
+  t:SetTexture(PATH .. "\\img\\arrow-gw2")
+  t:SetWidth(14)
+  t:SetHeight(14)
+  t:SetVertexColor(accent[1], accent[2], accent[3], 1)
+end
 pinpoint:Hide()
 
 local navigator = CreateFrame("Frame", nil, UIParent)
@@ -308,6 +334,11 @@ local function AimChevron(tex, a)
   local c = cos(phi) * 0.70710678118655
   tex:SetTexCoord(0.5 - s, 0.5 + c, 0.5 + c, 0.5 + s, 0.5 - c, 0.5 - s, 0.5 + s, 0.5 - c)
 end
+
+-- pinpoint chevrons always point straight down at the spot (screen angle
+-- -pi/2 in AimChevron's ccw-from-right convention); aimed once, never re-set
+AimChevron(pinpoint.chev1, -math.pi / 2)
+AimChevron(pinpoint.chev2, -math.pi / 2)
 
 -- node -> plate icon (compass rebind idiom); shared by Waypoint and Pinpoint
 -- so a target change restyles both the same way
@@ -557,6 +588,19 @@ driver:SetScript("OnUpdate", function()
     local ux, uy = ToUiCoords(sx, sy, uiw, uih)
     pinpoint:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ux, uy)
 
+    -- descending chevron animation: linear fall over ~1.1s, staggered half a
+    -- phase apart, fading in over the first 15 percent and out over the last
+    -- 25 so the loop point never pops
+    local ph = (now % 1.1) / 1.1
+    local ph2 = ph + 0.5
+    if ph2 >= 1 then ph2 = ph2 - 1 end
+    local a1 = (ph < 0.15 and ph / 0.15 or 1) * (ph > 0.75 and (1 - ph) / 0.25 or 1)
+    local a2 = (ph2 < 0.15 and ph2 / 0.15 or 1) * (ph2 > 0.75 and (1 - ph2) / 0.25 or 1)
+    pinpoint.chev1:SetPoint("BOTTOM", pinpoint, "TOP", 0, 26 - ph * 12)
+    pinpoint.chev2:SetPoint("BOTTOM", pinpoint, "TOP", 0, 26 - ph2 * 12)
+    pinpoint.chev1:SetAlpha(a1)
+    pinpoint.chev2:SetAlpha(a2)
+
     -- objective line + icon, rebound on target change only. The text is the
     -- spec fallback chain: description -> title -> distance (never empty)
     local node = target[3]
@@ -564,7 +608,10 @@ driver:SetScript("OnUpdate", function()
       lastPinNode = node
       BindIcon(pinpoint.icon, node)
       pinText = PinpointText(node)
-      if pinText then pinpoint.text:SetText(pinText) end
+      if pinText then
+        pinpoint.text:SetText(pinText)
+        FitPinPanel()
+      end
       lastPinDistKey = nil
     end
     if not pinText then
@@ -577,6 +624,7 @@ driver:SetScript("OnUpdate", function()
       if key ~= lastPinDistKey then
         lastPinDistKey = key
         pinpoint.text:SetText(rounded .. (metric and " m" or " yd"))
+        FitPinPanel()
       end
     end
   else
