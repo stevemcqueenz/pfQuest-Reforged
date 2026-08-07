@@ -21,10 +21,28 @@ dofile("tools/framestub335.lua").install()
 -- ---------------------------------------------------------------------------
 local facing, posx, posy, ontaxi = 0, 0.4, 0.6, nil
 local dead, corpsex, corpsey = nil, 0, 0
+-- zone text + id mutable (phase B: the city-gate cases move to Orgrimmar)
+local zonename, mapid = "Testzone", 113
 _G.GetPlayerFacing = function() return facing end
 _G.GetPlayerMapPosition = function() return posx, posy end
 _G.UnitOnTaxi = function() return ontaxi end
-_G.GetRealZoneText = function() return "Testzone" end
+_G.GetRealZoneText = function() return zonename end
+-- tracking seams (phase B1): the 3.3.5a return shape name, texture, active,
+-- category (milkyway api-functions.ts:28016); actives mutable per test case.
+-- Must exist BEFORE compass.lua loads -- the mirror registers its event only
+-- when the API is present (vanilla-toc guard).
+local tracking = {
+  { name = "Track Flight", tex = "Interface\\Minimap\\Tracking\\FlightMaster" },
+  { name = "Track Inns", tex = "Interface\\Minimap\\Tracking\\Innkeeper" },
+  { name = "Track Repair", tex = "Interface\\Minimap\\Tracking\\Repair" },
+  { name = "Track Mail", tex = "Interface\\Minimap\\Tracking\\Mailbox" },
+}
+_G.GetNumTrackingTypes = function() return table.getn(tracking) end
+_G.GetTrackingInfo = function(i)
+  local t = tracking[i]
+  if not t then return nil end
+  return t.name, t.tex, t.active, "other"
+end
 -- corpse seam (contract: corpse marker ONLY while UnitIsDeadOrGhost and
 -- GetCorpseMapPosition is non-zero; both 3.3.5a-native per milkyway)
 _G.UnitIsDeadOrGhost = function() return dead end
@@ -71,7 +89,7 @@ pfQuest.route.arrow.distance = pfQuest.route.arrow:CreateFontString()
 -- (map.lua:271, route.lua:81-82). mapID 113 exists, 999 deliberately does not.
 _G.pfMap = setmetatable({
   minimap_sizes = { [113] = { 5450, 3633.3 } },
-  GetMapIDByName = function() return 113 end,
+  GetMapIDByName = function() return mapid end,
   -- the zone node store the providers scan: pfMap.nodes[addon][zoneID]
   -- [coords]["title"] = node meta (map.lua:643-651); empty by default, test
   -- blocks fill it per case
@@ -617,6 +635,112 @@ local lslots2 = {
 local lowner2 = compass.SelectLabel(lslots2, lstate2, 100)
 check(lowner2 and lowner2.key == "k1",
       "label: a merged (hidden) marker cannot own the label")
+
+-- ---------------------------------------------------------------------------
+-- (l) utility POIs (phase B, docs/POI-DESIGN.md): B1 tracking mirror, B3
+-- ambient mode behind the city gate, and the label exclusion.
+-- pfDB["poi-wotlk335"] shape: [class][zone] = { { xPct, yPct, name }, ... }
+-- (3-slot tuples). Zone 1637 is Orgrimmar, a real POI_CITIES id; 113 is not
+-- a city.
+-- ---------------------------------------------------------------------------
+check(C.POI == 10, "poi: class sits below party (poi=10, party=9)")
+
+pfDB["poi-wotlk335"] = {
+  ["flight"] = { [113] = { { 30, 40, "Testzone Flight" } }, [1637] = { { 50, 60, "Org Flight" } } },
+  ["mail"]   = { [113] = { { 35, 45, "Testzone Mailbox" } }, [1637] = { { 52, 62, "Org Mailbox" } } },
+  ["inn"]    = { [1637] = { { 54, 64, "Org Inn" } } },
+  ["repair"] = { [1637] = { { 56, 66, "Org Repair" } } },
+}
+
+-- the mirror's seam: fire the REAL poidriver event handler as the client
+-- would on MINIMAP_UPDATE_TRACKING (shagu idiom: `this`/`event` globals)
+check(compass.poidriver ~= nil and compass.poidriver.events
+      and compass.poidriver.events["MINIMAP_UPDATE_TRACKING"] == true,
+      "poi mirror: MINIMAP_UPDATE_TRACKING registered")
+local function fireTracking()
+  _G.this = compass.poidriver
+  _G.event = "MINIMAP_UPDATE_TRACKING"
+  compass.poidriver:Fire("OnEvent")
+  _G.this, _G.event = nil, nil
+end
+local function findpoi(name)
+  for i = 1, list.n do
+    if list[i].class == C.POI and list[i].title == name then return list[i] end
+  end
+  return nil
+end
+
+-- (a) B1 mirror: nothing tracked, ambient off -> zero POI markers
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 0, "poi mirror: nothing tracked, ambient off -> zero POI markers")
+
+-- selecting flight tracking mirrors ONLY the flight class
+tracking[1].active = 1
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+local fm = findpoi("Testzone Flight")
+check(fm ~= nil, "poi mirror: flight tracking selected -> flight marker appears")
+check(fm ~= nil and fm.icon == "Interface\\Minimap\\Tracking\\FlightMaster",
+      "poi mirror: the tracking texture itself is the plate icon")
+check(findpoi("Testzone Mailbox") == nil,
+      "poi mirror: the mailbox class stays hidden (only the selected type mirrors)")
+check(list[list.n] ~= nil and list[list.n].class == C.POI,
+      "poi mirror: POI sorts last (lowest class of all)")
+
+-- deselecting removes them again
+tracking[1].active = nil
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 0, "poi mirror: deselect -> markers vanish")
+
+-- (d) a POI can never own the compass label, however centered; alone in the
+-- window the guidance fallback owns, and with nothing else nobody does
+local pq = { key = "pq", class = C.POI, rel = 0.01 }
+local av2 = { key = "av2", class = C.AVAIL, rel = 0.2 }
+local rt2 = { key = "rt2", class = C.ROUTE, rel = 1.0 }
+own = compass.SelectLabel({ n = 3, pq, av2, rt2 }, {}, 200.0)
+check(own == av2, "poi label: a centered POI never beats an in-window quest marker")
+own = compass.SelectLabel({ n = 2, pq, rt2 }, {}, 210.0)
+check(own == rt2, "poi label: POI alone in the window -> the route fallback owns")
+own = compass.SelectLabel({ n = 1, pq }, {}, 220.0)
+check(own == nil, "poi label: only a POI present -> nobody owns the label")
+
+-- (c) B3 ambient behind the city gate: outside the city list nothing shows;
+-- inside it every class with data shows
+pfQuest_config["compasspoi"] = "1"
+pfQuest_config["poicityonly"] = "1"
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 0, "poi city gate: ambient on outside a city -> nothing")
+zonename, mapid = "Orgrimmar", 1637
+facing = facing + 0.01
+fireOnUpdate() -- re-memoizes zoneID from the changed zone text
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 4,
+      "poi city gate: ambient in a capital -> all four classes (got %d)", classcount(C.POI))
+check(findpoi("Org Inn") ~= nil and findpoi("Org Repair") ~= nil,
+      "poi ambient: inn and repair render with the rest")
+-- gate off: ambient shows outside cities too
+zonename, mapid = "Testzone", 113
+facing = facing + 0.01
+fireOnUpdate()
+pfQuest_config["poicityonly"] = "0"
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 2,
+      "poi city gate off: ambient shows outside cities (both data classes, got %d)", classcount(C.POI))
+pfQuest_config["poicityonly"] = "1"
+pfQuest_config["compasspoi"] = "0"
+-- the mirror is never gated: mailbox tracking mirrors in the sticks with the
+-- city gate on and ambient off
+tracking[4].active = 1
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(findpoi("Testzone Mailbox") ~= nil and classcount(C.POI) == 1,
+      "poi mirror: tracking mirrors outside cities, untouched by the city gate")
+tracking[4].active = nil
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 0, "poi: all layers off again -> zero POI markers")
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

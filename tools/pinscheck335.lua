@@ -57,6 +57,19 @@ _G.RAID_CLASS_COLORS = { MAGE = { r = 0.41, g = 0.8, b = 0.94 } }
 local msgs = {}
 _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) msgs[#msgs + 1] = m end }
 local function lastmsg() return msgs[#msgs] or "" end
+-- tracking seams (phase B1): the 3.3.5a return shape (milkyway
+-- api-functions.ts:28016), mutable actives. Must exist BEFORE compass.lua
+-- loads -- the mirror registers its event only when the API is present.
+local tracking = {
+  { name = "Track Flight", tex = "Interface\\Minimap\\Tracking\\FlightMaster" },
+  { name = "Track Mail", tex = "Interface\\Minimap\\Tracking\\Mailbox" },
+}
+_G.GetNumTrackingTypes = function() return table.getn(tracking) end
+_G.GetTrackingInfo = function(i)
+  local t = tracking[i]
+  if not t then return nil end
+  return t.name, t.tex, t.active, "other"
+end
 -- the stub's GetTime is frozen at 1000; the pins perf cap (perfTick = now +
 -- 0.02, route.lua:515 idiom) would then skip every fire after the first, so
 -- advance time on each read to keep the real per-frame path exercised.
@@ -1176,6 +1189,104 @@ pfQuest_config["pinsmulti"] = "1"
 pfQuest_config["pinsparty"] = "0"
 partyN = 0
 for i = 1, 8 do fire() end
+
+-- ===========================================================================
+-- PHASE B (docs/POI-DESIGN.md): utility POIs. B2 /way <class> through the
+-- REAL waypoint module; B1 tracking mirror through the REAL compass provider
+-- into the extras layer. db shape: [class][zone] = { {xPct, yPct, name}, ...}.
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
+-- (B2) /way <class>: the nearest POI of the class becomes the custom
+-- waypoint, named notice, no generic "Waypoint set" duplicate; a class with
+-- no POI in the zone notices and sets nothing; unknown words keep the usage
+-- path and the usage line now names the POI words.
+-- Flight Near sits at 42|59 (~115 yd); Flight Far at 44.7|60 (~256 yd:
+-- inside MULTI_RADIUS 300, outside POI_RADIUS 250). Post Near at 41|60
+-- (~55 yd) beats Post Far at 43|60 (~164 yd).
+-- ---------------------------------------------------------------------------
+pfDB["poi-wotlk335"] = {
+  ["flight"] = { [113] = { { 42, 59, "Flight Near" }, { 44.7, 60, "Flight Far" } } },
+  ["mail"]   = { [113] = { { 43, 60, "Post Far" }, { 41, 60, "Post Near" } } },
+  ["inn"]    = {},
+  ["repair"] = {},
+}
+
+local nmsgs = table.getn(msgs)
+way.HandleCommand("mail")
+wp = way.Get()
+check(wp ~= nil and wp.x == 41 and wp.y == 60 and wp.label == "Post Near",
+      "/way mail: the NEAREST mailbox becomes the waypoint (got %s)", tostring(wp and wp.label))
+check(string.find(lastmsg(), "Waypoint: Post Near, " .. math.floor(distOf(41, 60) + 0.5) .. " yd", 1, true) ~= nil,
+      "/way mail: notice names the POI and the yards (got %s)", lastmsg())
+check(table.getn(msgs) == nmsgs + 1,
+      "/way mail: exactly ONE chat line (no generic Waypoint set duplicate)")
+local stored2 = pfMap.nodes["PFWAY"] and pfMap.nodes["PFWAY"][113]
+  and pfMap.nodes["PFWAY"][113]["41|60"] and pfMap.nodes["PFWAY"][113]["41|60"]["Post Near"]
+check(stored2 ~= nil and stored2.arrow == true,
+      "/way mail: full waypoint machinery (map node with arrow=true)")
+fire()
+fire()
+check(distText() == ydOf(41, 60), "/way mail: the pins tier follows the POI waypoint")
+
+-- no POI of the class in this zone: notice, stored point untouched
+way.HandleCommand("inn")
+check(string.find(lastmsg(), "No innkeeper known in this zone", 1, true) ~= nil,
+      "/way inn with no data: honest notice (got %s)", lastmsg())
+check(way.Get() ~= nil and way.Get().label == "Post Near",
+      "/way inn with no data: the mailbox waypoint stays untouched")
+
+-- unknown word: the usage path, now naming the POI words
+way.HandleCommand("bogus")
+check(string.find(lastmsg(), "Usage", 1, true) ~= nil
+      and string.find(lastmsg(), "flight|mail|inn|repair", 1, true) ~= nil,
+      "/way bogus: usage notice names the POI words (got %s)", lastmsg())
+check(way.Get() ~= nil and way.Get().label == "Post Near",
+      "/way bogus: stored point untouched")
+way.HandleCommand("")
+check(way.Get() == nil, "/way alone still clears after the POI cases")
+
+-- ---------------------------------------------------------------------------
+-- (B1 pins) tracking mirror into the extras: selecting flight tracking adds
+-- the flight POI as a pin extra (icon-only: no beam, never the distance
+-- line, lowest merge priority, tighter 250 yd cull); deselecting removes it;
+-- the untracked mailbox class never renders.
+-- ---------------------------------------------------------------------------
+check(near(T.POI_RADIUS, 250), "poi extras: the 250 yd cull radius is a tunables knob")
+local function fireTracking()
+  _G.this = pfQuest.compass.poidriver
+  _G.event = "MINIMAP_UPDATE_TRACKING"
+  pfQuest.compass.poidriver:Fire("OnEvent")
+  _G.this, _G.event = nil, nil
+end
+check(distOf(44.7, 60) > T.POI_RADIUS and distOf(44.7, 60) < T.MULTI_RADIUS,
+      "harness scene: Flight Far sits between POI_RADIUS and MULTI_RADIUS (%.0f yd)", distOf(44.7, 60))
+
+tracking[1].active = 1
+fireTracking()
+for i = 1, 6 do fire() end
+local pn, pidx = countTitle("Flight Near")
+check(pn == 1 and ml[pidx].class == CLS.POI,
+      "poi extras: flight tracking selected -> flight POI joins as CLASS_POI (found %d)", pn)
+check(pidx ~= nil and ml[pidx].key.texture == "Interface\\Minimap\\Tracking\\FlightMaster",
+      "poi extras: the tracking texture is the plate icon")
+check(countTitle("Flight Far") == 0,
+      "poi extras: the 256 yd POI is culled by the tighter POI radius")
+check(countTitle("Post Near") == 0 and countTitle("Post Far") == 0,
+      "poi extras: the untracked mailbox class never renders")
+check(pidx ~= nil and ml[ml.n].class == CLS.POI,
+      "poi extras: POI sorts last (lowest merge priority)")
+check(pidx ~= nil and mf[pidx]:IsShown() == true and mf[pidx].beam:IsShown() == false,
+      "poi extras: plate shown, no beam ever (pinsmultibeam is on)")
+check(pidx ~= nil and mf[pidx].dtext:IsShown() == false,
+      "poi extras: never the nearest-extra distance line")
+
+-- deselect: no config string changes, so the extras pick this up on the 1s
+-- rebuild heartbeat -- ride it out (each fire advances the fake clock 0.05s)
+tracking[1].active = nil
+fireTracking()
+for i = 1, 25 do fire() end
+check(countTitle("Flight Near") == 0, "poi extras: deselect removes the POI extra")
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
