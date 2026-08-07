@@ -464,8 +464,9 @@ local ms = {
   MAX = MULTI_MAX,
   on = false, cap = 4, beam = true, active = nil,
   rares = false, -- A3: compassrares extras (with pinsmulti)
+  party = false, -- A4: pinsparty plates (activates the layer on its own)
   op = 1, -- pinsopacity snapshot, multiplied into the extras' distance fade
-  cfgOn = nil, cfgCap = nil, cfgBeam = nil, cfgRares = nil, -- raw-string dirty keys
+  cfgOn = nil, cfgCap = nil, cfgBeam = nil, cfgRares = nil, cfgParty = nil, -- raw-string dirty keys
   lastTarget = nil, lastQueue = nil, lastZone = nil, lastCap = nil,
   nextRebuild = 0,
 }
@@ -561,6 +562,45 @@ local function MultiSink(x, y, class, tab)
   if ev then RepoolM(ev) end
 end
 
+-- party plates (A4, pinsparty): same-zone party members as small
+-- class-colored plates -- no beam, no text, no navigator, lowest merge
+-- priority. Positions are polled here at the rebuild cadence (the 1s
+-- heartbeat; GetPlayerMapPosition takes party tokens on 3.3.5a, milkyway
+-- api-functions.ts:24048 "a unit in the player's party or raid") and
+-- projected per tick like every other extra. Party only, not raid; members
+-- reporting 0,0 (other zone/instance) skip. One persistent node per slot,
+-- vertex rewritten from RAID_CLASS_COLORS via the UnitClass FILE token (the
+-- 3.3.5a 2-return shape -- never a classID third return).
+local partyNodes = {}
+local CLASS_PARTY = (pfQuest.compass and pfQuest.compass.CLASS and pfQuest.compass.CLASS.PARTY) or 9
+local function AddPartyEntries()
+  if GetNumRaidMembers() > 0 then return end
+  local n = GetNumPartyMembers()
+  if not n or n < 1 then return end
+  if n > 4 then n = 4 end
+  for i = 1, n do
+    local unit = "party" .. i
+    local px, py = GetPlayerMapPosition(unit)
+    if px and py and not (px == 0 and py == 0) then
+      local node = partyNodes[i]
+      if not node then
+        node = { texture = PATH .. "\\img\\node", vertex = { 1, 1, 1 } }
+        partyNodes[i] = node
+      end
+      node.title = UnitName(unit)
+      local _, class = UnitClass(unit)
+      local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+      local v = node.vertex
+      if c then
+        v[1], v[2], v[3] = c.r, c.g, c.b
+      else
+        v[1], v[2], v[3] = 1, 1, 1
+      end
+      MultiSink(px * 100, py * 100, CLASS_PARTY, node)
+    end
+  end
+end
+
 local function RebuildMulti(pxf, pyf, target)
   for i = 1, mlist.n do
     RepoolM(mlist[i])
@@ -579,12 +619,21 @@ local function RebuildMulti(pxf, pyf, target)
   sinkPx, sinkPy, sinkW, sinkH = pxf, pyf, size[1], size[2]
   sinkSkipX = target and target[1] or nil
   sinkSkipY = target and target[2] or nil
-  api.EachZoneNode(zoneID, MultiSink)
-  -- A3 rare spawns: the compass's per-zone cached rare provider joins the
-  -- extras when its strip toggle is on (compassrares governs the class
-  -- across both surfaces; the pins path additionally needs pinsmulti)
-  if ms.rares and api.EachZoneRare then
-    api.EachZoneRare(zoneID, MultiSink)
+  -- the quest taxonomy (and its rare/dungeon companions) belongs to the
+  -- pinsmulti experiment; party plates ride the same machinery but activate
+  -- on their own toggle, so each source gates itself
+  if ms.on then
+    api.EachZoneNode(zoneID, MultiSink)
+    -- A3 rare spawns: the compass's per-zone cached rare provider joins the
+    -- extras when its strip toggle is on (compassrares governs the class
+    -- across both surfaces; the pins path additionally needs pinsmulti)
+    if ms.rares and api.EachZoneRare then
+      api.EachZoneRare(zoneID, MultiSink)
+    end
+  end
+  -- A4 party members
+  if ms.party then
+    AddPartyEntries()
   end
 end
 
@@ -677,8 +726,9 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         f:SetAlpha(a)
       end
       -- subordinate beam: distance-driven height like the main beam, tighter
-      -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance
-      if ms.beam then
+      -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance.
+      -- Party plates never beam (A4: plates only)
+      if ms.beam and e.class ~= CLASS_PARTY then
         local bh = floor(e.dist + 0.5)
         if bh < MULTI_BEAM_MIN then bh = MULTI_BEAM_MIN
         elseif bh > MULTI_BEAM_MAX then bh = MULTI_BEAM_MAX end
@@ -698,7 +748,9 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         f.on = true
         f:Show()
       end
-      if MULTI_NEAREST_DIST and (not nearestDist or e.dist < nearestDist) then
+      -- party plates carry no text (A4), so they never take the line
+      if MULTI_NEAREST_DIST and e.class ~= CLASS_PARTY
+         and (not nearestDist or e.dist < nearestDist) then
         nearestDist, nearestIdx = e.dist, i
       end
     elseif f.on then
@@ -771,14 +823,17 @@ driver:SetScript("OnUpdate", function()
   local cfgMultiCap = pfQuest_config["pinsmulticap"]
   local cfgMultiBeam = pfQuest_config["pinsmultibeam"]
   local cfgRares = pfQuest_config["compassrares"]
+  local cfgParty = pfQuest_config["pinsparty"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
      or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
-     or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares then
+     or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares
+     or cfgParty ~= ms.cfgParty then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
+    ms.cfgParty = cfgParty
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
@@ -789,6 +844,7 @@ driver:SetScript("OnUpdate", function()
     ms.cap = Clamp(cfgMultiCap, 1, ms.MAX, 4)
     ms.beam = cfgMultiBeam ~= "0"
     ms.rares = cfgRares == "1"
+    ms.party = cfgParty == "1"
     ms.nextRebuild = 0 -- extras source set may have changed: rebuild now
     -- whole-tier opacity: one SetAlpha per element, every child rides along;
     -- the extras multiply it into their distance fade per tick instead
@@ -1054,7 +1110,7 @@ driver:SetScript("OnUpdate", function()
   -- the only thing that matters, ambient plates are noise next to it.
   if corpseRun then
     if ms.active then MultiSleep() end
-  elseif ms.on then
+  elseif ms.on or ms.party then
     if mode == "navigator" then
       MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, nil, nil)
     else

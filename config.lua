@@ -171,6 +171,8 @@ if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Show Party Members"], desc = L["Class colored plates on same zone party members"], default = "0", type = "checkbox", config = "pinsparty" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Multi Waypoint Beams"], desc = L["Part of the multiple waypoints experiment"], default = "1", type = "checkbox", config = "pinsmultibeam" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Multi Waypoint Cap"], desc = L["1 to 8 extra pins, default 4"], default = "4", type = "text", config = "pinsmulticap" })
