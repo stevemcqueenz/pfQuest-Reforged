@@ -50,8 +50,16 @@ center).
 
 Waypoint: size %, min %, max % (distance scaling clamps), show beam, opacity,
 show info text (+ its size/opacity). Pinpoint: size %. Navigator: size,
-opacity, orbit distance, dynamic distance. Color override. Audio cues
-(set/arrive) -- LOW priority, needs sound assets, park it.
+opacity, orbit distance, dynamic distance. Color override (shipped: the
+`pinscolor` pylon color row, see "Visual polish"). Audio cues (set/arrive) --
+LOW priority, needs sound assets, park it.
+
+Coverage vs the Waypoint-UI panel is now COMPLETE except two items, each with
+a reason: **audio cues** (parked: needs sound assets and a maintainer call on
+the sound language) and **dynamic distance** (the navigator orbit radius is a
+fixed setting, `pinsnavradius`: a zoom-following radius needs camera-zoom
+polling every tick for a subtle effect on a surface that already lets the
+user pick the radius directly -- deliberate skip, not an oversight).
 
 Defaults follow their proven values: size 120%, min 50%, max 150%, beam on,
 info text on, navigator dynamic distance on. Whole feature off by default and
@@ -211,6 +219,52 @@ meeting stones (`pinsdungeon`, off) join the multi-pin extras when
 `pinsmulti` is on, via per-zone cached DB scans in compass.lua (rares are
 NOT pfMap nodes unless explicitly tracked; `pfDB.meta.rares` is the curated
 unit-id list, vanilla+TBC coverage).
+
+## Visual polish pass (shipped on `dev`, in-game QA pending)
+
+The maintainer's "visual follow up and perfection" round: refinement only,
+every behavior identical. The tier's visual language is now four layers per
+plate, all runtime-tinted white art from `tools/gen_marker_assets.py`:
+
+1. **Drop shadow** (`marker_fill`, black 0.35, 2 px down-right, drawn under
+   everything): depth against bright ground.
+2. **Glow halo** (`marker_glow`, 64x64 radial `(1-r^2)^2` falloff, ADD blend,
+   accent-tinted, 1.6x the plate): the MAIN pin (waypoint diamond + pinpoint
+   plate) pulses gently (sin, 2.5 s period, alpha 0.18-0.32; one SetAlpha per
+   tick, only while shown); navigator static 0.25; extras/party/POI static at
+   half (0.125); a DEAD party member keeps the full 0.25 as its
+   find-the-body emphasis -- still accent-tinted, not red: the class-tinted
+   skull already carries identity and a third hue would fight it.
+3. **Plate** (fill + edge + icon, unchanged).
+4. **Beam** (`beam_soft`, 32x256: horizontal gaussian core, vertically full
+   alpha, ADD blend): the runtime SetGradientAlpha still owns the vertical
+   fade, so height scaling is untouched. The main waypoint carries TWO
+   layers -- wide faint halo (12 px, 0.16) + narrow brighter core (4 px, the
+   original 0.35); extras keep one subordinate layer (6 px, 0.2). Chevrons
+   (pinpoint marks + navigator arrow) moved to ADD blend so they read as
+   light. ADD + gradient compose on 3.3.5a: the gradient writes per-corner
+   vertex color/alpha, SetBlendMode picks the framebuffer op (milkyway
+   widgets.ts:4141/4144; ElvUI-WotLK's vertex-tinted ADD sparks/glows are the
+   precedent) -- no baked-fade TGA variant was needed.
+
+**Pylon color override (`pinscolor`).** Default `""` = follow the theme
+accent (teal standalone, GW2 gold with GW2_UI). A stored `"r,g,b"` (0-1
+floats) overrides the accent for the ENTIRE pins tier -- beams, plate edges,
+glows, chevrons, navigator, extras -- while fills stay theme bg and
+class-colored party plates / death tint stay untouched. The settings row is a
+swatch button opening the NATIVE 3.3.5a ColorPickerFrame (live-applies while
+dragging via `.func` on OnColorSelect) plus a Reset button back to
+theme-follow; parse is defensive (garbage -> theme follow) and re-tint rides
+the driver's existing settings dirty path, no reload. The compass strip
+deliberately does NOT reuse the override (the ask was the pylons; a live
+compass re-tint spiders through its needle/cardinals/pool internals).
+
+All constants live in the `pins.lua` tunables block and are exposed through
+`pins.tunables`; wiring, parsing and re-tint are pinned in
+`tools/pinscheck335.lua` (the color-parse fallback is negative-tested).
+In-game QA gates: glow subtlety in daylight vs night, beam core readability
+at range, pulse period feel, and the color picker round-trip
+(pick/cancel/reset).
 
 **Party pins (A4, amended).** `pinsparty` (off; party only, never raid)
 rides the DLL's own `UnitPosition` on the party tokens: direct world

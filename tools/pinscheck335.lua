@@ -1322,5 +1322,156 @@ fireTracking()
 for i = 1, 25 do fire() end
 check(countTitle("Flight Near") == 0, "poi extras: deselect removes the POI extra")
 
+-- ===========================================================================
+-- VISUAL POLISH pass (docs/PINS-DESIGN.md "Visual polish"): glow/beam
+-- layering, ADD blend, plate shadow, and the pinscolor pylon override.
+-- Wrapped in a do-block: the main chunk carries many live locals and Lua 5.1
+-- caps a function at 200 registers.
+-- ===========================================================================
+do
+  -- (a) ParseColor, pure: valid triplets in, theme-follow (nil) for the rest
+  local c = pins.ParseColor("1,0,0")
+  check(c ~= nil and c[1] == 1 and c[2] == 0 and c[3] == 0, "ParseColor: plain triplet parses")
+  c = pins.ParseColor(" 0.25 , 0.5,0.75 ")
+  check(c ~= nil and near(c[1], 0.25) and near(c[2], 0.5) and near(c[3], 0.75),
+        "ParseColor: whitespace-tolerant float triplet")
+  c = pins.ParseColor("9,0.5,0.5")
+  check(c ~= nil and c[1] == 1, "ParseColor: components clamp to 1")
+  check(pins.ParseColor("") == nil, "ParseColor: empty string -> theme follow (nil)")
+  check(pins.ParseColor(nil) == nil, "ParseColor: nil -> theme follow")
+  check(pins.ParseColor("banana") == nil, "ParseColor: garbage -> theme follow")
+  check(pins.ParseColor("0.5,0.5") == nil, "ParseColor: missing component -> theme follow")
+  check(pins.ParseColor("1,1,1extra") == nil, "ParseColor: trailing garbage -> theme follow")
+
+  -- (b) layer wiring on the real widgets. Baseline scene: route target far,
+  -- waypoint mode.
+  fire()
+  fire()
+  check(pins.waypoint:IsShown() == true, "polish scene: waypoint mode up")
+  check(pins.waypoint.glow ~= nil and pins.waypoint.glow.blend == "ADD",
+        "waypoint glow present, ADD blend")
+  check(pins.pinpoint.glow ~= nil and pins.navigator.glow ~= nil,
+        "pinpoint and navigator carry glows too")
+  check(pins.waypoint.beam.blend == "ADD" and pins.waypoint.beam2.blend == "ADD",
+        "both waypoint beam layers on ADD blend")
+  check(string.find(tostring(pins.waypoint.beam:GetTexture()), "beam_soft", 1, true) ~= nil
+        and string.find(tostring(pins.waypoint.beam2:GetTexture()), "beam_soft", 1, true) ~= nil,
+        "beam art is the generated soft strip")
+  check(pins.pinpoint.chev1.blend == "ADD" and pins.pinpoint.chev2.blend == "ADD"
+        and pins.navigator.chevron.blend == "ADD",
+        "chevrons read as light: ADD blend on pinpoint marks and navigator arrow")
+  -- shadow: black at SHADOW_ALPHA, offset down-right by SHADOW_OFF
+  local sh = pins.waypoint.shadow
+  check(sh ~= nil and sh.vr == 0 and sh.vg == 0 and sh.vb == 0 and near(sh.va, T.SHADOW_ALPHA),
+        "plate shadow: black at the tunables alpha")
+  check(sh ~= nil and sh.points.TOPLEFT and near(sh.points.TOPLEFT.x, T.SHADOW_OFF)
+        and near(sh.points.TOPLEFT.y, -T.SHADOW_OFF),
+        "plate shadow: offset down-right by SHADOW_OFF")
+  -- glow rides the plate size at GLOW_SCALE
+  check(pins.waypoint.glow:GetWidth()
+        == math.floor(pins.waypoint:GetWidth() * T.GLOW_SCALE + 0.5),
+        "waypoint glow sized GLOW_SCALE x plate (got %s vs plate %s)",
+        tostring(pins.waypoint.glow:GetWidth()), tostring(pins.waypoint:GetWidth()))
+
+  -- pinsbeam off hides BOTH beam layers; on brings both back at one height
+  pfQuest_config["pinsbeam"] = "0"
+  fire()
+  check(pins.waypoint.beam:IsShown() == false and pins.waypoint.beam2:IsShown() == false,
+        "pinsbeam=0: BOTH beam layers hidden")
+  pfQuest_config["pinsbeam"] = "1"
+  fire()
+  check(pins.waypoint.beam:IsShown() == true and pins.waypoint.beam2:IsShown() == true,
+        "pinsbeam back on: both layers return")
+  check(pins.waypoint.beam:GetHeight() == pins.waypoint.beam2:GetHeight(),
+        "halo and core share one height (one dirty key)")
+
+  -- pulse: constants pinned to the spec band, and the alpha actually animates
+  check(near(T.GLOW_PULSE_MID - T.GLOW_PULSE_AMP, 0.18)
+        and near(T.GLOW_PULSE_MID + T.GLOW_PULSE_AMP, 0.32),
+        "glow pulse bounds are 0.18..0.32")
+  check(near(T.GLOW_PULSE_W, 2 * math.pi / 2.5), "glow pulse period is 2.5s")
+  local a1g = pins.waypoint.glow:GetAlpha()
+  for i = 1, 3 do fire() end
+  local a2g = pins.waypoint.glow:GetAlpha()
+  local lo, hi = T.GLOW_PULSE_MID - T.GLOW_PULSE_AMP - 1e-6, T.GLOW_PULSE_MID + T.GLOW_PULSE_AMP + 1e-6
+  check(a1g >= lo and a1g <= hi and a2g >= lo and a2g <= hi,
+        "pulse alpha stays inside the band (got %s, %s)", tostring(a1g), tostring(a2g))
+  check(a1g ~= a2g, "pulse animates across ticks (main pin breathes)")
+  -- extras: static glow at half alpha, soft beam, no pulse
+  check(mf[1].glow ~= nil and mf[1].glow.blend == "ADD"
+        and near(mf[1].glow:GetAlpha(), T.GLOW_EXTRA_ALPHA),
+        "extras carry the static half-alpha glow (got %s)", tostring(mf[1].glow:GetAlpha()))
+  check(near(T.GLOW_EXTRA_ALPHA, T.GLOW_ALPHA * 0.5), "extras glow is half the static glow")
+  check(mf[1].beam.blend == "ADD"
+        and string.find(tostring(mf[1].beam:GetTexture()), "beam_soft", 1, true) ~= nil,
+        "extras beam: soft strip on ADD blend")
+
+  -- dead party member keeps the FULL-strength glow (emphasis)
+  partyN = 1
+  partyWorld["party1"] = { wpx + 60, wpy + 20, wpz }
+  partyDead["party1"] = 1
+  pfQuest_config["pinsparty"] = "1"
+  for i = 1, 12 do fire() end
+  local dgi
+  for i = 1, ml.n do
+    local cl = ml[i].class
+    if cl > CLS.AVAIL and cl < CLS.DUNGEON then dgi = i end
+  end
+  check(dgi ~= nil and near(mf[dgi].glow:GetAlpha(), T.GLOW_ALPHA),
+        "dead party member keeps the full-strength glow (got %s)",
+        tostring(dgi and mf[dgi].glow:GetAlpha()))
+  pfQuest_config["pinsparty"] = "0"
+  partyDead["party1"] = nil
+  partyWorld["party1"] = nil
+  partyN = 0
+  for i = 1, 8 do fire() end
+
+  -- (c) pinscolor override, end to end through the real dirty path
+  fire()
+  local wr, wg, wb = pins.waypoint.edge:GetVertexColor()
+  check(near(wr, 0.2) and near(wg, 1) and near(wb, 0.8),
+        "default: plate edge wears the theme accent")
+  -- live apply: set between fires, no reload -- the dirty path re-tints
+  pfQuest_config["pinscolor"] = "1,0,0"
+  fire()
+  wr, wg, wb = pins.waypoint.edge:GetVertexColor()
+  check(wr == 1 and wg == 0 and wb == 0, "override: waypoint edge re-tints live (no reload)")
+  check(select(1, pins.navigator.chevron:GetVertexColor()) == 1
+        and select(2, pins.navigator.chevron:GetVertexColor()) == 0,
+        "override reaches the navigator chevron")
+  check(select(1, pins.pinpoint.chev1:GetVertexColor()) == 1,
+        "override reaches the pinpoint chevrons")
+  check(select(1, pins.waypoint.glow:GetVertexColor()) == 1
+        and select(1, mf[1].glow:GetVertexColor()) == 1,
+        "override reaches the glows (main and extras)")
+  check(pins.waypoint.beam.grad ~= nil and pins.waypoint.beam.grad[2] == 1
+        and pins.waypoint.beam.grad[3] == 0,
+        "override reaches the wide beam gradient")
+  check(near(pins.waypoint.beam.grad[5], T.BEAM_WIDE_ALPHA)
+        and near(pins.waypoint.beam2.grad[5], T.BEAM_ALPHA),
+        "beam gradient bases: faint halo under the brighter core")
+  check(select(1, mf[1].edge:GetVertexColor()) == 1 and mf[1].beam.grad[2] == 1,
+        "override reaches the extras pool (edges and beams)")
+  -- what the override must NOT touch: fills stay theme bg, icons stay
+  -- BindIcon's (class colors / str2rgb / plain white)
+  check(near(select(1, pins.waypoint.fill:GetVertexColor()), 0.08),
+        "fills stay theme bg under the override")
+  check(select(2, mf[1].icon:GetVertexColor()) == 1,
+        "icons stay BindIcon's colors under the override")
+  -- garbage falls back to the theme accent, live
+  pfQuest_config["pinscolor"] = "banana"
+  fire()
+  wr, wg, wb = pins.waypoint.edge:GetVertexColor()
+  check(near(wr, 0.2) and near(wg, 1) and near(wb, 0.8),
+        "garbage pinscolor -> theme follow, live")
+  -- empty (the Reset affordance) = theme follow too
+  pfQuest_config["pinscolor"] = "1,0,0"
+  fire()
+  pfQuest_config["pinscolor"] = ""
+  fire()
+  check(near(select(1, pins.waypoint.edge:GetVertexColor()), 0.2),
+        "empty pinscolor (Reset) -> theme follow")
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

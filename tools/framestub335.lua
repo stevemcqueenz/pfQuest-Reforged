@@ -116,6 +116,16 @@ local function mkTexture(parent)
   applySize(t)
   function t.SetTexture(s, ...) s.tex = ... end
   function t.GetTexture(s) return s.tex end
+  -- vertex color / gradient / blend modelled, not noop'd: the pins polish
+  -- checks assert the pylon color override actually re-tints widgets, the
+  -- beam gradient endpoints, and the ADD blend on glows/beams/chevrons.
+  -- Widened deliberately (the no-catch-all rule above still holds).
+  function t.SetVertexColor(s, r, g, b, a) s.vr, s.vg, s.vb, s.va = r, g, b, a end
+  function t.GetVertexColor(s) return s.vr or 1, s.vg or 1, s.vb or 1, s.va or 1 end
+  function t.SetGradientAlpha(s, o, r1, g1, b1, a1, r2, g2, b2, a2)
+    s.grad = { o, r1, g1, b1, a1, r2, g2, b2, a2 }
+  end
+  function t.SetBlendMode(s, m) s.blend = m end
   return setmetatable(t, { __index = methodTable(FRAME_NOOPS) })
 end
 
