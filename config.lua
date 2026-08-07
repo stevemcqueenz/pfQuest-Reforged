@@ -139,6 +139,7 @@ pfQuest_defconfig = {
   { text = L["Show Available Quests"], default = "1", type = "checkbox", config = "compassavail" },
   { text = L["Show Quest Turn-Ins"], default = "1", type = "checkbox", config = "compassturnin" },
   { text = L["Show Dungeon Entrances"], default = "0", type = "checkbox", config = "compassdungeon" },
+  { text = L["Show Rare Spawns"], desc = L["Ambient rare mob spawn points from the database"], default = "0", type = "checkbox", config = "compassrares" },
   { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
   { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], default = "8", type = "text", config = "compasscap" },
 

@@ -102,6 +102,7 @@ local CLASS_TURNIN   = 4 -- complete / complete_c (?)
 local CLASS_ACTIVE   = 5 -- cluster_* objective nodes for questlog quests
 local CLASS_AVAIL    = 6 -- available (!) quest givers
 local CLASS_DUNGEON  = 7 -- meta DB meeting stones (instance portals), default off
+local CLASS_RARE     = 8 -- rare spawns from the meta DB rares list, default off
 
 -- classify a pfMap node by its minimap texture -- the node loop's own visual
 -- language (map.lua layers table). Plain find, no patterns (perf idiom).
@@ -618,6 +619,45 @@ local function BuildDungeonList(zone)
   dungeons.n = n
 end
 
+-- rare spawns: pfDB["meta"]["rares"] is the curated unit-id -> level list
+-- (what /db track rares consults; the TBC overlay replaces it cumulatively,
+-- no wotlk overlay ships one, so coverage is vanilla+TBC). Rares are NOT
+-- pfMap nodes unless the user explicitly tracks them, and the units data
+-- carries rank only as a stringly "rnk" field on the vanilla base with zero
+-- consumers -- so the ambient toggle resolves the meta list through the
+-- units DB coords ({x, y, zone, respawn} tuples) once per zone change,
+-- never per rebuild (the BuildDungeonList idiom). Entries are node-shaped
+-- (title/texture) so the pins extras can BindIcon them directly.
+local rarelist = { n = 0 }
+local rareZone
+local function BuildRareList(zone)
+  if rareZone == zone then return end
+  rareZone = zone
+  local n = 0
+  local rares = pfDB and pfDB["meta"] and pfDB["meta"]["rares"]
+  local units = pfDB and pfDB["units"] and pfDB["units"]["data"]
+  local loc = pfDB and pfDB["units"] and pfDB["units"]["loc"]
+  local tex = PATH .. "\\img\\tracking\\rares"
+  if rares and units then
+    for id in pairs(rares) do
+      local unit = units[id]
+      if unit and unit["coords"] then
+        for _, c in pairs(unit["coords"]) do
+          if c[3] == zone then
+            n = n + 1
+            local d = rarelist[n] or {}
+            rarelist[n] = d
+            d.x, d.y = c[1], c[2]
+            d.title = (loc and loc[id]) or L["Rare"]
+            d.texture = tex
+          end
+        end
+      end
+    end
+  end
+  rarelist.n = n
+end
+
 local function BuildMarkers(xp, yp, target, dead)
   for i = 1, list.n do
     Repool(list[i])
@@ -705,6 +745,24 @@ local function BuildMarkers(xp, yp, target, dead)
       e.class, e.key, e.title = CLASS_DUNGEON, d, d.title
       e.x, e.y = d.x, d.y
       e.icon = PATH .. "\\img\\tracking\\meetingstone"
+      e.tr, e.tg, e.tb = 1, 1, 1
+      e.badge, e.desc, e.qlvl = nil, nil, nil
+      local dx, dy = (d.x - px) * 1.5, d.y - py
+      e.dist2 = dx * dx + dy * dy
+      local ev = CapInsert(list, cap, e)
+      if ev then Repool(ev) end
+    end
+  end
+
+  -- rare spawns (default off: ambient info, lowest class -- capped out first)
+  if zoneID and pfQuest_config["compassrares"] == "1" then
+    BuildRareList(zoneID)
+    for i = 1, rarelist.n do
+      local d = rarelist[i]
+      local e = GetEntry()
+      e.class, e.key, e.title = CLASS_RARE, d, d.title
+      e.x, e.y = d.x, d.y
+      e.icon = d.texture
       e.tr, e.tg, e.tb = 1, 1, 1
       e.badge, e.desc, e.qlvl = nil, nil, nil
       local dx, dy = (d.x - px) * 1.5, d.y - py
@@ -1034,8 +1092,20 @@ compass.markers = markers
 compass.CLASS = {
   CORPSE = CLASS_CORPSE, WAYPOINT = CLASS_WAYPOINT, ROUTE = CLASS_ROUTE,
   TURNIN = CLASS_TURNIN, ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL,
-  DUNGEON = CLASS_DUNGEON,
+  DUNGEON = CLASS_DUNGEON, RARE = CLASS_RARE,
 }
+
+-- per-zone rare provider for the pins extras (the strip consumes rarelist
+-- directly above): enumerate the cached zone rares as sink(x, y, class, tab).
+-- Selection policy stays per-consumer, the EachZoneNode doctrine.
+function compass.EachZoneRare(zid, sink)
+  if not zid then return end
+  BuildRareList(zid)
+  for i = 1, rarelist.n do
+    local d = rarelist[i]
+    sink(d.x, d.y, CLASS_RARE, d)
+  end
+end
 
 -- re-read pfQuest_config and resize; safe before saved variables exist
 -- (defaults apply until the config module calls this again)

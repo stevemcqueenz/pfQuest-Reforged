@@ -463,8 +463,9 @@ local lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax, lastCfgOp, lastCfgNavR,
 local ms = {
   MAX = MULTI_MAX,
   on = false, cap = 4, beam = true, active = nil,
+  rares = false, -- A3: compassrares extras (with pinsmulti)
   op = 1, -- pinsopacity snapshot, multiplied into the extras' distance fade
-  cfgOn = nil, cfgCap = nil, cfgBeam = nil, -- raw-string dirty keys
+  cfgOn = nil, cfgCap = nil, cfgBeam = nil, cfgRares = nil, -- raw-string dirty keys
   lastTarget = nil, lastQueue = nil, lastZone = nil, lastCap = nil,
   nextRebuild = 0,
 }
@@ -579,6 +580,12 @@ local function RebuildMulti(pxf, pyf, target)
   sinkSkipX = target and target[1] or nil
   sinkSkipY = target and target[2] or nil
   api.EachZoneNode(zoneID, MultiSink)
+  -- A3 rare spawns: the compass's per-zone cached rare provider joins the
+  -- extras when its strip toggle is on (compassrares governs the class
+  -- across both surfaces; the pins path additionally needs pinsmulti)
+  if ms.rares and api.EachZoneRare then
+    api.EachZoneRare(zoneID, MultiSink)
+  end
 end
 
 local function MultiSleep()
@@ -763,14 +770,15 @@ driver:SetScript("OnUpdate", function()
   local cfgMulti = pfQuest_config["pinsmulti"]
   local cfgMultiCap = pfQuest_config["pinsmulticap"]
   local cfgMultiBeam = pfQuest_config["pinsmultibeam"]
+  local cfgRares = pfQuest_config["compassrares"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
      or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
-     or cfgMultiBeam ~= ms.cfgBeam then
+     or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
-    ms.cfgOn, ms.cfgCap, ms.cfgBeam = cfgMulti, cfgMultiCap, cfgMultiBeam
+    ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
@@ -780,6 +788,8 @@ driver:SetScript("OnUpdate", function()
     ms.on = cfgMulti == "1"
     ms.cap = Clamp(cfgMultiCap, 1, ms.MAX, 4)
     ms.beam = cfgMultiBeam ~= "0"
+    ms.rares = cfgRares == "1"
+    ms.nextRebuild = 0 -- extras source set may have changed: rebuild now
     -- whole-tier opacity: one SetAlpha per element, every child rides along;
     -- the extras multiply it into their distance fade per tick instead
     local a = Clamp(cfgOp, 10, 100, 100) / 100
