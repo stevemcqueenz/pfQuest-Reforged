@@ -84,6 +84,10 @@ local MULTI_NEAREST_DIST = true -- the single nearest extra shows a distance lin
 -- alpha multiplies in on top via frame-alpha inheritance
 local MULTI_BEAM_ALPHA = 0.2
 local MULTI_BEAM_MIN, MULTI_BEAM_MAX = 28, 119
+-- utility POIs (phase B): ambience culls tighter than the quest extras --
+-- a mailbox plate reaching across the whole 300 yd bubble is clutter, not
+-- guidance. In-game QA knob: is 250 right?
+local POI_RADIUS = 250
 
 -- ---------------------------------------------------------------------------
 -- pure helpers (exposed on pfQuest.pins for the harness)
@@ -550,6 +554,10 @@ end
 -- the show radius culls here so cap slots never go to unreachable extras
 local sinkPx, sinkPy, sinkW, sinkH, sinkSkipX, sinkSkipY, sinkCapInsert
 local MULTI_RADIUS2 = MULTI_RADIUS * MULTI_RADIUS
+-- utility POIs (phase B): class constant from the shared taxonomy, tighter
+-- show radius (POI_RADIUS) than the quest extras
+local CLASS_POI = (pfQuest.compass and pfQuest.compass.CLASS and pfQuest.compass.CLASS.POI) or 10
+local POI_RADIUS2 = POI_RADIUS * POI_RADIUS
 local function MultiSink(x, y, class, tab)
   -- the route target's own cell already wears the full waypoint treatment
   if sinkSkipX and x == sinkSkipX and y == sinkSkipY then return end
@@ -557,6 +565,7 @@ local function MultiSink(x, y, class, tab)
   local dy = (y / 100 - sinkPy) * sinkH
   local d2 = dx * dx + dy * dy
   if d2 > MULTI_RADIUS2 then return end
+  if class == CLASS_POI and d2 > POI_RADIUS2 then return end
   local e = GetMEntry()
   e.class, e.key, e.x, e.y, e.dist2 = class, tab, x, y, d2
   -- pooled entry: a stale world flavor from a former party entry would
@@ -665,6 +674,13 @@ local function RebuildMulti(pxf, pyf, target, wx, wy)
     if ms.dungeon and api.EachZoneDungeon then
       api.EachZoneDungeon(zoneID, MultiSink)
     end
+    -- B utility POIs: the provider self-filters through the three control
+    -- layers (tracking mirror / ambient / city gate), so an unconditional
+    -- call is free while nothing is active; the shared cap ranks them last
+    -- (lowest class)
+    if api.EachZonePoi then
+      api.EachZonePoi(zoneID, MultiSink)
+    end
   end
   -- A4 party members: world-anchored, so no map anchor and no size data
   -- needed -- this source works indoors
@@ -732,7 +748,8 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         local dxw, dyw = ex - wx, ey - wy
         local d = sqrt(dxw * dxw + dyw * dyw)
         -- the player moves between rebuilds: re-check the show radius live
-        if d <= MULTI_RADIUS then
+        -- (utility POIs keep their tighter one)
+        if d <= (e.class == CLASS_POI and POI_RADIUS or MULTI_RADIUS) then
           e.show = true
           e.dist = d
           e.ux, e.uy = ToUiCoords(sx, sy, uiw, uih)
@@ -773,9 +790,10 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
       -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance.
       -- ALIVE party plates never beam; a DEAD member always beams (the
       -- find-the-body cue, independent of the pinsmultibeam experiment
-      -- knob); everything else follows pinsmultibeam
+      -- knob); utility POIs never beam (icon-only ambience, phase B);
+      -- everything else follows pinsmultibeam
       local wantBeam
-      if e.class == CLASS_PARTY then
+      if e.class == CLASS_PARTY or e.class == CLASS_POI then
         wantBeam = nil
       elseif e.class == CLASS_PARTY_DEAD then
         wantBeam = true
@@ -803,8 +821,10 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         f:Show()
       end
       -- party plates never take the nearest-extra line (A4): alive ones
-      -- carry no text at all, dead ones own a line of their own below
+      -- carry no text at all, dead ones own a line of their own below;
+      -- utility POIs never take it either (icon-only, phase B)
       if MULTI_NEAREST_DIST and e.class ~= CLASS_PARTY and e.class ~= CLASS_PARTY_DEAD
+         and e.class ~= CLASS_POI
          and (not nearestDist or e.dist < nearestDist) then
         nearestDist, nearestIdx = e.dist, i
       end
@@ -1237,4 +1257,5 @@ pins.tunables = {
   MULTI_FLOOR = MULTI_FLOOR, MULTI_MERGE = MULTI_MERGE, MULTI_BASE = MULTI_BASE,
   MULTI_NEAREST_DIST = MULTI_NEAREST_DIST, MULTI_BEAM_ALPHA = MULTI_BEAM_ALPHA,
   MULTI_BEAM_MIN = MULTI_BEAM_MIN, MULTI_BEAM_MAX = MULTI_BEAM_MAX,
+  POI_RADIUS = POI_RADIUS,
 }

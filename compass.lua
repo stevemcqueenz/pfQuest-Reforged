@@ -18,6 +18,7 @@ local floor, sqrt = math.floor, math.sqrt
 -- arrow on any movement (route.lua:537).
 local sin, cos, atan2 = math.sin, math.cos, math.atan2
 local strfind = string.find
+local strlower = string.lower
 local GetTime = GetTime
 local GetPlayerMapPosition = GetPlayerMapPosition
 local GetRealZoneText = GetRealZoneText
@@ -104,6 +105,7 @@ local CLASS_AVAIL    = 6 -- available (!) quest givers
 local CLASS_DUNGEON  = 7 -- meta DB meeting stones (instance portals), default off
 local CLASS_RARE     = 8 -- rare spawns from the meta DB rares list, default off
 local CLASS_PARTY    = 9 -- party members; pins-only, the strip never renders it
+local CLASS_POI      = 10 -- utility POIs (flight/mail/inn/repair), lowest of all
 
 -- classify a pfMap node by its minimap texture -- the node loop's own visual
 -- language (map.lua layers table). Plain find, no patterns (perf idiom).
@@ -188,7 +190,9 @@ local function SelectLabel(slots, state, now)
     if not fallback and (e.class == CLASS_WAYPOINT or e.class == CLASS_ROUTE) then
       fallback = e
     end
-    if a <= LABEL_WINDOW and not e.merged then
+    -- utility POIs are icon-only ambience and never own the label (their
+    -- /way'd counterpart is a CLASS_WAYPOINT marker, which does)
+    if a <= LABEL_WINDOW and not e.merged and e.class ~= CLASS_POI then
       if not best then
         best, bestabs = e, a
       elseif a < bestabs - 1e-9 then
@@ -661,6 +665,126 @@ local function BuildRareList(zone)
   rarelist.n = n
 end
 
+-- utility POIs (phase B, docs/POI-DESIGN.md): flight masters, mailboxes,
+-- innkeepers and repair vendors from db/poi-wotlk335.lua ({xPct, yPct, name}
+-- 3-slot tuples per zone -- NOT the 4-slot units shape). One provider, three
+-- control layers:
+--   B1 tracking mirror: selecting a native minimap tracking type shows its
+--      class, zero-config. Mapping is by the GetTrackingInfo TEXTURE path
+--      (the name return is localized, the texture is not); all four types
+--      exist on this client -- MINIMAP_TRACKING_FLIGHTMASTER/INNKEEPER/
+--      MAILBOX/REPAIR, FrameXML 3.3.5a GlobalStrings.lua:4932-4947 (mailbox
+--      tracking shipped with patch 3.3.0).
+--   B3 ambient mode: compasspoi = "1" shows all four classes; poicityonly
+--      gates that to capital cities. The tracking mirror is never gated.
+--   B2 (/way <class>) lives in waypoint.lua and reads the db directly.
+-- Zone list cached per zone change (the BuildRareList idiom); the mirror set
+-- rebuilds only on MINIMAP_UPDATE_TRACKING (3.3.5a-native, milkyway
+-- events.ts:3714); the marker set follows on the 1s rebuild heartbeat.
+local POI_TEX = {
+  ["flight"] = "Interface\\Minimap\\Tracking\\FlightMaster",
+  ["mail"]   = "Interface\\Minimap\\Tracking\\Mailbox",
+  ["inn"]    = "Interface\\Minimap\\Tracking\\Innkeeper",
+  ["repair"] = "Interface\\Minimap\\Tracking\\Repair",
+}
+-- lowercase texture-path fragment -> POI class (locale-proof mirror key)
+local POI_TRACKMATCH = {
+  ["flightmaster"] = "flight",
+  ["mailbox"] = "mail",
+  ["innkeeper"] = "inn",
+  ["repair"] = "repair",
+}
+-- capital cities in pfQuest's zone-id space (db/enUS/zones*.lua): Undercity,
+-- Stormwind, Ironforge, Orgrimmar, Thunder Bluff, Darnassus, Silvermoon,
+-- The Exodar, Shattrath, Dalaran (4395, the Northrend city -- 279 is the
+-- crater, db/enUS/zones-wotlk.lua:24)
+local POI_CITIES = {
+  [1497] = true, [1519] = true, [1537] = true, [1637] = true, [1638] = true,
+  [1657] = true, [3487] = true, [3557] = true, [3703] = true, [4395] = true,
+}
+
+local trackActive = {} -- POI class -> true while a matching tracking type is selected
+local function ScanTracking()
+  for k in pairs(trackActive) do trackActive[k] = nil end
+  -- guarded for pre-wrath clients (this file also loads on the vanilla toc);
+  -- 3.3.5a has both natively (milkyway api-functions.ts:23091/28016)
+  if not GetNumTrackingTypes then return end
+  for i = 1, GetNumTrackingTypes() do
+    local _, tex, active = GetTrackingInfo(i)
+    if active and tex then
+      tex = strlower(tex)
+      for pat, class in pairs(POI_TRACKMATCH) do
+        if strfind(tex, pat, 1, true) then trackActive[class] = true end
+      end
+    end
+  end
+end
+
+-- is `class` shown in `zone` right now? Mirror first (never gated), then the
+-- ambient setting behind its city gate. Config reads happen at the rebuild
+-- cadence only (~1/s) -- the cheap-settings-read rule, not a per-frame cost.
+local function PoiActive(class, zone)
+  if trackActive[class] then return true end
+  if pfQuest_config["compasspoi"] == "1" then
+    if pfQuest_config["poicityonly"] ~= "1" or POI_CITIES[zone] then return true end
+  end
+  return nil
+end
+
+-- gates the zone-list build so the all-off default path never touches the db
+local function AnyPoiActive(zone)
+  if trackActive["flight"] or trackActive["mail"] or trackActive["inn"]
+     or trackActive["repair"] then
+    return true
+  end
+  if pfQuest_config["compasspoi"] == "1" then
+    if pfQuest_config["poicityonly"] ~= "1" or POI_CITIES[zone] then return true end
+  end
+  return nil
+end
+
+-- per-zone POI cache over ALL four classes (active-class filtering happens at
+-- consume time, so a tracking flip never rebuilds this). Entries are
+-- node-shaped (title/texture) so the pins extras can BindIcon them; the icon
+-- is the tracking texture itself -- it already fits the diamond housing and
+-- explains itself.
+local poilist = { n = 0 }
+local poiZone
+local function BuildPoiList(zone)
+  if poiZone == zone then return end
+  poiZone = zone
+  local n = 0
+  local db = pfDB and pfDB["poi-wotlk335"]
+  if db then
+    for class, tex in pairs(POI_TEX) do
+      local zones = db[class]
+      local entries = zones and zones[zone]
+      if entries then
+        for _, c in pairs(entries) do
+          n = n + 1
+          local d = poilist[n] or {}
+          poilist[n] = d
+          d.x, d.y = c[1], c[2]
+          d.title = c[3]
+          d.texture = tex
+          d.poiclass = class
+        end
+      end
+    end
+  end
+  poilist.n = n
+end
+
+-- B1 driver: rescan the mirror only when the tracking selection changes;
+-- PLAYER_ENTERING_WORLD seeds the login state (tracking persists across
+-- loading screens, but no MINIMAP_UPDATE_TRACKING fires on login)
+local poidriver = CreateFrame("Frame", nil, UIParent)
+if GetNumTrackingTypes then
+  poidriver:RegisterEvent("MINIMAP_UPDATE_TRACKING")
+  poidriver:RegisterEvent("PLAYER_ENTERING_WORLD")
+end
+poidriver:SetScript("OnEvent", ScanTracking)
+
 local function BuildMarkers(xp, yp, target, dead)
   for i = 1, list.n do
     Repool(list[i])
@@ -772,6 +896,28 @@ local function BuildMarkers(xp, yp, target, dead)
       e.dist2 = dx * dx + dy * dy
       local ev = CapInsert(list, cap, e)
       if ev then Repool(ev) end
+    end
+  end
+
+  -- utility POIs (tracking mirror / ambient city mode, PoiActive decides):
+  -- icon-only ambience, lowest class of all -- first capped out, never the
+  -- label owner (SelectLabel skips the class), zone-wide like every class
+  if zoneID and AnyPoiActive(zoneID) then
+    BuildPoiList(zoneID)
+    for i = 1, poilist.n do
+      local d = poilist[i]
+      if PoiActive(d.poiclass, zoneID) then
+        local e = GetEntry()
+        e.class, e.key, e.title = CLASS_POI, d, d.title
+        e.x, e.y = d.x, d.y
+        e.icon = d.texture
+        e.tr, e.tg, e.tb = 1, 1, 1
+        e.badge, e.desc, e.qlvl = nil, nil, nil
+        local dx, dy = (d.x - px) * 1.5, d.y - py
+        e.dist2 = dx * dx + dy * dy
+        local ev = CapInsert(list, cap, e)
+        if ev then Repool(ev) end
+      end
     end
   end
 
@@ -1096,7 +1242,11 @@ compass.CLASS = {
   CORPSE = CLASS_CORPSE, WAYPOINT = CLASS_WAYPOINT, ROUTE = CLASS_ROUTE,
   TURNIN = CLASS_TURNIN, ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL,
   DUNGEON = CLASS_DUNGEON, RARE = CLASS_RARE, PARTY = CLASS_PARTY,
+  POI = CLASS_POI,
 }
+-- B1 seams for the harness: the tracking-mirror event frame and its scan
+compass.poidriver = poidriver
+compass.ScanTracking = ScanTracking
 
 -- per-zone rare provider for the pins extras (the strip consumes rarelist
 -- directly above): enumerate the cached zone rares as sink(x, y, class, tab).
@@ -1118,6 +1268,19 @@ function compass.EachZoneDungeon(zid, sink)
   for i = 1, dungeons.n do
     local d = dungeons[i]
     sink(d.x, d.y, CLASS_DUNGEON, d)
+  end
+end
+
+-- per-zone utility-POI provider for the pins extras (phase B): only ACTIVE
+-- classes yield, so both surfaces obey the same three control layers
+function compass.EachZonePoi(zid, sink)
+  if not zid or not AnyPoiActive(zid) then return end
+  BuildPoiList(zid)
+  for i = 1, poilist.n do
+    local d = poilist[i]
+    if PoiActive(d.poiclass, zid) then
+      sink(d.x, d.y, CLASS_POI, d)
+    end
   end
 end
 
