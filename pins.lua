@@ -185,6 +185,21 @@ local function PinpointText(node)
   return nil
 end
 
+-- pylon color override parse (pinscolor): "r,g,b" 0-1 floats -> {r, g, b},
+-- anything else -> nil (empty string, garbage, missing components -- the
+-- tier then follows the theme accent, including the GW2 gold switch).
+-- Components clamp into 0..1; the pattern admits no sign, so no negatives.
+local function ParseColor(s)
+  if type(s) ~= "string" then return nil end
+  local _, _, r, g, b = string.find(s, "^%s*([%d%.]+)%s*,%s*([%d%.]+)%s*,%s*([%d%.]+)%s*$")
+  r, g, b = tonumber(r), tonumber(g), tonumber(b)
+  if not r or not g or not b then return nil end
+  if r > 1 then r = 1 end
+  if g > 1 then g = 1 end
+  if b > 1 then b = 1 end
+  return { r, g, b }
+end
+
 -- ETA seconds, or nil when no honest number exists: standing still (speed 0),
 -- or a nonsense speed (negative/nan/inf from a misreporting core). The spec
 -- rule is NEVER show infinity -- the caller hides the line on nil.
@@ -797,6 +812,39 @@ local function RebuildMulti(pxf, pyf, target, wx, wy)
   end
 end
 
+-- re-tint the WHOLE pins tier with the effective accent: the pinscolor
+-- override when pins.tintOverride is set (the driver parses it on the
+-- settings dirty path), the theme accent otherwise. Reaches exactly what the
+-- accent painted at construction -- plate edges, glows, beam gradients,
+-- chevrons -- and nothing else: fills stay theme bg, icons stay BindIcon's
+-- (class colors and death tint untouched). A pins FIELD so the driver (at
+-- the 60-upvalue ceiling) calls it through the captured pins table.
+function pins.ApplyTint()
+  local a = pins.tintOverride or accent
+  waypoint.edge:SetVertexColor(a[1], a[2], a[3], 1)
+  waypoint.glow:SetVertexColor(a[1], a[2], a[3], 1)
+  waypoint.beam:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], BEAM_WIDE_ALPHA,
+                                 a[1], a[2], a[3], 0)
+  waypoint.beam2:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], BEAM_ALPHA,
+                                  a[1], a[2], a[3], 0)
+  pinpoint.edge:SetVertexColor(a[1], a[2], a[3], 1)
+  pinpoint.glow:SetVertexColor(a[1], a[2], a[3], 1)
+  pinpoint.chev1:SetVertexColor(a[1], a[2], a[3], 1)
+  pinpoint.chev2:SetVertexColor(a[1], a[2], a[3], 1)
+  navigator.edge:SetVertexColor(a[1], a[2], a[3], 1)
+  navigator.glow:SetVertexColor(a[1], a[2], a[3], 1)
+  navigator.chevron:SetVertexColor(a[1], a[2], a[3], 1)
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    if f then
+      f.edge:SetVertexColor(a[1], a[2], a[3], 1)
+      f.glow:SetVertexColor(a[1], a[2], a[3], 1)
+      f.beam:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], MULTI_BEAM_ALPHA,
+                              a[1], a[2], a[3], 0)
+    end
+  end
+end
+
 local function MultiSleep()
   if not ms.active then return end
   ms.active = nil
@@ -1029,16 +1077,25 @@ driver:SetScript("OnUpdate", function()
   local cfgRares = pfQuest_config["compassrares"]
   local cfgParty = pfQuest_config["pinsparty"]
   local cfgDungeon = pfQuest_config["pinsdungeon"]
+  local cfgColor = pfQuest_config["pinscolor"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
      or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
      or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares
-     or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon then
+     or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon
+     or cfgColor ~= ms.cfgColor then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
     ms.cfgParty, ms.cfgDungeon = cfgParty, cfgDungeon
+    -- pylon color override (pinscolor): live re-tint on the existing dirty
+    -- path -- parse defensively (garbage -> theme follow), then repaint the
+    -- tier. State and helpers ride ms/pins fields: this closure sits at
+    -- Lua 5.1's 60-upvalue ceiling.
+    ms.cfgColor = cfgColor
+    pins.tintOverride = pins.ParseColor(cfgColor)
+    pins.ApplyTint()
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
@@ -1359,6 +1416,7 @@ pins.PercentToWorld = PercentToWorld
 pins.ScaleForDistance = ScaleForDistance
 pins.Clamp = Clamp
 pins.PinpointText = PinpointText
+pins.ParseColor = ParseColor
 pins.EtaFor = EtaFor
 pins.FormatEta = FormatEta
 pins.NavigatorAngle = NavigatorAngle

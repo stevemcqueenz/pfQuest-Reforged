@@ -74,7 +74,8 @@ UIDropDownMenu_AddButton UIDropDownMenu_Initialize UIDropDownMenu_SetSelectedID
 UIDropDownMenu_SetWidth UIDropDownMenu_SetButtonWidth UIDropDownMenu_JustifyText
 FauxScrollFrame_GetOffset FauxScrollFrame_Update GameTooltip_SetDefaultAnchor SetItemRef
 QuestLog_SetSelection QuestLog_UpdateQuestDetails QuestLogTitleButton_Resize
-WorldMapFrame_ClearQuestPOIs ChatEdit_InsertLink ScrollFrameTemplate_OnMouseWheel""".split())
+WorldMapFrame_ClearQuestPOIs ChatEdit_InsertLink ScrollFrameTemplate_OnMouseWheel
+OpenColorPicker""".split())
 
 # Present on 3.3.5a but missing from the codex dataset. An unknown event name raises on
 # RegisterEvent on this client, so anything the shipping addon registers without erroring

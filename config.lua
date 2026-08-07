@@ -204,6 +204,8 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Size"], desc = L["Percent, 100 is the default size"], default = "100", type = "text", config = "pinssize" })
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Pylon Color"], desc = L["Empty follows the theme"], default = "", type = "color", config = "pinscolor" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Enable Waypoint Pins"], desc = L["Needs the WorldAPI DLL (WorldToScreen)"], default = "0", type = "checkbox", config = "pins" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["In-world Pins"], default = nil, type = "header" })
@@ -519,6 +521,71 @@ function pfQuestConfig:CreateConfigEntries(config)
         end)
 
         pfUI.api.CreateBackdrop(frame.input, nil, true)
+      elseif data.type == "color" then
+        -- Reforged: color swatch row (pinscolor). Opens the NATIVE 3.3.5a
+        -- color picker: ColorPickerFrame is stock FrameXML on this client
+        -- (FrameXML/ColorPickerFrame.xml -- .func fires on OnColorSelect,
+        -- live while dragging, and again on Okay; .cancelFunc receives
+        -- previousValues), and OpenColorPicker is the stock helper that
+        -- fills those fields (FrameXML/UIDropDownMenu.lua:986). No opacity
+        -- slider: the pins tier has its own opacity setting.
+        local config = data.config
+        -- effective color for the swatch: the stored override when it
+        -- parses, the theme accent otherwise. pfQuest.pins owns the parser
+        -- and exists whenever this row does (both are DLL-gated).
+        local function current()
+          local p = pfQuest and pfQuest.pins
+          local c = p and p.ParseColor and p.ParseColor(pfQuest_config[config])
+          return c or (pfQuestTheme and pfQuestTheme.accent) or { 0.2, 1, 0.8 }
+        end
+        frame.input = CreateFrame("Button", nil, frame)
+        frame.input:SetWidth(16)
+        frame.input:SetHeight(16)
+        frame.input:SetPoint("RIGHT", -8, 0)
+        pfUI.api.CreateBackdrop(frame.input, nil, true)
+        frame.input.swatch = frame.input:CreateTexture(nil, "OVERLAY")
+        frame.input.swatch:SetPoint("TOPLEFT", frame.input, "TOPLEFT", 2, -2)
+        frame.input.swatch:SetPoint("BOTTOMRIGHT", frame.input, "BOTTOMRIGHT", -2, 2)
+        local function refresh()
+          local c = current()
+          frame.input.swatch:SetTexture(c[1], c[2], c[3], 1)
+        end
+        frame.input.RefreshSwatch = refresh
+        refresh()
+        frame.input:SetScript("OnClick", function()
+          local c = current()
+          local prevRaw = pfQuest_config[config]
+          OpenColorPicker({
+            r = c[1], g = c[2], b = c[3],
+            swatchFunc = function()
+              local r, g, b = ColorPickerFrame:GetColorRGB()
+              -- live apply: the pins driver dirty-checks this raw string
+              -- every capped tick and re-tints -- no reload needed
+              pfQuest_config[config] = string.format("%.3f,%.3f,%.3f", r, g, b)
+              refresh()
+            end,
+            cancelFunc = function()
+              -- restore the RAW previous value: "" (theme-follow) must come
+              -- back as "", never the theme color baked into a string
+              pfQuest_config[config] = prevRaw
+              refresh()
+            end,
+          })
+        end)
+        -- reset affordance: back to theme-follow (the empty string)
+        frame.reset = CreateFrame("Button", nil, frame)
+        frame.reset:SetWidth(44)
+        frame.reset:SetHeight(16)
+        frame.reset:SetPoint("RIGHT", frame.input, "LEFT", -6, 0)
+        frame.reset.text = frame.reset:CreateFontString("Caption", "LOW", "GameFontWhite")
+        frame.reset.text:SetAllPoints(frame.reset)
+        frame.reset.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+        frame.reset.text:SetText(L["Reset"])
+        pfUI.api.SkinButton(frame.reset)
+        frame.reset:SetScript("OnClick", function()
+          pfQuest_config[config] = ""
+          refresh()
+        end)
       elseif data.type == "slider" then
         -- Copy slider-specific values out of the loop table so the callback
         -- keeps stable bounds/config even after CreateConfigEntries continues.
@@ -695,6 +762,11 @@ function pfQuestConfig:UpdateConfigEntries()
         configframes[data.text].input:SetChecked((pfQuest_config[data.config] == "1" and true or nil))
       elseif data.type == "text" then
         configframes[data.text].input:SetText(pfQuest_config[data.config])
+      elseif data.type == "color" then
+        local input = configframes[data.text].input
+        if input.RefreshSwatch then
+          input.RefreshSwatch()
+        end
       elseif data.type == "slider" then
         local newval = tonumber(pfQuest_config[data.config]) or tonumber(data.default) or 1
         newval = floor(newval * 10 + 0.5) / 10
