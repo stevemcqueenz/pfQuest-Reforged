@@ -43,10 +43,58 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
 - **A hardened map-pin lifecycle** — quest icons no longer vanish from the
   map/minimap on quest progress (several server-quirk races fixed and
   regression-tested in an offline harness).
+- **HorizonCompass:** a modern compass strip in the Skyrim / Horizon Zero Dawn
+  style. Cardinal letters and ticks scroll as you turn; your surroundings ride
+  the strip as themed diamond markers: ready turn-ins, active objectives with
+  kill/collect/interact icons, available quest givers (tinted when above your
+  level), your route target, and your corpse during a corpse run. One label at
+  a time follows what you are facing, with the quest name, live distance, and
+  the objective text below the strip. Movable with shift+drag, scalable, with
+  per-marker-type toggles and yards or meters. Off by default: enable
+  "Compass Bar" in `/db config`.
+- **In-world waypoint pylons:** with the optional
+  [AwesomeWotLK](https://github.com/noname08662/awesome_wotlk) WorldAPI client
+  mod, guidance steps into the 3D world. Your destination gets a glowing pylon
+  with a light beam, distance and travel-time readout; walk close and it hands
+  off to a pinpoint with the objective text and animated chevrons; look away
+  and an indicator orbits the screen center pointing back. Optional extras:
+  nearby quest markers as smaller pylons, party member markers that keep
+  working inside dungeons (a dead member gets a beam so the healer can find
+  the body), and adjustable pylon color. Everything detects the client mod
+  automatically and the addon is fully functional without it.
+- **Custom waypoints and utility POIs:** `/way 45 67` or alt+click on the
+  world map plants a personal waypoint every surface follows, auto-clearing on
+  arrival. `/way mail`, `/way flight`, `/way inn`, `/way repair` target the
+  nearest mailbox, flight master, innkeeper, or repair vendor, sourced from
+  server data for the whole 3.3.5a world. Selecting a tracking type on the
+  minimap button (flight masters, mailboxes, innkeepers, repair) mirrors those
+  locations onto the compass and pylons while it is active.
+- **Quest tracker upgrades:** per-quest progress bars, adjustable width and
+  scale, and alt+click on any quest row to point the arrow, compass, and pylon
+  at it (alt+click again returns to automatic nearest-objective routing).
+- **A reorganized settings window:** `/db config` now opens a sectioned window
+  with a sidebar (General, Quest Tracker, Map and Minimap, Compass Bar,
+  In-world Pins, and more) instead of a wall of checkboxes; sections for
+  optional components appear only when they are available.
 - **[GW2 UI (WotLK Reforged)](https://github.com/stevemcqueenz/GW2UI---WotLK---Reforged)
   integration** — right-click a quest in the GW2 tracker to navigate with the
   pfQuest arrow, sort the tracker by nearest objective, and get matching
-  skins on the world map. Fully optional; pfQuest Reforged runs standalone.
+  skins on the world map. Compass and pylons automatically adopt the GW2
+  parchment-gold accent when GW2 UI is loaded. Fully optional; pfQuest
+  Reforged runs standalone.
+
+## Commands and gestures
+
+| Action | Effect |
+|---|---|
+| `/db <search>` | database browser |
+| `/pfquest` | all commands |
+| `/way 45 67 [label]` | personal waypoint at map coordinates; `/way` alone clears |
+| `/way mail` / `flight` / `inn` / `repair` | waypoint to the nearest utility POI |
+| Alt+click a tracker quest (pfQuest or GW2 tracker) | arrow, compass, and pylon follow that quest; again for automatic |
+| Alt+click on the world map | personal waypoint at the clicked spot |
+| Shift+drag the compass strip or arrow | move it; position is remembered |
+| Minimap tracking selection | mirrors flight masters, mailboxes, innkeepers, repair vendors onto compass and pylons |
 
 ## Install
 
@@ -61,6 +109,10 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
 
 - WotLK 3.3.5a clients only (Interface 30300). For Vanilla or TBC use
   [upstream pfQuest](https://github.com/shagu/pfQuest).
+- The in-world pylons need the AwesomeWotLK client mod with the WorldAPI
+  module; every other feature, including the compass, works on an unmodified
+  client. The addon detects the mod automatically, there is nothing to
+  configure.
 - The WotLK overlay ships English names; other locales fall back to English
   for Northrend content. Converted drop sources carry no drop-rate
   percentages.
