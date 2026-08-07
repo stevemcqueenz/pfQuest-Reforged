@@ -276,11 +276,19 @@ pfMap.tooltip = CreateFrame("Frame", "pfMapTooltip", GameTooltip)
 -- (showQuestTrackingTooltips CVar, default 1, verified in milkyway cvars.ts),
 -- which duplicates the block pfQuest appends below. Keep exactly one source of
 -- truth: the native section is switched off while pfQuest tooltips are active
--- and restored to the client default when they are disabled. Synced on login
--- and dirty-checked on tooltip show so config changes apply without a reload.
+-- and restored when they are disabled. Restored to the USER'S OWN value, not a
+-- hardcoded default: the CVar is account-persistent, and stomping it both ways
+-- either resurrects a section the user had turned off themselves or leaves it
+-- off forever after pfQuest is removed (review finding). The pre-pfQuest value
+-- is captured once into the saved config before the first write.
 local nativeQuestTooltipCVar = nil
 local function SyncNativeQuestTooltips()
-  local want = (pfQuest_config and pfQuest_config.showtooltips == "0") and "1" or "0"
+  if not pfQuest_config then return end
+  if pfQuest_config.nativequesttooltips == nil then
+    pfQuest_config.nativequesttooltips = GetCVar("showQuestTrackingTooltips") or "1"
+  end
+  local want = pfQuest_config.showtooltips == "0"
+    and pfQuest_config.nativequesttooltips or "0"
   if nativeQuestTooltipCVar ~= want then
     nativeQuestTooltipCVar = want
     SetCVar("showQuestTrackingTooltips", want)

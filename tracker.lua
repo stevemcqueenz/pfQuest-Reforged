@@ -435,8 +435,14 @@ end
 -- { x, y, node, distance, watched, questid } -- prefer slot-6 questid matches,
 -- fall back to the node title when the id is missing, nearest = smallest
 -- slot 4. Everything is guarded so a missing route engine is a silent no-op.
+-- The title fallback applies ONLY when the tuple carries no questid: two
+-- log quests can share a title (per-city cloth donations), and with both ids
+-- present-but-different a title match would cross-target the wrong quest's
+-- node (review finding).
 local function RouteEntryMatches(c, questid, title)
-  return c and c[3] and (c[6] == questid or (title and c[3].title == title))
+  if not (c and c[3]) then return false end
+  if c[6] ~= nil and questid ~= nil then return c[6] == questid end
+  return title ~= nil and c[3].title == title
 end
 
 local function NearestRouteNode(questid, title)
