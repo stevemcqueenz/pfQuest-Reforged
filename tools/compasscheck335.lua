@@ -412,12 +412,96 @@ check(own ~= nil and own.class == C.CORPSE, "corpse: owns the label even off-cen
 dead = nil
 
 -- ---------------------------------------------------------------------------
+-- (g2) custom waypoint provider (Phase A2) -- the compass consumes the
+-- pfQuest.waypoint surface (the module itself is driven end-to-end in
+-- pinscheck335, which loads the real waypoint.lua); a faked provider pins
+-- the CONSUMER contract: CLASS_WAYPOINT between CORPSE and ROUTE, star art
+-- in the accent tint, label-or-"Waypoint" title, own-zone gating, and the
+-- route-cell dedupe when the arrow already points at the waypoint's node.
+-- ---------------------------------------------------------------------------
+local wpstate
+pfQuest.waypoint = { Get = function() return wpstate end }
+
+wpstate = { x = 50, y = 50, zone = 113, label = "Meet here" }
+compass.BuildMarkers(0.4, 0.6, target, false)
+local wpm = findclass(C.WAYPOINT)
+check(wpm ~= nil and wpm.title == "Meet here",
+      "waypoint: marker present, titled by its label (got %s)", tostring(wpm and wpm.title))
+check(wpm ~= nil and wpm.icon == "pfQuest-Reforged\\img\\fav",
+      "waypoint: star art (img/fav) as the distinct icon")
+check(list[1] == wpm and findclass(C.ROUTE) ~= nil,
+      "waypoint: sorts ahead of the route target (class between corpse and route)")
+
+-- corpse still outranks it
+dead, corpsex, corpsey = 1, 0.3, 0.35
+compass.BuildMarkers(0.4, 0.6, target, true)
+check(list[1] ~= nil and list[1].class == C.CORPSE and list[2] ~= nil and list[2].class == C.WAYPOINT,
+      "waypoint: the corpse still sorts first while dead (corpse > waypoint > route)")
+dead = nil
+
+-- label falls back to "Waypoint" without a label
+wpstate = { x = 50, y = 50, zone = 113 }
+compass.BuildMarkers(0.4, 0.6, target, false)
+wpm = findclass(C.WAYPOINT)
+check(wpm ~= nil and wpm.title == "Waypoint", "waypoint: unlabeled point titles as Waypoint")
+
+-- other-zone waypoint never renders here
+wpstate = { x = 50, y = 50, zone = 999 }
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(findclass(C.WAYPOINT) == nil, "waypoint: other-zone point produces no marker")
+
+-- route-cell dedupe: when the route target IS the waypoint's node (the
+-- arrow-follow wiring), exactly one marker stands on that cell -- WAYPOINT
+wpstate = { x = 60, y = 50, zone = 113 }
+compass.BuildMarkers(0.4, 0.6, target, false)
+local attarget2 = 0
+for i = 1, list.n do
+  if near(list[i].x, 60) and near(list[i].y, 50) then attarget2 = attarget2 + 1 end
+end
+check(attarget2 == 1 and findclass(C.WAYPOINT) ~= nil and findclass(C.ROUTE) == nil,
+      "waypoint: route target on the waypoint cell deduped to the WAYPOINT marker")
+
+-- empty-window label fallback prefers a present waypoint over the route
+local wq = { key = "wq", class = C.WAYPOINT, rel = 1.0 }
+local rt = { key = "rt", class = C.ROUTE, rel = 0.9 }
+own = compass.SelectLabel({ n = 2, wq, rt }, {}, 40.0)
+check(own == wq, "waypoint: empty-window label fallback prefers the waypoint")
+
+wpstate = nil
+pfQuest.waypoint = nil
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(findclass(C.WAYPOINT) == nil, "waypoint: cleared point leaves no marker")
+
+-- ---------------------------------------------------------------------------
+-- (g3) rare spawns (Phase A3, compassrares) -- pfDB.meta.rares (unit id ->
+-- level) resolved through the units DB coords ({x, y, zone, respawn}), per
+-- zone; lowest class, below dungeon
+-- ---------------------------------------------------------------------------
+check(C.RARE == 8 and C.DUNGEON == 7, "rare: class sits below dungeon (rare=8 dungeon=7)")
+pfDB["meta"]["rares"] = { [61] = 11 }
+pfDB["units"] = {
+  ["data"] = { [61] = { ["coords"] = { { 30, 40, 113, 5400 }, { 50, 50, 999, 5400 } }, ["lvl"] = "11" } },
+  ["loc"] = { [61] = "Fenros" },
+}
+pfQuest_config["compassrares"] = "1"
+compass.BuildMarkers(0.4, 0.6, target, false)
+local rare = findclass(C.RARE)
+check(rare ~= nil and rare.title == "Fenros" and near(rare.x, 30) and near(rare.y, 40),
+      "rare: meta-list rare in this zone maps to RARE with the units-DB name")
+check(rare ~= nil and rare.icon == "pfQuest-Reforged\\img\\tracking\\rares",
+      "rare: pfQuest's own skull rare art")
+check(classcount(C.RARE) == 1, "rare: other-zone spawn coords excluded")
+pfQuest_config["compassrares"] = "0"
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(findclass(C.RARE) == nil, "rare: toggle off removes the markers")
+
+-- ---------------------------------------------------------------------------
 -- (h) label policy as a pure sequence -- (facing, markers) in, owner out
 -- (COMPASS-DESIGN.md "Label policy"; window 15deg, margin 4deg, hold 0.5s)
 -- ---------------------------------------------------------------------------
-local m1 = { key = "m1", class = 4, rel = 0.05 }
-local m2 = { key = "m2", class = 4, rel = 0.10 }
-local route = { key = "route", class = 2, rel = 1.0 }
+local m1 = { key = "m1", class = 5, rel = 0.05 }
+local m2 = { key = "m2", class = 5, rel = 0.10 }
+local route = { key = "route", class = 3, rel = 1.0 }
 local slots = { n = 3, m1, m2, route }
 st = {}
 
@@ -451,8 +535,8 @@ own = compass.SelectLabel(slots, st, 20.0)
 check(own == route, "label fallback: route target owns when the window is empty")
 
 -- tie inside the window breaks by class priority
-local t1 = { key = "t1", class = 5, rel = 0.1 }
-local t2 = { key = "t2", class = 3, rel = -0.1 }
+local t1 = { key = "t1", class = 6, rel = 0.1 }
+local t2 = { key = "t2", class = 4, rel = -0.1 }
 own = compass.SelectLabel({ n = 2, t1, t2 }, {}, 30.0)
 check(own == t2, "label tie: equal distance resolves by class (turn-in beats available)")
 

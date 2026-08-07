@@ -36,10 +36,27 @@ local wts
 _G.GetPlayerMapPosition = function() return posx, posy end
 _G.GetRealZoneText = function() return zonename end
 _G.GetUnitSpeed = function() return speed end
--- corpse seam (A1): alive by default; the corpse-override block flips these
+-- corpse seam (A1): alive by default; the corpse-override block flips these.
+-- Token-aware (A4 amendment): party tokens read their own death flag
 local dead, corpsex, corpsey = nil, 0, 0
-_G.UnitIsDeadOrGhost = function() return dead end
+local partyDead = {}
+_G.UnitIsDeadOrGhost = function(unit)
+  if unit and unit ~= "player" then return partyDead[unit] end
+  return dead
+end
 _G.GetCorpseMapPosition = function() return corpsex, corpsey end
+-- party seams (A4): solo by default; the 2-return UnitClass shape (never a
+-- third classID on 3.3.5a) with the FILE token keying RAID_CLASS_COLORS
+local partyN, raidN = 0, 0
+_G.GetNumPartyMembers = function() return partyN end
+_G.GetNumRaidMembers = function() return raidN end
+_G.UnitName = function(u) return "Member-" .. tostring(u) end
+_G.UnitClass = function() return "Mage", "MAGE" end
+_G.RAID_CLASS_COLORS = { MAGE = { r = 0.41, g = 0.8, b = 0.94 } }
+-- chat capture (A2): /way feedback assertions read the last line
+local msgs = {}
+_G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) msgs[#msgs + 1] = m end }
+local function lastmsg() return msgs[#msgs] or "" end
 -- the stub's GetTime is frozen at 1000; the pins perf cap (perfTick = now +
 -- 0.02, route.lua:515 idiom) would then skip every fire after the first, so
 -- advance time on each read to keep the real per-frame path exercised.
@@ -60,6 +77,13 @@ pfQuest.route = CreateFrame("Frame", "pfQuestRoute", _G.WorldFrame)
 pfQuest.route.coords = {
   { 60, 50, { title = "Test Node", texture = nil }, 25.5 },
 }
+-- SetTarget/IsTarget recorders (A2): waypoint.lua points the arrow at its
+-- stored map node through these; identity compare stands in for route.lua's
+-- field compare, which is all the assertions need
+pfQuest.route.SetTarget = function(node) pfQuest.route.settarget = node or nil end
+pfQuest.route.IsTarget = function(node)
+  return node ~= nil and node == pfQuest.route.settarget or nil
+end
 -- pfMap: PercentToWorld reads minimap_sizes[mapID] = {widthYards, heightYards}
 -- (map.lua:271). mapID 113 exists, "Nowhere" resolves to a sizeless map.
 local zonemap = { Testzone = 113, Nowhere = 999 }
@@ -71,6 +95,36 @@ _G.pfMap = {
   -- [coords][title] = meta) plus its rebuild trigger; filled per test case
   nodes = {},
   queue_update = 0,
+  -- minimal node-store recorders (A2): waypoint.lua registers its point as
+  -- a real pfMap node; store the meta VERBATIM so the arrow=true flag and
+  -- the SetTarget identity are the module's own, not a transcription
+  AddNode = function(self, meta)
+    local a = meta["addon"] or "PFDB"
+    local z, c = meta["zone"], meta["x"] .. "|" .. meta["y"]
+    self.nodes[a] = self.nodes[a] or {}
+    self.nodes[a][z] = self.nodes[a][z] or {}
+    self.nodes[a][z][c] = self.nodes[a][z][c] or {}
+    self.nodes[a][z][c][meta["title"]] = meta
+  end,
+  DeleteNode = function(self, addon) self.nodes[addon] = nil end,
+  UpdateNodes = function() end,
+}
+-- rare / dungeon DB seams (A3/A5): meta lists resolved through units and
+-- objects coords, {x, y, zone, respawn} tuples; the 999-zone coords must
+-- never leak into zone 113
+_G.pfDB = {
+  ["meta"] = {
+    ["rares"] = { [61] = 11 },
+    ["meetingstone"] = { [-179597] = "AH" },
+  },
+  ["units"] = {
+    ["data"] = { [61] = { ["coords"] = { { 44.5, 60, 113, 5400 }, { 50, 50, 999, 5400 } }, ["lvl"] = "11" } },
+    ["loc"] = { [61] = "Fenros" },
+  },
+  ["objects"] = {
+    ["data"] = { [179597] = { ["coords"] = { { 41.5, 60.2, 113, 10 }, { 50, 50, 999, 10 } } } },
+    ["loc"] = { [179597] = "Meeting Stone RFC" },
+  },
 }
 _G.pfQuestTheme = {
   accent = { 0.2, 1.0, 0.8 },
@@ -95,6 +149,18 @@ if not cok then
   os.exit(1)
 end
 
+-- the REAL waypoint module (A2): /way parsing, storage, the map-node
+-- arrow-follow wiring and the arrival auto-clear all live in waypoint.lua;
+-- the pins tier consumes its Get()/pinnode surface. Overridable path so the
+-- negative-test drill can point at a scratch copy.
+local WAY_FILE = arg and arg[2] or "waypoint.lua"
+local wok, werr = pcall(dofile, WAY_FILE)
+if not wok then
+  fail("%s (waypoint module) could not be loaded: %s", WAY_FILE, tostring(werr))
+  print(string.format("\n%d checks, %d failure(s)", checks, failures))
+  os.exit(1)
+end
+
 -- ---------------------------------------------------------------------------
 -- (d) feature-detect -- contract: without the DLL exports the file is fully
 -- inert: ZERO frames created, zero handlers, no public surface. Never a
@@ -109,8 +175,18 @@ check(loaded, "%s loads with the DLL absent%s", PINS_FILE, loaded and "" or " ->
 check(created == 0, "DLL absent: zero frames created (got %d)", created)
 check(pfQuest.pins == nil, "DLL absent: no public surface (pfQuest.pins stays nil)")
 
--- install the DLL fakes and load for real
-_G.UnitPosition = function() return wpx, wpy, wpz end
+-- install the DLL fakes and load for real. UnitPosition is token-aware
+-- (A4 amendment): party tokens resolve world coords from partyWorld, an
+-- absent entry models an unresolvable member (other instance/out of range)
+local partyWorld = {}
+_G.UnitPosition = function(unit)
+  if unit and unit ~= "player" then
+    local pw = partyWorld[unit]
+    if pw then return pw[1], pw[2], pw[3] end
+    return nil
+  end
+  return wpx, wpy, wpz
+end
 _G.WorldToScreen = function(x, y, z)
   if wts then return wts(x, y, z) end
   return scrx, scry, scrvis
@@ -823,6 +899,283 @@ anyShown = false
 for i = 1, T.MULTI_MAX do if mf[i]:IsShown() then anyShown = true end end
 check(not anyShown, "pins=0: extras sleep with the whole tier")
 pfQuest_config["pins"] = "1"
+
+-- ===========================================================================
+-- PHASE A. Everything below drives the REAL modules (pins + waypoint +
+-- compass providers) through the real driver OnUpdates.
+-- ===========================================================================
+local CLS = pfQuest.compass.CLASS
+local ANY = T.MULTI_MAX
+local function anyExtraShown()
+  for i = 1, ANY do if mf[i]:IsShown() then return true end end
+  return nil
+end
+local function distText() return tostring(pins.waypoint.dist:GetText()) end
+local function ydOf(x, y) return math.floor(distOf(x, y) + 0.5) .. " yd" end
+
+-- ---------------------------------------------------------------------------
+-- (A1) corpse-override sequence: dead -> corpse target + extras hidden ->
+-- unghost -> route target back. Expected distances derive through the
+-- module's own PercentToWorld, never hand-transcribed.
+-- ---------------------------------------------------------------------------
+for i = 1, 6 do fire() end
+check(distText() == ydOf(42, 61), "corpse: baseline targets the route (%s)", distText())
+check(anyExtraShown() == true, "corpse: baseline extras up")
+dead, corpsex, corpsey = 1, 0.45, 0.55
+fire()
+fire()
+check(distText() == ydOf(45, 55), "corpse: dead retargets the corpse (%s)", distText())
+check(pins.waypoint.icon:GetTexture() == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+      "corpse: skull icon bound to the plate")
+check(anyExtraShown() == nil, "corpse: extras hide ENTIRELY while dead")
+-- corpse on another map (0,0): guidance falls back to the route target, but
+-- the extras stay asleep -- the dead state, not the corpse position, gates them
+corpsex, corpsey = 0, 0
+fire()
+fire()
+check(distText() == ydOf(42, 61), "corpse: 0,0 corpse (other map) falls back to the route target")
+check(anyExtraShown() == nil, "corpse: extras stay hidden while dead even without a corpse position")
+dead = nil
+fire()
+fire()
+check(distText() == ydOf(42, 61), "corpse: unghost reverts to the route target")
+for i = 1, 6 do fire() end
+check(anyExtraShown() == true, "corpse: extras return after unghost")
+
+-- ---------------------------------------------------------------------------
+-- (A2) /way parse cases + waypoint target priority + arrow-follow wiring
+-- ---------------------------------------------------------------------------
+local way = pfQuest.waypoint
+check(type(way) == "table" and type(way.HandleCommand) == "function"
+      and type(way.Get) == "function", "pfQuest.waypoint public surface")
+
+way.HandleCommand("41 60.5 Meet here")
+local wp = way.Get()
+check(wp ~= nil and wp.x == 41 and wp.y == 60.5 and wp.zone == 113 and wp.label == "Meet here",
+      "/way x y label: parsed, stored with the player's zone")
+check(string.find(lastmsg(), "Waypoint set", 1, true) ~= nil, "/way set: chat feedback")
+check(way.pinnode ~= nil and way.pinnode.title == "Meet here", "pinnode titled by the label")
+
+-- arrow-follow: the stored pfMap node carries arrow=true (map.lua:1230
+-- admits it into the route candidates) and SetTarget points at it
+local stored = pfMap.nodes["PFWAY"] and pfMap.nodes["PFWAY"][113]
+  and pfMap.nodes["PFWAY"][113]["41|60.5"] and pfMap.nodes["PFWAY"][113]["41|60.5"]["Meet here"]
+check(stored ~= nil and stored.arrow == true, "arrow-follow: map node registered with arrow=true")
+check(stored ~= nil and pfQuest.route.settarget == stored, "arrow-follow: SetTarget on the stored node")
+
+-- pins prefer the waypoint over the route target...
+fire()
+fire()
+check(distText() == ydOf(41, 60.5), "pins target the waypoint over the route (%s)", distText())
+-- ...but never over the corpse
+dead, corpsex, corpsey = 1, 0.45, 0.55
+fire()
+fire()
+check(distText() == ydOf(45, 55), "the corpse still beats the waypoint")
+dead = nil
+fire()
+fire()
+check(distText() == ydOf(41, 60.5), "waypoint target returns on unghost")
+
+-- bad args: usage feedback, stored point untouched
+way.HandleCommand("garbage words")
+check(string.find(lastmsg(), "Usage", 1, true) ~= nil, "/way garbage: usage feedback")
+check(way.Get() ~= nil and way.Get().x == 41, "/way garbage: stored point untouched")
+way.HandleCommand("45")
+check(string.find(lastmsg(), "Usage", 1, true) ~= nil, "/way with one arg: usage feedback")
+way.HandleCommand("450 60")
+check(string.find(lastmsg(), "Invalid", 1, true) ~= nil and way.Get().x == 41,
+      "/way out-of-range percent: rejected, point untouched")
+
+-- label optional: bare coords title as Waypoint
+way.HandleCommand("43 60")
+check(way.Get() ~= nil and way.Get().label == nil and way.pinnode.title == "Waypoint",
+      "/way without label: Waypoint title")
+
+-- /way alone clears: storage, chat, route target and map node all release
+way.HandleCommand("")
+check(way.Get() == nil, "/way alone clears the point")
+check(string.find(lastmsg(), "Waypoint cleared", 1, true) ~= nil, "clear: chat feedback")
+check(pfQuest.route.settarget == nil, "clear: the route target releases")
+check(pfMap.nodes["PFWAY"] == nil, "clear: the map node is deleted")
+way.HandleCommand("")
+check(string.find(lastmsg(), "No waypoint set", 1, true) ~= nil, "clear with none set: honest message")
+fire()
+fire()
+check(distText() == ydOf(42, 61), "pins revert to the route target after the clear")
+
+-- ---------------------------------------------------------------------------
+-- (A2) arrival auto-clear at ~15 yd, driven through the REAL waypoint driver
+-- ---------------------------------------------------------------------------
+local wd = way.driver
+check(wd ~= nil and wd.scripts and type(wd.scripts.OnUpdate) == "function",
+      "waypoint driver OnUpdate exists")
+local function wfire()
+  _G.this = wd
+  local okW, errW = pcall(wd.Fire, wd, "OnUpdate")
+  _G.this = nil
+  return okW, errW
+end
+way.HandleCommand("40.1 60.1 Close") -- ~7 world yards from the player
+check(way.Get() ~= nil, "auto-clear scene: near point set")
+for i = 1, 15 do wfire() end
+check(way.Get() == nil, "auto-clear: point inside ~15 yd clears itself")
+check(string.find(lastmsg(), "Waypoint reached", 1, true) ~= nil, "auto-clear: arrival notice")
+way.HandleCommand("60 50 Far")
+for i = 1, 15 do wfire() end
+check(way.Get() ~= nil, "auto-clear: a far point never clears")
+way.HandleCommand("")
+
+-- ---------------------------------------------------------------------------
+-- (A3) rare spawns join the extras behind compassrares (with pinsmulti)
+-- ---------------------------------------------------------------------------
+local function countTitle(t)
+  local n2, idx = 0, nil
+  for i = 1, ml.n do
+    if ml[i].key and ml[i].key.title == t then n2 = n2 + 1 idx = i end
+  end
+  return n2, idx
+end
+pfQuest_config["compassrares"] = "1"
+for i = 1, 6 do fire() end
+local rn, ri = countTitle("Fenros")
+check(rn == 1 and ml[ri].class == CLS.RARE,
+      "rares: the zone rare joins the extras as CLASS_RARE (found %d)", rn)
+check(ml[ri] ~= nil and ml[ri].key.texture == "pfQuest-Reforged\\img\\tracking\\rares",
+      "rares: skull art from the shared provider")
+pfQuest_config["compassrares"] = "0"
+for i = 1, 6 do fire() end
+rn = countTitle("Fenros")
+check(rn == 0, "rares: toggle off removes the extra")
+
+-- ---------------------------------------------------------------------------
+-- (A5) dungeon entrances join the extras behind pinsdungeon (with pinsmulti)
+-- ---------------------------------------------------------------------------
+pfQuest_config["pinsdungeon"] = "1"
+for i = 1, 6 do fire() end
+local dn, di = countTitle("Meeting Stone RFC")
+check(dn == 1 and ml[di].class == CLS.DUNGEON,
+      "dungeon: the zone meeting stone joins the extras as CLASS_DUNGEON (found %d)", dn)
+pfQuest_config["pinsdungeon"] = "0"
+for i = 1, 6 do fire() end
+dn = countTitle("Meeting Stone RFC")
+check(dn == 0, "dungeon: toggle off removes the extra")
+
+-- ---------------------------------------------------------------------------
+-- (A4, amended) party plates, world-anchored via the DLL's UnitPosition on
+-- the party tokens: alive member = quiet class-colored plate (no beam, no
+-- text, lowest priority); DEAD member = skull art, priority above the
+-- ambient classes, subordinate beam and a distance line; unresolvable
+-- member = no pin; and the layer KEEPS WORKING INDOORS where
+-- GetPlayerMapPosition reads 0,0 -- the dungeon-resurrection use case.
+-- ---------------------------------------------------------------------------
+-- alive party entries are CLS.PARTY; dead ones sit in the open interval
+-- between AVAIL and DUNGEON (above the ambient info, below quest guidance)
+local function partyEntries()
+  local alive, ai, deadn, di2 = 0, nil, 0, nil
+  for i = 1, ml.n do
+    local cl = ml[i].class
+    if cl == CLS.PARTY then
+      alive = alive + 1
+      ai = i
+    elseif cl > CLS.AVAIL and cl < CLS.DUNGEON then
+      deadn = deadn + 1
+      di2 = i
+    end
+  end
+  return alive, ai, deadn, di2
+end
+partyN = 2
+-- party1 stays UNRESOLVABLE (no partyWorld entry: other instance/range)
+partyWorld["party2"] = { wpx + 100, wpy + 40, wpz + 5 } -- ~108 yd, resolves
+pfQuest_config["pinsparty"] = "1"
+for i = 1, 12 do fire() end
+local alive, ai, deadn, dpi = partyEntries()
+check(alive == 1 and deadn == 0,
+      "party: resolving member renders, unresolvable member has NO pin (got %d/%d)", alive, deadn)
+check(ai ~= nil and ml[ai].key.vertex[1] == 0.41 and ml[ai].key.vertex[3] == 0.94,
+      "party alive: plate carries the RAID_CLASS_COLORS class color")
+check(ai ~= nil and ml[ml.n].class == CLS.PARTY,
+      "party alive: sorts last (lowest merge priority)")
+check(ai ~= nil and mf[ai]:IsShown() == true and mf[ai].beam:IsShown() == false,
+      "party alive: quiet plate, no beam even with pinsmultibeam on")
+check(ai ~= nil and mf[ai].dtext:IsShown() == false, "party alive: no text line")
+
+-- (b) dead resolving member: elevated priority + skull + beam + distance
+partyDead["party2"] = 1
+pfQuest_config["compassrares"] = "1"
+pfQuest_config["pinsdungeon"] = "1"
+for i = 1, 12 do fire() end
+alive, ai, deadn, dpi = partyEntries()
+check(deadn == 1 and alive == 0, "party dead: the member reclassifies (got %d/%d)", deadn, alive)
+check(dpi ~= nil and ml[dpi].key.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+      "party dead: skull art (the corpse pylon language, class-tinted)")
+check(dpi ~= nil and ml[dpi].key.vertex[1] == 0.41,
+      "party dead: still class-tinted (identity survives)")
+local rIdx, dgIdx
+for i = 1, ml.n do
+  if ml[i].class == CLS.RARE then rIdx = i end
+  if ml[i].class == CLS.DUNGEON then dgIdx = i end
+end
+check(dpi ~= nil and rIdx ~= nil and dgIdx ~= nil and dpi < rIdx and dpi < dgIdx,
+      "party dead: sorts ABOVE rares and dungeon markers (dead member beats ambient info)")
+check(dpi ~= nil and mf[dpi].beam:IsShown() == true, "party dead: subordinate beam on")
+local pdDist = math.sqrt(100 * 100 + 40 * 40)
+check(dpi ~= nil and mf[dpi].dtext:IsShown() == true
+      and mf[dpi].dtext:GetText() == math.floor(pdDist + 0.5) .. " yd",
+      "party dead: distance line to the body (got %s)", tostring(dpi and mf[dpi].dtext:GetText()))
+-- the beam is independent of the pinsmultibeam experiment knob
+pfQuest_config["pinsmultibeam"] = "0"
+for i = 1, 3 do fire() end
+alive, ai, deadn, dpi = partyEntries()
+check(dpi ~= nil and mf[dpi].beam:IsShown() == true,
+      "party dead: beam stays on with pinsmultibeam off")
+pfQuest_config["pinsmultibeam"] = "1"
+pfQuest_config["compassrares"] = "0"
+pfQuest_config["pinsdungeon"] = "0"
+
+-- (d) THE DUNGEON CASE: GetPlayerMapPosition reads 0,0 -- the main tier and
+-- the percent extras sleep, the party pin keeps working
+posx, posy = 0, 0
+for i = 1, 12 do fire() end
+check(pins.waypoint:IsShown() == false and pins.pinpoint:IsShown() == false
+      and pins.navigator:IsShown() == false,
+      "indoors: the main tier sleeps (percent anchor invalid)")
+alive, ai, deadn, dpi = partyEntries()
+check(deadn == 1 and dpi ~= nil and mf[dpi]:IsShown() == true,
+      "indoors: the DEAD party pin keeps working (world-anchored, the amendment's point)")
+local nonparty = 0
+for i = 1, ml.n do
+  local cl = ml[i].class
+  if not (cl == CLS.PARTY or (cl > CLS.AVAIL and cl < CLS.DUNGEON)) then nonparty = nonparty + 1 end
+end
+check(nonparty == 0, "indoors: the percent-anchored quest extras stand down")
+posx, posy = 0.4, 0.6
+partyDead["party2"] = nil
+for i = 1, 12 do fire() end
+check(pins.waypoint:IsShown() == true, "back outdoors: the main tier wakes")
+
+-- (c) raids excluded, toggle off, pinsparty drives the layer alone
+raidN = 5
+for i = 1, 12 do fire() end
+alive, ai, deadn, dpi = partyEntries()
+check(alive == 0 and deadn == 0, "party: raids excluded (party only)")
+raidN = 0
+pfQuest_config["pinsparty"] = "0"
+for i = 1, 12 do fire() end
+alive, ai, deadn, dpi = partyEntries()
+check(alive == 0 and deadn == 0, "party: toggle off removes the plates")
+-- pinsparty activates the extras machinery WITHOUT pinsmulti
+pfQuest_config["pinsmulti"] = "0"
+pfQuest_config["pinsparty"] = "1"
+for i = 1, 12 do fire() end
+alive, ai, deadn, dpi = partyEntries()
+check(alive == 1 and ml.n == 1,
+      "party: pinsparty alone drives the layer (party plate only, no quest extras)")
+pfQuest_config["pinsmulti"] = "1"
+pfQuest_config["pinsparty"] = "0"
+partyN = 0
+for i = 1, 8 do fire() end
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
