@@ -258,7 +258,12 @@ end
 pfMap.nodes = {
   PFDB = {
     [113] = {
-      ["62|48"] = { ["Turnin Quest"] = node("Turnin Quest", "complete", { description = "Turn it in" }) },
+      -- ready turn-in: complete_c is the COLORED ? pfDatabase paints once the
+      -- log quest's complete flag is set (database.lua:1666-1675)
+      ["62|48"] = { ["Turnin Quest"] = node("Turnin Quest", "complete_c", { description = "Turn it in" }) },
+      -- NOT-ready ender: plain complete (grey ?) while objectives are open --
+      -- must produce NO marker (maintainer: clutter next to the objective)
+      ["63|49"] = { ["Unfinished"] = node("Unfinished", "complete") },
       ["55|55"] = { ["Avail Quest"] = node("Avail Quest", "available", { qlvl = 72, qmin = 70 }) },
       ["52|52"] = { ["Current Giver"] = node("Current Giver", "available_c") },
       ["45|45"] = { ["Hard Quest"] = node("Hard Quest", "available", { qlvl = 78, qmin = 75 }) },
@@ -305,7 +310,16 @@ compass.BuildMarkers(0.4, 0.6, target, false)
 check(findclass(C.ROUTE) ~= nil and findclass(C.ROUTE).key == target[3],
       "provider: route target present as class ROUTE keyed by its node")
 check(findclass(C.TURNIN) ~= nil and findclass(C.TURNIN).title == "Turnin Quest",
-      "provider: complete texture maps to TURNIN")
+      "provider: complete_c texture (ready turn-in) maps to TURNIN")
+-- ready vs not-ready enders, pure form: the texture encodes readiness
+check(compass.ClassifyNode(IMG .. "complete_c") == C.TURNIN,
+      "classify: ready ender (complete_c) is TURNIN")
+check(compass.ClassifyNode(IMG .. "complete") == nil,
+      "classify: not-ready ender (plain complete) maps to nothing")
+-- and through the provider: the not-ready ender cell produces NO marker
+local unfinished = nil
+for i = 1, list.n do if list[i].title == "Unfinished" then unfinished = list[i] end end
+check(unfinished == nil, "provider: not-ready ender produces no marker")
 check(findclass(C.ACTIVE) ~= nil and findclass(C.ACTIVE).icon == IMG .. "cluster_mob",
       "provider: cluster_mob maps to ACTIVE and the icon mirrors node.texture")
 check(classcount(C.AVAIL) == 2, "provider: 2 available nodes map to AVAIL (got %d)", classcount(C.AVAIL))
@@ -360,7 +374,7 @@ pfQuest_config["compassturnin"] = "1"
 
 -- route-target dedupe: a node cell on the target's exact coords must not
 -- render twice (the ROUTE marker already stands there)
-pfMap.nodes.PFDB[113]["60|50"] = { [target[3].title] = node(target[3].title, "complete") }
+pfMap.nodes.PFDB[113]["60|50"] = { [target[3].title] = node(target[3].title, "complete_c") }
 compass.BuildMarkers(0.4, 0.6, target, false)
 local attarget = 0
 for i = 1, list.n do

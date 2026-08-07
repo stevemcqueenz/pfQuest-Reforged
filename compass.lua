@@ -106,9 +106,16 @@ local CLASS_DUNGEON = 6 -- meta DB meeting stones (instance portals), default of
 -- language (map.lua layers table). Plain find, no patterns (perf idiom).
 -- available_c is the giver of a quest ALREADY in the log -- not an offer, and
 -- its objective already shows through cluster nodes, so it maps to nothing.
+-- Ready turn-ins only (maintainer: the ender of a kill-quest still in
+-- progress is clutter next to its objective pylon): pfDatabase paints the
+-- ender complete_c (colored ?) once the log quest's complete flag is set and
+-- plain complete (grey ?) while objectives are open (database.lua:1666-1675),
+-- so the texture already encodes readiness -- a not-ready ender maps to
+-- nothing here and thereby vanishes from every taxonomy consumer at once.
 local function ClassifyNode(tex)
   if not tex then return nil end
-  if strfind(tex, "complete", 1, true) then return CLASS_TURNIN end
+  if strfind(tex, "complete_c", 1, true) then return CLASS_TURNIN end
+  if strfind(tex, "complete", 1, true) then return nil end
   if strfind(tex, "cluster", 1, true) then return CLASS_ACTIVE end
   if strfind(tex, "available_c", 1, true) then return nil end
   if strfind(tex, "available", 1, true) then return CLASS_AVAIL end
