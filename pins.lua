@@ -65,6 +65,36 @@ local NEAR_ENTER, NEAR_LEAVE = 28, 33
 local BEAM_MIN, BEAM_MAX = 40, 170
 -- 0.35 base alpha: at 0.75 the first in-game shots read as a solid column
 local BEAM_ALPHA = 0.35
+-- visual polish pass (docs/PINS-DESIGN.md "Visual polish"): the soft-edged
+-- beam_soft strip replaces WHITE8X8, ADD-blended so the shaft reads as light,
+-- not a sticker. ADD + the vertical SetGradientAlpha fade COMPOSE on 3.3.5a:
+-- the gradient writes per-corner vertex color/alpha and SetBlendMode picks the
+-- framebuffer op -- independent pipeline stages (milkyway widgets.ts:4141 "ADD
+-- ... using the alpha channel" + :4144; ElvUI-WotLK ships vertex-tinted ADD
+-- textures throughout, e.g. oUF castbar Spark), so no baked-fade TGA variant
+-- is needed and the height-scaling behavior is unchanged. The MAIN waypoint
+-- gets two layers -- a wide faint halo plus a narrow brighter core; extras
+-- keep a single soft layer at their subordinate alpha discipline.
+local BEAM_CORE_W = 4       -- narrow bright core px (the pre-polish beam width)
+local BEAM_WIDE_W = 12      -- wide faint halo px (main waypoint only)
+local BEAM_WIDE_ALPHA = 0.16 -- halo gradient base; the core keeps BEAM_ALPHA
+local MULTI_BEAM_W = 6      -- extras' single soft-strip width (was 3px solid)
+-- plate glow (marker_glow, ADD, accent-tinted, behind the plate): subtle
+-- halo slightly larger than the plate. The MAIN pin (waypoint diamond +
+-- pinpoint plate) pulses gently -- cost: one SetAlpha per tick, only while
+-- shown; navigator and extras are static. Extras/party/POI at half alpha; a
+-- DEAD party member keeps the full-strength glow (its find-the-body
+-- emphasis) -- still accent-tinted, NOT red: the class-tinted skull already
+-- carries identity and a third hue would fight it.
+local GLOW_SCALE = 1.6      -- glow quad = plate px * this
+local GLOW_ALPHA = 0.25     -- static glow alpha (navigator, dead party)
+local GLOW_EXTRA_ALPHA = 0.125 -- extras/party/POI static glow (half)
+local GLOW_PULSE_MID, GLOW_PULSE_AMP = 0.25, 0.07 -- pulse alpha 0.18..0.32
+local GLOW_PULSE_W = 2.5132741228718 -- 2*pi / 2.5s period
+-- plate drop shadow (marker_fill, black, drawn under everything): depth
+-- against bright ground
+local SHADOW_ALPHA = 0.35
+local SHADOW_OFF = 2        -- px down-right
 
 -- multi-pin exploration (pinsmulti, experimental): every tunable of the
 -- ambient extras layer lives HERE so the in-game QA round-trip is a
@@ -282,27 +312,78 @@ function pins.DistDisplay(dist)
 end
 pfQuest.pins = pins
 
+-- glow pulse alpha for the MAIN pin, a pins FIELD so the driver closure (at
+-- Lua 5.1's 60-upvalue ceiling) reaches it through the already-captured pins
+-- table instead of three new constant upvalues
+function pins.GlowPulse(now)
+  return GLOW_PULSE_MID + GLOW_PULSE_AMP * sin(now * GLOW_PULSE_W)
+end
+
+-- glow quad rides the plate size (GLOW_SCALE); same ceiling rule -- the
+-- driver's size-dirty blocks call this through pins
+function pins.SizeGlow(f, size)
+  local g = floor(size * GLOW_SCALE + 0.5)
+  f.glow:SetWidth(g)
+  f.glow:SetHeight(g)
+end
+
+-- shadow + glow housing shared by every plate (waypoint/pinpoint/navigator/
+-- extras). BACKGROUND layer, shadow created FIRST so the glow draws above it
+-- (creation order = draw order within a layer, compass idiom); both sit under
+-- the BORDER beams and the ARTWORK fill/edge. The shadow tracks the plate
+-- rect through its two offset anchors, so distance scaling needs no extra
+-- writes; the glow is a free-standing quad sized by pins.SizeGlow. Tinted
+-- with the EFFECTIVE accent (pinscolor override or theme) so the lazily
+-- built extras pool is born in the right color.
+local function AddPlateLayers(f, glowAlpha, baseSize)
+  local a = pins.tintOverride or accent
+  f.shadow = f:CreateTexture(nil, "BACKGROUND")
+  f.shadow:SetTexture(PATH .. "\\img\\marker_fill")
+  f.shadow:SetPoint("TOPLEFT", f, "TOPLEFT", SHADOW_OFF, -SHADOW_OFF)
+  f.shadow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", SHADOW_OFF, -SHADOW_OFF)
+  f.shadow:SetVertexColor(0, 0, 0, SHADOW_ALPHA)
+  f.glow = f:CreateTexture(nil, "BACKGROUND")
+  f.glow:SetTexture(PATH .. "\\img\\marker_glow")
+  f.glow:SetBlendMode("ADD")
+  f.glow:SetPoint("CENTER", f, "CENTER", 0, 0)
+  f.glow:SetVertexColor(a[1], a[2], a[3], 1)
+  f.glow:SetAlpha(glowAlpha)
+  pins.SizeGlow(f, baseSize)
+end
+
 local waypoint = CreateFrame("Frame", nil, UIParent)
 pins.waypoint = waypoint
 waypoint:SetFrameStrata("BACKGROUND")
 waypoint:SetWidth(BASE_SIZE)
 waypoint:SetHeight(BASE_SIZE)
+AddPlateLayers(waypoint, GLOW_ALPHA, BASE_SIZE)
 
--- light beam: a solid WHITE8X8 stretched tall, vertical alpha gradient fading
--- upward from the plate (SetGradientAlpha is 3.3.5a-native and VERTICAL runs
--- bottom->top, milkyway widgets.ts:4144); BORDER layer so the plate draws over
--- its base. TGA gradient strip is the spec's fallback if this proves
--- unreliable on untextured solids in-game.
+-- light beam: the soft-edged beam_soft strip stretched tall on ADD blend,
+-- vertical alpha gradient fading upward from the plate (SetGradientAlpha is
+-- 3.3.5a-native and VERTICAL runs bottom->top, milkyway widgets.ts:4144);
+-- BORDER layer so the plate draws over its base. Two layers on the MAIN
+-- waypoint only: a wide faint halo plus a narrow brighter core (see the
+-- tunables note on why ADD + gradient compose).
 waypoint.beam = waypoint:CreateTexture(nil, "BORDER")
-waypoint.beam:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-waypoint.beam:SetWidth(4)
+waypoint.beam:SetTexture(PATH .. "\\img\\beam_soft")
+waypoint.beam:SetBlendMode("ADD")
+waypoint.beam:SetWidth(BEAM_WIDE_W)
 waypoint.beam:SetHeight(120)
 waypoint.beam:SetPoint("BOTTOM", waypoint, "CENTER", 0, 0)
-waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], BEAM_ALPHA,
+waypoint.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], BEAM_WIDE_ALPHA,
                                accent[1], accent[2], accent[3], 0)
 -- born hidden: the .on dirty-flags below only HIDE what they have shown, so a
 -- region that starts shown with pinsbeam off would never be put away
 waypoint.beam:Hide()
+waypoint.beam2 = waypoint:CreateTexture(nil, "BORDER")
+waypoint.beam2:SetTexture(PATH .. "\\img\\beam_soft")
+waypoint.beam2:SetBlendMode("ADD")
+waypoint.beam2:SetWidth(BEAM_CORE_W)
+waypoint.beam2:SetHeight(120)
+waypoint.beam2:SetPoint("BOTTOM", waypoint, "CENTER", 0, 0)
+waypoint.beam2:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], BEAM_ALPHA,
+                                accent[1], accent[2], accent[3], 0)
+waypoint.beam2:Hide()
 
 waypoint.fill = waypoint:CreateTexture(nil, "ARTWORK")
 waypoint.fill:SetTexture(PATH .. "\\img\\marker_fill")
@@ -340,6 +421,7 @@ pins.pinpoint = pinpoint
 pinpoint:SetFrameStrata("BACKGROUND")
 pinpoint:SetWidth(PINPOINT_BASE)
 pinpoint:SetHeight(PINPOINT_BASE)
+AddPlateLayers(pinpoint, GLOW_ALPHA, PINPOINT_BASE)
 pinpoint.fill = pinpoint:CreateTexture(nil, "ARTWORK")
 pinpoint.fill:SetTexture(PATH .. "\\img\\marker_fill")
 pinpoint.fill:SetAllPoints(pinpoint)
@@ -378,6 +460,8 @@ pinpoint.chev1 = pinpoint:CreateTexture(nil, "OVERLAY")
 pinpoint.chev2 = pinpoint:CreateTexture(nil, "OVERLAY")
 for _, t in pairs({ pinpoint.chev1, pinpoint.chev2 }) do
   t:SetTexture(PATH .. "\\img\\arrow-gw2")
+  -- ADD blend: the descending marks read as light, not stickers (polish pass)
+  t:SetBlendMode("ADD")
   t:SetWidth(14)
   t:SetHeight(14)
   t:SetVertexColor(accent[1], accent[2], accent[3], 1)
@@ -389,6 +473,7 @@ pins.navigator = navigator
 navigator:SetFrameStrata("BACKGROUND")
 navigator:SetWidth(NAV_SIZE)
 navigator:SetHeight(NAV_SIZE)
+AddPlateLayers(navigator, GLOW_ALPHA, NAV_SIZE)
 navigator.fill = navigator:CreateTexture(nil, "ARTWORK")
 navigator.fill:SetTexture(PATH .. "\\img\\marker_fill")
 navigator.fill:SetAllPoints(navigator)
@@ -402,6 +487,8 @@ navigator.edge:SetVertexColor(accent[1], accent[2], accent[3], 1)
 -- the rotated sample never clips), accent-tinted like the plate edge
 navigator.chevron = navigator:CreateTexture(nil, "OVERLAY")
 navigator.chevron:SetTexture(PATH .. "\\img\\arrow-gw2")
+-- ADD blend, same light-not-sticker rule as the pinpoint chevrons
+navigator.chevron:SetBlendMode("ADD")
 navigator.chevron:SetWidth(16)
 navigator.chevron:SetHeight(16)
 navigator.chevron:SetPoint("CENTER", navigator, "CENTER", 0, 0)
@@ -529,18 +616,24 @@ end
 -- FRAME's alpha, which children inherit, so the steady path never re-issues
 -- SetGradientAlpha.
 local function BuildMultiPool()
+  -- lazily built: tint with the EFFECTIVE accent (pinscolor override or
+  -- theme), like AddPlateLayers does
+  local a = pins.tintOverride or accent
   for i = 1, MULTI_MAX do
     local f = CreateFrame("Frame", nil, UIParent)
     f:SetFrameStrata("BACKGROUND")
     f:SetWidth(MULTI_BASE)
     f:SetHeight(MULTI_BASE)
+    AddPlateLayers(f, GLOW_EXTRA_ALPHA, MULTI_BASE)
+    f.lastGlowA = GLOW_EXTRA_ALPHA
     f.beam = f:CreateTexture(nil, "BORDER")
-    f.beam:SetTexture("Interface\\BUTTONS\\WHITE8X8")
-    f.beam:SetWidth(3)
+    f.beam:SetTexture(PATH .. "\\img\\beam_soft")
+    f.beam:SetBlendMode("ADD")
+    f.beam:SetWidth(MULTI_BEAM_W)
     f.beam:SetHeight(MULTI_BEAM_MIN)
     f.beam:SetPoint("BOTTOM", f, "CENTER", 0, 0)
-    f.beam:SetGradientAlpha("VERTICAL", accent[1], accent[2], accent[3], MULTI_BEAM_ALPHA,
-                            accent[1], accent[2], accent[3], 0)
+    f.beam:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], MULTI_BEAM_ALPHA,
+                            a[1], a[2], a[3], 0)
     f.beam:Hide() -- born hidden (the .on dirty-flag rule)
     f.fill = f:CreateTexture(nil, "ARTWORK")
     f.fill:SetTexture(PATH .. "\\img\\marker_fill")
@@ -549,7 +642,7 @@ local function BuildMultiPool()
     f.edge = f:CreateTexture(nil, "ARTWORK")
     f.edge:SetTexture(PATH .. "\\img\\marker_edge")
     f.edge:SetAllPoints(f)
-    f.edge:SetVertexColor(accent[1], accent[2], accent[3], 1)
+    f.edge:SetVertexColor(a[1], a[2], a[3], 1)
     f.icon = f:CreateTexture(nil, "OVERLAY")
     f.icon:SetWidth(12)
     f.icon:SetHeight(12)
@@ -795,11 +888,20 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
         local isz = floor(size * 0.6 + 0.5)
         f.icon:SetWidth(isz)
         f.icon:SetHeight(isz)
+        pins.SizeGlow(f, size)
       end
       local a = MultiAlpha(e.dist) * ms.op
       if a ~= f.lastA then
         f.lastA = a
         f:SetAlpha(a)
+      end
+      -- glow emphasis: extras/party/POI carry the quiet half-alpha halo; a
+      -- DEAD party member keeps the full-strength one (the frame's distance
+      -- fade still multiplies in via alpha inheritance)
+      local ga = e.class == CLASS_PARTY_DEAD and GLOW_ALPHA or GLOW_EXTRA_ALPHA
+      if ga ~= f.lastGlowA then
+        f.lastGlowA = ga
+        f.glow:SetAlpha(ga)
       end
       -- subordinate beam: distance-driven height like the main beam, tighter
       -- clamp; its alpha = MULTI_BEAM_ALPHA * frame fade via inheritance.
@@ -965,12 +1067,14 @@ driver:SetScript("OnUpdate", function()
     local pisz = floor(psz * 0.6 + 0.5)
     pinpoint.icon:SetWidth(pisz)
     pinpoint.icon:SetHeight(pisz)
+    pins.SizeGlow(pinpoint, psz)
     local nsz = floor(NAV_SIZE * Clamp(cfgNavS, 25, 300, 100) / 100 + 0.5)
     navigator:SetWidth(nsz)
     navigator:SetHeight(nsz)
     local csz = floor(nsz * 0.72 + 0.5)
     navigator.chevron:SetWidth(csz)
     navigator.chevron:SetHeight(csz)
+    pins.SizeGlow(navigator, nsz)
     lastWaySize = nil -- the waypoint's distance-scaled size re-derives next pass
   end
 
@@ -1103,7 +1207,12 @@ driver:SetScript("OnUpdate", function()
       local isz = floor(size * 0.6 + 0.5)
       waypoint.icon:SetWidth(isz)
       waypoint.icon:SetHeight(isz)
+      pins.SizeGlow(waypoint, size)
     end
+
+    -- gentle glow pulse on the MAIN pin (tunables GLOW_PULSE_*): one SetAlpha
+    -- per tick, only while the waypoint is the shown mode
+    waypoint.glow:SetAlpha(pins.GlowPulse(now))
 
     -- icon rebind on target change only (compass rebind idiom)
     local node = target[3]
@@ -1120,14 +1229,19 @@ driver:SetScript("OnUpdate", function()
       if bh ~= lastBeamH then
         lastBeamH = bh
         waypoint.beam:SetHeight(bh)
+        waypoint.beam2:SetHeight(bh)
       end
+      -- one .on flag drives BOTH layers (halo + core): they live and die
+      -- together, so a second dirty flag would only be a desync risk
       if not waypoint.beam.on then
         waypoint.beam.on = true
         waypoint.beam:Show()
+        waypoint.beam2:Show()
       end
     elseif waypoint.beam.on then
       waypoint.beam.on = nil
       waypoint.beam:Hide()
+      waypoint.beam2:Hide()
     end
 
     -- distance text: yards, or meters when compassmetric is on (DistDisplay)
@@ -1178,6 +1292,10 @@ driver:SetScript("OnUpdate", function()
     pinpoint.chev2:SetPoint("BOTTOM", pinpoint, "TOP", 0, 26 - ph2 * 12)
     pinpoint.chev1:SetAlpha(a1)
     pinpoint.chev2:SetAlpha(a2)
+
+    -- same gentle glow pulse as the waypoint (the main pin keeps breathing
+    -- through the near handoff)
+    pinpoint.glow:SetAlpha(pins.GlowPulse(now))
 
     -- objective line + icon, rebound on target change only. The text is the
     -- spec fallback chain: description -> title -> distance (never empty)
@@ -1258,4 +1376,12 @@ pins.tunables = {
   MULTI_NEAREST_DIST = MULTI_NEAREST_DIST, MULTI_BEAM_ALPHA = MULTI_BEAM_ALPHA,
   MULTI_BEAM_MIN = MULTI_BEAM_MIN, MULTI_BEAM_MAX = MULTI_BEAM_MAX,
   POI_RADIUS = POI_RADIUS,
+  -- visual polish pass
+  BEAM_CORE_W = BEAM_CORE_W, BEAM_WIDE_W = BEAM_WIDE_W,
+  BEAM_WIDE_ALPHA = BEAM_WIDE_ALPHA, MULTI_BEAM_W = MULTI_BEAM_W,
+  GLOW_SCALE = GLOW_SCALE, GLOW_ALPHA = GLOW_ALPHA,
+  GLOW_EXTRA_ALPHA = GLOW_EXTRA_ALPHA,
+  GLOW_PULSE_MID = GLOW_PULSE_MID, GLOW_PULSE_AMP = GLOW_PULSE_AMP,
+  GLOW_PULSE_W = GLOW_PULSE_W,
+  SHADOW_ALPHA = SHADOW_ALPHA, SHADOW_OFF = SHADOW_OFF,
 }
