@@ -7,6 +7,16 @@ local concat, insert, getn = table.concat, table.insert, table.getn
 local type = type
 local format = string.format
 
+-- Reforged: custom waypoint command. The implementation (parse, storage,
+-- map node, arrival auto-clear) lives in waypoint.lua; this file only
+-- registers the command in the house style.
+SLASH_PFWAY1 = "/way"
+SlashCmdList["PFWAY"] = function(input)
+  if pfQuest and pfQuest.waypoint then
+    pfQuest.waypoint.HandleCommand(input)
+  end
+end
+
 SLASH_PFDB1, SLASH_PFDB2, SLASH_PFDB3, SLASH_PFDB4 = "/db", "/shagu", "/pfquest", "/pfdb"
 SlashCmdList["PFDB"] = function(input, editbox)
   local params = {}

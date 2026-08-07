@@ -446,6 +446,10 @@ pins.corpseTarget = { 0, 0, {
   title = pfQuest_Loc and pfQuest_Loc["Your corpse"] or "Your corpse",
   texture = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
 } }
+-- custom waypoint target (A2): the same persistent-tuple idiom; slot 3 is
+-- waypoint.lua's pinnode, whose identity changes on every /way set so the
+-- icon/text rebinds fire exactly then
+pins.wayTarget = { 0, 0, nil }
 local lastNode, lastWaySize, lastBeamH, lastDistKey, lastEtaKey, lastNavAngle
 local lastPinNode, pinText, lastPinDistKey
 -- parsed settings snapshot, refreshed only when a raw config string changes
@@ -470,9 +474,9 @@ local ms = {
 -- pinsmulticap additional plates beyond the route target, drawn from the
 -- compass taxonomy via the shared pfQuest.compass.EachZoneNode walk --
 -- turn-ins (ready only), active objectives and available givers, honoring the
--- compass's per-class toggles; dungeon entrances and the corpse never reach
--- this layer (the walk yields neither, and the route already follows the
--- corpse while dead). Plain conditions, no per-extra state machine, no
+-- compass's per-class toggles; the corpse never reaches this layer (the walk
+-- does not yield it, and while dead the whole extras layer sleeps -- the
+-- pins tier itself retargets the corpse). Plain conditions, no per-extra state machine, no
 -- navigator: an off-screen or out-of-radius extra simply hides.
 -- ---------------------------------------------------------------------------
 
@@ -830,16 +834,29 @@ driver:SetScript("OnUpdate", function()
     end
   end
 
-  if not target then
-    Sleep()
-    return
-  end
-
-  -- GetMapIDByName is a linear DB scan -- memoize by zone text (map.lua:1322)
+  -- GetMapIDByName is a linear DB scan -- memoize by zone text (map.lua:1322).
+  -- Moved above the waypoint ladder: its zone gate needs zoneID.
   local rz = GetRealZoneText()
   if rz ~= zoneName then
     zoneName = rz
     zoneID = pfMap and pfMap.GetMapIDByName and pfMap:GetMapIDByName(rz) or nil
+  end
+
+  -- custom waypoint (A2, waypoint.lua): preferred over the route target but
+  -- NEVER over the corpse; only in its own zone (a cross-zone projection
+  -- would lie). Same persistent-tuple idiom as the corpse target.
+  if not corpseRun and pfQuest.waypoint then
+    local wp = pfQuest.waypoint.Get()
+    if wp and wp.zone == zoneID then
+      local wt = pins.wayTarget
+      wt[1], wt[2], wt[3] = wp.x, wp.y, pfQuest.waypoint.pinnode
+      target = wt
+    end
+  end
+
+  if not target then
+    Sleep()
+    return
   end
 
   local wx, wy, wz = UnitPosition("player")

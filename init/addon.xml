@@ -11,6 +11,7 @@
   <Include file="..\map.lua" />
   <Include file="..\quest.lua" />
   <Include file="..\route.lua" />
+  <Include file="..\waypoint.lua" />
   <Include file="..\compass.lua" />
   <Include file="..\pins.lua" />
   <Include file="..\tracker.lua" />

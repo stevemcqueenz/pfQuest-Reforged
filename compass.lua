@@ -95,12 +95,13 @@ end
 -- (highest number) first, and label tie-breaks follow the same order.
 -- ---------------------------------------------------------------------------
 
-local CLASS_CORPSE  = 1 -- highest priority of all: nothing else matters mid-corpse-run
-local CLASS_ROUTE   = 2 -- the guidance anchor, stage 1's single marker
-local CLASS_TURNIN  = 3 -- complete / complete_c (?)
-local CLASS_ACTIVE  = 4 -- cluster_* objective nodes for questlog quests
-local CLASS_AVAIL   = 5 -- available (!) quest givers
-local CLASS_DUNGEON = 6 -- meta DB meeting stones (instance portals), default off
+local CLASS_CORPSE   = 1 -- highest priority of all: nothing else matters mid-corpse-run
+local CLASS_WAYPOINT = 2 -- the user's /way point (waypoint.lua), above the route target
+local CLASS_ROUTE    = 3 -- the guidance anchor, stage 1's single marker
+local CLASS_TURNIN   = 4 -- complete / complete_c (?)
+local CLASS_ACTIVE   = 5 -- cluster_* objective nodes for questlog quests
+local CLASS_AVAIL    = 6 -- available (!) quest givers
+local CLASS_DUNGEON  = 7 -- meta DB meeting stones (instance portals), default off
 
 -- classify a pfMap node by its minimap texture -- the node loop's own visual
 -- language (map.lua layers table). Plain find, no patterns (perf idiom).
@@ -180,7 +181,9 @@ local function SelectLabel(slots, state, now)
     if e.key == state.owner and not e.merged then
       inc, incabs = e, a
     end
-    if e.class == CLASS_ROUTE then
+    -- guidance anchors double as the empty-window fallback; the list is
+    -- sorted class ascending, so a present WAYPOINT wins over the route
+    if not fallback and (e.class == CLASS_WAYPOINT or e.class == CLASS_ROUTE) then
       fallback = e
     end
     if a <= LABEL_WINDOW and not e.merged then
@@ -647,8 +650,29 @@ local function BuildMarkers(xp, yp, target, dead)
     end
   end
 
+  -- custom waypoint (waypoint.lua): the user's /way point, between the
+  -- corpse and the route target; only in its own zone (a cross-zone bearing
+  -- would lie). Star art in the accent tint, title = its label.
+  local wp = pfQuest.waypoint and pfQuest.waypoint.Get and pfQuest.waypoint.Get()
+  if wp and wp.zone ~= zoneID then wp = nil end
+  if wp then
+    local e = GetEntry()
+    e.class, e.key, e.title = CLASS_WAYPOINT, "waypoint", wp.label or L["Waypoint"]
+    e.x, e.y = wp.x, wp.y
+    e.icon = PATH .. "\\img\\fav"
+    e.tr, e.tg, e.tb = accent[1], accent[2], accent[3]
+    e.badge, e.desc, e.qlvl = nil, nil, nil
+    local dx, dy = (e.x - px) * 1.5, e.y - py
+    e.dist2 = dx * dx + dy * dy
+    local ev = CapInsert(list, cap, e)
+    if ev then Repool(ev) end
+  end
+
   -- route target: the same node the arrow points at (route.lua:491), kept as
-  -- the guidance anchor and fallback label owner
+  -- the guidance anchor and fallback label owner. When the route target IS
+  -- the waypoint's own map node (waypoint.lua points the arrow at it), the
+  -- WAYPOINT marker above already represents that cell -- skip the duplicate.
+  if target and wp and target[1] == wp.x and target[2] == wp.y then target = nil end
   if target then
     local node = target[3]
     local e = GetEntry()
@@ -1008,8 +1032,9 @@ compass.EachZoneNode = EachZoneNode
 compass.list = list
 compass.markers = markers
 compass.CLASS = {
-  CORPSE = CLASS_CORPSE, ROUTE = CLASS_ROUTE, TURNIN = CLASS_TURNIN,
-  ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL, DUNGEON = CLASS_DUNGEON,
+  CORPSE = CLASS_CORPSE, WAYPOINT = CLASS_WAYPOINT, ROUTE = CLASS_ROUTE,
+  TURNIN = CLASS_TURNIN, ACTIVE = CLASS_ACTIVE, AVAIL = CLASS_AVAIL,
+  DUNGEON = CLASS_DUNGEON,
 }
 
 -- re-read pfQuest_config and resize; safe before saved variables exist

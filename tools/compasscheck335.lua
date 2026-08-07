@@ -246,8 +246,8 @@ check(okE, "OnUpdate after re-enable%s", okE and "" or " -> " .. tostring(errE))
 -- memoized by the OnUpdate fires above (GetRealZoneText -> GetMapIDByName).
 -- ---------------------------------------------------------------------------
 local C = compass.CLASS
-check(type(C) == "table" and C.CORPSE == 1 and C.ROUTE == 2,
-      "class constants exported (corpse=1 route=2)")
+check(type(C) == "table" and C.CORPSE == 1 and C.WAYPOINT == 2 and C.ROUTE == 3,
+      "class constants exported (corpse=1 waypoint=2 route=3)")
 
 local IMG = "pfQuest-Reforged\\img\\"
 local function node(title, tex, extra)
