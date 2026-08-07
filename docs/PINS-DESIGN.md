@@ -124,3 +124,57 @@ scaling, `pinsopacity` (100) whole-tier alpha, `pinspointsize` (100),
 `pinsnavradius` (140), `pinsnavsize` (100). Rows exist only when the DLL is
 present, like stage 1. In-game QA gates unchanged from stage 1, plus the
 pinpoint handoff feel at the 28/33 band on a live client.
+
+## Multi-pin exploration (shipped on `dev`, EXPERIMENTAL, in-game QA pending)
+
+`pinsmulti` (off) adds an AMBIENT layer: up to `pinsmulticap` (default 4,
+clamped 1..8) extra plates beyond the route target, drawn from the compass
+taxonomy via the shared `pfQuest.compass.EachZoneNode` walk -- ready
+turn-ins, active objectives and available givers, honoring the compass's
+`compassavail`/`compassturnin` toggles. Dungeon entrances are excluded (3D
+ambient noise) and the corpse adds nothing (the route target already follows
+it while dead). The route target keeps the full waypoint/pinpoint/navigator
+treatment; extras are plates only -- no beam text, no state machine, no
+navigator (off-screen extras simply hide) -- except a small distance line on
+the single nearest extra, and a subordinate beam per extra when
+`pinsmultibeam` (on) allows it.
+
+As part of this pass, turn-in markers now show only for READY quests
+everywhere in the taxonomy (compass strip and pins alike): pfDatabase paints
+the ender `complete_c` once the log quest's complete flag is set and plain
+`complete` while objectives are open (database.lua:1666-1675), so
+`ClassifyNode` maps only `complete_c` to TURNIN. A kill-quest in progress
+shows its objective pylon, not its unfinished turn-in. No config row -- this
+is the sane default.
+
+All exploration knobs live in ONE tunables block at the top of `pins.lua`
+(exposed as `pfQuest.pins.tunables` for the harness):
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `MULTI_MAX` | 8 | widget pool ceiling; `pinsmulticap` clamps 1..this |
+| `MULTI_RADIUS` | 300 yd | show radius: extras beyond it never render (culled at build AND live) |
+| `MULTI_SOLID` | 40 yd | full alpha inside this |
+| `MULTI_FLOOR` | 0.35 | alpha floor reached at the show radius (times `pinsopacity`) |
+| `MULTI_MERGE` | 28 UI units | screen-space merge radius against the route pin and kept extras |
+| `MULTI_BASE` | 20 px | extra plate size (pinpoint-sized; rides `ScaleForDistance`) |
+| `MULTI_NEAREST_DIST` | on | the single nearest extra shows a distance line |
+| `MULTI_BEAM_ALPHA` | 0.2 | extra beam gradient base (main beam: 0.35) |
+| `MULTI_BEAM_MIN/MAX` | 28/119 | extra beam height clamp (main: 40/170); fade rides frame alpha |
+
+Selection: nearest-first within the cap by CapInsert semantics (class
+ascending, then world-yard distance); after projection, extras within
+`MULTI_MERGE` of the route pin's drawn plate or of a more important kept
+extra hide behind it (route always wins; in navigator mode there is no route
+reference on screen, so extras merge only among themselves).
+
+Open questions for the in-game QA round-trip:
+
+- Does a cap of 4 feel right, or does the scene want 2-3? (`pinsmulticap`)
+- Is 300 yd the right ambient horizon, and 0.35 a readable-but-quiet floor?
+- Is 28 UI units enough merge distance once plates scale down at range?
+- Are the subordinate beams quiet enough next to the route beam, or should
+  `pinsmultibeam` default off?
+- Should extras carry titles? Hover is out per the compass no-mouse rule, so
+  it would have to be always-on text -- likely too noisy; the nearest-only
+  distance line is the current compromise.
