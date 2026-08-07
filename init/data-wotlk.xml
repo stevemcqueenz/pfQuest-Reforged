@@ -16,4 +16,8 @@
   <!-- Northrend map rectangles. Without these the minimap loop skips the zone
        entirely, so Northrend had world map nodes but never minimap dots. -->
   <Include file="..\db\minimap-wotlk335.lua" />
+  <!-- Utility POIs (flight masters, mailboxes, innkeepers, repair vendors)
+       from the AzerothCore world DB. Data only for now: nothing consumes
+       pfDB["poi-wotlk335"] yet -- see docs/POI-DESIGN.md. -->
+  <Include file="..\db\poi-wotlk335.lua" />
 </Ui>
