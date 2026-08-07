@@ -1,0 +1,19 @@
+WorldAPI: expose UnitPosition and WorldToScreen to Lua
+
+Exports the client's own projection machinery, already mapped in
+GameClient.h (CGWorldFrame::To2D at 0x004F6D20, PercToScreenPos), as
+two Lua globals so addons can build in-world UI: waypoint markers at
+world positions, off-screen direction indicators, party member markers
+that keep working inside instances.
+
+  UnitPosition("unit")   -> x, y, z         world yards, nothing if
+                                            the token does not resolve
+  WorldToScreen(x, y, z) -> sx, sy, visible UI space, origin bottom
+                                            left; visible is 1 or nil,
+                                            coordinates still returned
+                                            while not visible
+
+Integration is additive: two new files, one CMakeLists line, two
+Entry.cpp lines, registered through the existing
+Hooks::FrameXML::registerLuaLib pattern. No new detours or hooks,
+zero cost when the functions are not called.
