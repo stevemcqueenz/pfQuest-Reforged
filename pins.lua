@@ -1,12 +1,13 @@
--- pfQuest Reforged -- in-world pins, stage 1 (docs/PINS-DESIGN.md)
--- The WorldAPI DLL tier: markers rendered AT world positions. Stage 1 draws
--- the ROUTE TARGET only, as two cooperating elements switched by the
--- WorldToScreen visibility flag:
---   Waypoint  (target in the camera frustum): diamond plate + vertical light
+-- pfQuest Reforged -- in-world pins, stage 2 (docs/PINS-DESIGN.md)
+-- The WorldAPI DLL tier: markers rendered AT world positions. The route
+-- target is drawn as THREE cooperating elements, switched by the
+-- WorldToScreen visibility flag and the near-range distance:
+--   Waypoint  (far, in the camera frustum): diamond plate + vertical light
 --             beam + distance/ETA text at the projected screen position.
+--   Pinpoint  (near, in the camera frustum): a smaller plate at the exact
+--             spot; the info text switches to the OBJECTIVE line.
 --   Navigator (target off-screen): a small plate with a direction chevron
 --             orbiting the screen center, pointing toward the target.
--- Pinpoint handoff, objective text and the full settings surface are stage 2.
 -- The compass strip is the degrade path and never depends on this file.
 
 -- standalone guard (compass.lua idiom): without pfQuest/route there is no
@@ -47,11 +48,16 @@ local ICON_FALLBACK = PATH .. "\\img\\node"
 -- ---------------------------------------------------------------------------
 
 local BASE_SIZE = 28 -- waypoint plate px at pinssize 100 and neutral distance
-local SCALE_MIN, SCALE_MAX = 0.5, 1.5 -- distance-scale clamps (far/close)
+local PINPOINT_BASE = 20 -- pinpoint plate px at pinspointsize 100
+local SCALE_MIN, SCALE_MAX = 0.5, 1.5 -- distance-scale clamp defaults (far/close)
 local SCALE_NEAR, SCALE_FAR = 40, 400 -- yards: <=near -> max, >=far -> min
-local NAV_RADIUS = 140 -- navigator orbit radius (UI units; configurable in stage 2)
-local NAV_SIZE = 22
-local PIN_HOLD = 0.25 -- visible/invisible hysteresis hold (spec)
+local NAV_RADIUS = 140 -- navigator orbit radius default (UI units)
+local NAV_SIZE = 22 -- navigator plate px at pinsnavsize 100
+local PIN_HOLD = 0.25 -- mode hysteresis hold (spec; all three boundaries)
+-- near-range handoff (stage 2): Waypoint -> Pinpoint around ~30 yards, with a
+-- distance hysteresis BAND on top of the hold -- enter below 28, leave above
+-- 33 -- so walking along the threshold cannot flicker-swap the pair
+local NEAR_ENTER, NEAR_LEAVE = 28, 33
 -- beam height clamp (UI units). First in-game contact showed 300 at max
 -- distance renders as a screen-tall pillar on a scaled UI -- the beam is a
 -- subtle locator shaft, not the dominant object; shorter and dimmer reads far
@@ -92,11 +98,35 @@ end
 
 -- distance -> plate scale factor: max at close range, min at far range,
 -- linear ramp between (spec: "base size, clamped by a minimum % at max
--- distance and maximum % at min distance")
-local function ScaleForDistance(dist)
-  if dist <= SCALE_NEAR then return SCALE_MAX end
-  if dist >= SCALE_FAR then return SCALE_MIN end
-  return SCALE_MAX + (SCALE_MIN - SCALE_MAX) * (dist - SCALE_NEAR) / (SCALE_FAR - SCALE_NEAR)
+-- distance and maximum % at min distance"). The clamps are the pinsminscale/
+-- pinsmaxscale settings (stage 2); nil falls back to the spec defaults.
+local function ScaleForDistance(dist, smin, smax)
+  smin, smax = smin or SCALE_MIN, smax or SCALE_MAX
+  if dist <= SCALE_NEAR then return smax end
+  if dist >= SCALE_FAR then return smin end
+  return smax + (smin - smax) * (dist - SCALE_NEAR) / (SCALE_FAR - SCALE_NEAR)
+end
+
+-- defensive settings parse (compass width idiom): a garbage string falls to
+-- the default, a number outside [lo, hi] clamps to the edge
+local function Clamp(v, lo, hi, def)
+  v = tonumber(v) or def
+  if v < lo then return lo elseif v > hi then return hi end
+  return v
+end
+
+-- Pinpoint info line (stage 2): the OBJECTIVE text -- the route target's
+-- precomputed description (meta.description, the same field the compass label
+-- owner and the route arrow print), falling back to the quest/node title.
+-- nil when the node carries neither; the CALLER then falls back to the
+-- distance line, so the text is never empty (spec fallback chain).
+local function PinpointText(node)
+  if not node then return nil end
+  local d = node.description
+  if d and d ~= "" then return d end
+  local t = node.title
+  if t and t ~= "" then return t end
+  return nil
 end
 
 -- ETA seconds, or nil when no honest number exists: standing still (speed 0),
@@ -123,14 +153,27 @@ local function NavigatorAngle(sx, sy, cx, cy)
   return atan2(sy - cy, sx - cx)
 end
 
--- Waypoint/Navigator state machine with the spec's ~0.25s hysteresis: the raw
--- visible flag flaps at screen edges as the camera bobs, and the pair must not
--- flicker-swap there. Debounce form: the CURRENT mode holds until the other
--- has been the raw desire CONTINUOUSLY for PIN_HOLD seconds -- a flapping
--- input therefore never switches at all, a real transition follows 0.25s
--- late. Pure over (state, visible, now); mutates only state{mode,pending,since}.
-local function StepMode(state, visible, now)
-  local want = visible and "waypoint" or "navigator"
+-- The three-state machine (stage 2): invisible -> navigator; visible+near ->
+-- pinpoint; visible+far -> waypoint. Two hysteresis layers, because both raw
+-- inputs flap: the visible flag at screen edges as the camera bobs, and the
+-- distance at the near threshold as the player walks along it.
+--   1. Distance band (Schmitt trigger keyed on the COMMITTED mode): pinpoint
+--      is desired below NEAR_ENTER, and once committed it stays desired until
+--      the distance clears NEAR_LEAVE -- inside the band the incumbent side
+--      wins, so oscillating across ~30 yd never even changes the desire.
+--   2. The stage-1 debounce hold: the current mode holds until another has
+--      been the raw desire CONTINUOUSLY for PIN_HOLD seconds -- a flapping
+--      input never switches at all, a real transition follows 0.25s late.
+-- Pure over (state, visible, dist, now); mutates only state{mode,pending,since}.
+local function StepMode(state, visible, dist, now)
+  local want
+  if not visible then
+    want = "navigator"
+  elseif state.mode == "pinpoint" then
+    want = dist <= NEAR_LEAVE and "pinpoint" or "waypoint"
+  else
+    want = dist < NEAR_ENTER and "pinpoint" or "waypoint"
+  end
   if not state.mode then
     state.mode, state.pending = want, nil
   elseif want == state.mode then
@@ -204,6 +247,33 @@ waypoint.eta:SetPoint("TOP", waypoint.dist, "BOTTOM", 0, -1)
 waypoint.eta:Hide() -- same born-hidden rule: shown only once an ETA exists
 waypoint:Hide()
 
+-- Pinpoint (stage 2): the near-range element -- a smaller plate in the same
+-- housing at the exact spot, objective text below it. No beam: up close the
+-- locator shaft is the dominant object it must not be; the plate itself marks
+-- the spot.
+local pinpoint = CreateFrame("Frame", nil, UIParent)
+pins.pinpoint = pinpoint
+pinpoint:SetFrameStrata("BACKGROUND")
+pinpoint:SetWidth(PINPOINT_BASE)
+pinpoint:SetHeight(PINPOINT_BASE)
+pinpoint.fill = pinpoint:CreateTexture(nil, "ARTWORK")
+pinpoint.fill:SetTexture(PATH .. "\\img\\marker_fill")
+pinpoint.fill:SetAllPoints(pinpoint)
+pinpoint.fill:SetVertexColor(bg[1], bg[2], bg[3], 0.9)
+pinpoint.edge = pinpoint:CreateTexture(nil, "ARTWORK")
+pinpoint.edge:SetTexture(PATH .. "\\img\\marker_edge")
+pinpoint.edge:SetAllPoints(pinpoint)
+pinpoint.edge:SetVertexColor(accent[1], accent[2], accent[3], 1)
+pinpoint.icon = pinpoint:CreateTexture(nil, "OVERLAY")
+pinpoint.icon:SetWidth(12)
+pinpoint.icon:SetHeight(12)
+pinpoint.icon:SetPoint("CENTER", pinpoint, "CENTER", 0, 0)
+pinpoint.text = pinpoint:CreateFontString(nil, "OVERLAY")
+pinpoint.text:SetFont(font, 12, "OUTLINE")
+pinpoint.text:SetTextColor(0.9, 0.9, 0.9, 1)
+pinpoint.text:SetPoint("TOP", pinpoint, "BOTTOM", 0, -3)
+pinpoint:Hide()
+
 local navigator = CreateFrame("Frame", nil, UIParent)
 pins.navigator = navigator
 navigator:SetFrameStrata("BACKGROUND")
@@ -239,6 +309,24 @@ local function AimChevron(tex, a)
   tex:SetTexCoord(0.5 - s, 0.5 + c, 0.5 + c, 0.5 + s, 0.5 - c, 0.5 - s, 0.5 + s, 0.5 - c)
 end
 
+-- node -> plate icon (compass rebind idiom); shared by Waypoint and Pinpoint
+-- so a target change restyles both the same way
+local function BindIcon(tex, node)
+  if node and node.texture then
+    tex:SetTexture(node.texture)
+    local v = node.vertex
+    if v and (v[1] > 0 or v[2] > 0 or v[3] > 0) then
+      tex:SetVertexColor(v[1], v[2], v[3], 1)
+    else
+      tex:SetVertexColor(1, 1, 1, 1)
+    end
+  else
+    tex:SetTexture(ICON_FALLBACK)
+    local r, g, b = pfMap.str2rgb(node and node.title or "")
+    tex:SetVertexColor(r or 1, g or 1, b or 1, 1)
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- update loop: one driver frame, 0.02s perf cap (route.lua:515 idiom). The
 -- screen position is a function of the CAMERA, which moves every frame, so
@@ -251,7 +339,11 @@ local state = {}
 local shownMode
 local speedAvg
 local lastNode, lastWaySize, lastBeamH, lastDistKey, lastEtaKey, lastNavAngle
-local sizeMul, lastSizeCfg = 1, nil
+local lastPinNode, pinText, lastPinDistKey
+-- parsed settings snapshot, refreshed only when a raw config string changes
+-- (compass width idiom); the per-frame path reads these plain locals
+local sizeMul, scaleMin, scaleMax, navRadius = 1, SCALE_MIN, SCALE_MAX, NAV_RADIUS
+local lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax, lastCfgOp, lastCfgNavR, lastCfgNavS
 
 local driver = CreateFrame("Frame", nil, UIParent)
 pins.driver = driver
@@ -263,6 +355,7 @@ local function Sleep()
   state.mode, state.pending = nil, nil -- wake adopts the raw flag instantly
   speedAvg = nil
   waypoint:Hide()
+  pinpoint:Hide()
   navigator:Hide()
 end
 
@@ -277,13 +370,47 @@ driver:SetScript("OnUpdate", function()
   if this.perfTick and now < this.perfTick then return end
   this.perfTick = now + 0.02
 
-  -- live size option: dirty-check inside the cap (compass width idiom)
-  local sizeCfg = pfQuest_config["pinssize"]
-  if sizeCfg ~= lastSizeCfg then
-    lastSizeCfg = sizeCfg
-    local s = tonumber(sizeCfg) or 100
-    if s < 25 then s = 25 elseif s > 300 then s = 300 end
-    sizeMul = s / 100
+  -- live settings: dirty-check the raw strings inside the cap (compass width
+  -- idiom) -- seven table reads + compares per capped tick; the parse and the
+  -- widget writes run only on an actual change
+  local cfgSize = pfQuest_config["pinssize"]
+  local cfgPoint = pfQuest_config["pinspointsize"]
+  local cfgMin = pfQuest_config["pinsminscale"]
+  local cfgMax = pfQuest_config["pinsmaxscale"]
+  local cfgOp = pfQuest_config["pinsopacity"]
+  local cfgNavR = pfQuest_config["pinsnavradius"]
+  local cfgNavS = pfQuest_config["pinsnavsize"]
+  if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
+     or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
+     or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS then
+    lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
+    lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
+    sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
+    scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
+    scaleMax = Clamp(cfgMax, 10, 300, 150) / 100
+    -- a crossed pair collapses to the max value instead of inverting the ramp
+    if scaleMin > scaleMax then scaleMin = scaleMax end
+    navRadius = Clamp(cfgNavR, 50, 400, 140)
+    -- whole-tier opacity: one SetAlpha per element, every child rides along
+    local a = Clamp(cfgOp, 10, 100, 100) / 100
+    waypoint:SetAlpha(a)
+    pinpoint:SetAlpha(a)
+    navigator:SetAlpha(a)
+    -- pinpoint and navigator sizes are distance-independent: apply once here,
+    -- not per frame
+    local psz = floor(PINPOINT_BASE * Clamp(cfgPoint, 25, 300, 100) / 100 + 0.5)
+    pinpoint:SetWidth(psz)
+    pinpoint:SetHeight(psz)
+    local pisz = floor(psz * 0.6 + 0.5)
+    pinpoint.icon:SetWidth(pisz)
+    pinpoint.icon:SetHeight(pisz)
+    local nsz = floor(NAV_SIZE * Clamp(cfgNavS, 25, 300, 100) / 100 + 0.5)
+    navigator:SetWidth(nsz)
+    navigator:SetHeight(nsz)
+    local csz = floor(nsz * 0.72 + 0.5)
+    navigator.chevron:SetWidth(csz)
+    navigator.chevron:SetHeight(csz)
+    lastWaySize = nil -- the waypoint's distance-scaled size re-derives next pass
   end
 
   -- route target: the arrow's current destination -- coords[1] is only a
@@ -329,14 +456,20 @@ driver:SetScript("OnUpdate", function()
   local dist = sqrt(dxw * dxw + dyw * dyw)
 
   pins.on = true
-  local mode = StepMode(state, vis and true or false, now)
+  local mode = StepMode(state, vis and true or false, dist, now)
   if mode ~= shownMode then
     shownMode = mode
     if mode == "waypoint" then
+      pinpoint:Hide()
       navigator:Hide()
       waypoint:Show()
+    elseif mode == "pinpoint" then
+      waypoint:Hide()
+      navigator:Hide()
+      pinpoint:Show()
     else
       waypoint:Hide()
+      pinpoint:Hide()
       navigator:Show()
     end
   end
@@ -348,7 +481,7 @@ driver:SetScript("OnUpdate", function()
     waypoint:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ux, uy)
 
     -- distance-based plate scale, dirty on the rounded pixel size
-    local size = floor(BASE_SIZE * sizeMul * ScaleForDistance(dist) + 0.5)
+    local size = floor(BASE_SIZE * sizeMul * ScaleForDistance(dist, scaleMin, scaleMax) + 0.5)
     if size ~= lastWaySize then
       lastWaySize = size
       waypoint:SetWidth(size)
@@ -362,19 +495,7 @@ driver:SetScript("OnUpdate", function()
     local node = target[3]
     if node ~= lastNode then
       lastNode = node
-      if node and node.texture then
-        waypoint.icon:SetTexture(node.texture)
-        local v = node.vertex
-        if v and (v[1] > 0 or v[2] > 0 or v[3] > 0) then
-          waypoint.icon:SetVertexColor(v[1], v[2], v[3], 1)
-        else
-          waypoint.icon:SetVertexColor(1, 1, 1, 1)
-        end
-      else
-        waypoint.icon:SetTexture(ICON_FALLBACK)
-        local r, g, b = pfMap.str2rgb(node and node.title or "")
-        waypoint.icon:SetVertexColor(r or 1, g or 1, b or 1, 1)
-      end
+      BindIcon(waypoint.icon, node)
     end
 
     -- beam: height scales with distance (tall from afar, short up close),
@@ -432,6 +553,32 @@ driver:SetScript("OnUpdate", function()
       waypoint.eta:Hide()
       lastEtaKey = nil
     end
+  elseif mode == "pinpoint" then
+    local ux, uy = ToUiCoords(sx, sy, uiw, uih)
+    pinpoint:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ux, uy)
+
+    -- objective line + icon, rebound on target change only. The text is the
+    -- spec fallback chain: description -> title -> distance (never empty)
+    local node = target[3]
+    if node ~= lastPinNode then
+      lastPinNode = node
+      BindIcon(pinpoint.icon, node)
+      pinText = PinpointText(node)
+      if pinText then pinpoint.text:SetText(pinText) end
+      lastPinDistKey = nil
+    end
+    if not pinText then
+      -- last fallback: the same distance line as the waypoint (display-time
+      -- metric conversion, compass.lua:909), dirty on the rounded key
+      local metric = pfQuest_config["compassmetric"] == "1"
+      local shownD = metric and (dist * 0.9144) or dist
+      local rounded = floor(shownD + 0.5)
+      local key = metric and -rounded or rounded
+      if key ~= lastPinDistKey then
+        lastPinDistKey = key
+        pinpoint.text:SetText(rounded .. (metric and " m" or " yd"))
+      end
+    end
   else
     -- navigator: orbit the screen center at a fixed radius along the target's
     -- screen direction -- the invisible-but-updating WorldToScreen coords ARE
@@ -439,7 +586,7 @@ driver:SetScript("OnUpdate", function()
     local ux, uy = ToUiCoords(sx, sy, uiw, uih)
     local a = NavigatorAngle(ux, uy, uiw * 0.5, uih * 0.5)
     navigator:SetPoint("CENTER", UIParent, "BOTTOMLEFT",
-                       uiw * 0.5 + cos(a) * NAV_RADIUS, uih * 0.5 + sin(a) * NAV_RADIUS)
+                       uiw * 0.5 + cos(a) * navRadius, uih * 0.5 + sin(a) * navRadius)
     -- re-aim only on a real angular change (~0.6 deg) -- SetTexCoord is not free
     if not lastNavAngle or a - lastNavAngle > 0.01 or lastNavAngle - a > 0.01 then
       lastNavAngle = a
@@ -455,6 +602,8 @@ end)
 pins.ToUiCoords = ToUiCoords
 pins.PercentToWorld = PercentToWorld
 pins.ScaleForDistance = ScaleForDistance
+pins.Clamp = Clamp
+pins.PinpointText = PinpointText
 pins.EtaFor = EtaFor
 pins.FormatEta = FormatEta
 pins.NavigatorAngle = NavigatorAngle

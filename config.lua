@@ -147,15 +147,28 @@ pfQuest_defconfig = {
   { text = L["Reset Everything"], default = "1", type = "button", func = reset.everything },
 }
 
--- In-world pins (docs/PINS-DESIGN.md, stage 1): the tier is hidden ENTIRELY
+-- In-world pins (docs/PINS-DESIGN.md, stage 2): the tier is hidden ENTIRELY
 -- without the WorldAPI DLL, settings rows included -- feature-detect by type,
 -- never a version global. Inserted after the compass block so the questing
--- section stays grouped; reverse-order inserts land as pins/pinssize/pinsbeam.
+-- section stays grouped; reverse-order inserts land in reading order
+-- pins/size/minscale/maxscale/opacity/pointsize/beam/navradius/navsize.
 if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world navigator size"], default = "100", type = "text", config = "pinsnavsize" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world navigator orbit radius"], default = "140", type = "text", config = "pinsnavradius" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["In-world pin light beam"], default = "1", type = "checkbox", config = "pinsbeam" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world pinpoint size"], default = "100", type = "text", config = "pinspointsize" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world pin opacity"], default = "100", type = "text", config = "pinsopacity" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world pin maximum scale"], default = "150", type = "text", config = "pinsmaxscale" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["In-world pin minimum scale"], default = "50", type = "text", config = "pinsminscale" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["In-world pin size"], default = "100", type = "text", config = "pinssize" })
       table.insert(pfQuest_defconfig, i + 1,
