@@ -428,6 +428,71 @@ function tracker.ButtonUpdate()
   end
 end
 
+-- Reforged: alt+click waypoint picking. The route engine's arrow, compass
+-- label and in-world pin all follow the node handed to pfQuest.route.SetTarget
+-- (the same call pfQuest's own map pins make on click, map.lua). Resolve a
+-- tracker row to its nearest route point: route.coords tuples are
+-- { x, y, node, distance, watched, questid } -- prefer slot-6 questid matches,
+-- fall back to the node title when the id is missing, nearest = smallest
+-- slot 4. Everything is guarded so a missing route engine is a silent no-op.
+local function RouteEntryMatches(c, questid, title)
+  return c and c[3] and (c[6] == questid or (title and c[3].title == title))
+end
+
+local function NearestRouteNode(questid, title)
+  local coords = pfQuest.route and pfQuest.route.coords
+  if type(coords) ~= "table" then
+    return
+  end
+  local best, bestd
+  for i = 1, getn(coords) do
+    local c = coords[i]
+    if RouteEntryMatches(c, questid, title) then
+      local d = c[4] or DIST_FAR
+      if not best or d < bestd then
+        best, bestd = c[3], d
+      end
+    end
+  end
+  return best
+end
+
+local function IsRouteTargetQuest(questid, title)
+  local route = pfQuest.route
+  local coords = route and route.coords
+  if type(coords) ~= "table" or not route.IsTarget then
+    return false
+  end
+  for i = 1, getn(coords) do
+    local c = coords[i]
+    if RouteEntryMatches(c, questid, title) and route.IsTarget(c[3]) then
+      return true
+    end
+  end
+  return false
+end
+
+local function AltClickNavigate(title, questid)
+  local route = pfQuest.route
+  if not route or not route.SetTarget or not DEFAULT_CHAT_FRAME then
+    return
+  end
+  if IsRouteTargetQuest(questid, title) then
+    route.SetTarget(nil)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest:|r arrow back to automatic")
+  else
+    local node = NearestRouteNode(questid, title)
+    if node then
+      route.SetTarget(node)
+      DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest:|r arrow set to " .. (title or "?"))
+    else
+      DEFAULT_CHAT_FRAME:AddMessage(
+        "|cff33ffccpf|cffffffffQuest:|r no route point for " .. (title or "?") .. " on this map"
+      )
+    end
+  end
+end
+
 function tracker.ButtonClick()
   if arg1 == "RightButton" then
     for questid, data in pairs(pfQuest.questlog) do
@@ -439,6 +504,8 @@ function tracker.ButtonClick()
         break
       end
     end
+  elseif IsAltKeyDown() and tracker.mode == "QUEST_TRACKING" then
+    AltClickNavigate(this.title, this.questid)
   elseif IsShiftKeyDown() then
     -- mark as done if node is quest and not in questlog
     if this.node.questid and not this.node.qlogid then
@@ -678,6 +745,8 @@ function tracker.ButtonEvent(self)
     self.text:SetTextColor(color.r, color.g, color.b)
     self.tooltip =
       pfQuest_Loc["|cff33ffcc<Click>|r Unfold/Fold Objectives\n|cff33ffcc<Right-Click>|r Show In QuestLog\n|cff33ffcc<Ctrl-Click>|r Show Map / Toggle Color\n|cff33ffcc<Shift-Click>|r Hide Nodes"]
+        .. "\n"
+        .. pfQuest_Loc["|cff33ffcc<Alt-Click>|r Set/Clear As Arrow Target"]
   elseif tracker.mode == "GIVER_TRACKING" then
     local level = node.qlvl or node.level or UnitLevel("player")
     local color = pfQuestCompat.GetDifficultyColor(level)

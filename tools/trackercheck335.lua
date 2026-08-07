@@ -202,5 +202,83 @@ if partial then
         tostring(pfill), tostring(ptrack))
 end
 
+-- ---------------------------------------------------------------------------
+-- alt+click waypoint: an alt+click on a quest row hands the quest's NEAREST
+-- route node to pfQuest.route.SetTarget (the arrow/compass/world-pin target,
+-- same call the map pins make on click); alt+clicking the same quest again
+-- clears back to automatic. Tuples are { x, y, node, distance, watched,
+-- questid }: match on slot 6, fall back to the node title when the id is
+-- missing, nearest = smallest slot 4.
+-- ---------------------------------------------------------------------------
+local altdown = false
+_G.IsAltKeyDown = function() return altdown end
+_G.IsShiftKeyDown = function() return false end
+_G.IsControlKeyDown = function() return false end
+
+local routeTarget = nil
+local msgs = {}
+_G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) msgs[#msgs + 1] = tostring(m) end }
+
+local node1far = { title = "Distress Call" }
+local node1near = { title = "Distress Call" }
+local node2 = { title = "Nick of Time" }
+pfQuest.route = {
+  coords = {
+    { 10, 10, node1far, 120, true, 1 },
+    { 20, 20, node1near, 40, true, 1 },
+    { 30, 30, node2, 55, true, nil }, -- no questid: exercises the title fallback
+  },
+  SetTarget = function(node) routeTarget = node end,
+  IsTarget = function(node) return routeTarget ~= nil and routeTarget == node end,
+}
+
+local function altclick(btn)
+  _G.this = btn
+  _G.arg1 = "LeftButton"
+  altdown = true
+  local okc, e = pcall(tracker.ButtonClick)
+  altdown = false
+  _G.this = nil
+  return okc, e
+end
+local function lastmsg() return msgs[#msgs] or "" end
+
+local okc1, e1 = altclick(full)
+check(okc1, "alt+click runs%s", okc1 and "" or " -> " .. tostring(e1))
+check(routeTarget == node1near,
+      "first alt+click targets the NEAREST route node (d=40, not d=120)")
+check(string.find(lastmsg(), "arrow set to", 1, true) and
+      string.find(lastmsg(), "Distress Call", 1, true),
+      "chat notice names the quest (got %q)", lastmsg())
+
+altclick(full)
+check(routeTarget == nil, "second alt+click clears back to automatic")
+check(string.find(lastmsg(), "arrow back to automatic", 1, true),
+      "chat notice says automatic (got %q)", lastmsg())
+
+altclick(byTitle["Nick of Time"])
+check(routeTarget == node2, "questid-less route rows resolve via the title fallback")
+altclick(byTitle["Nick of Time"]) -- clear again
+
+local before = #msgs
+altclick(byTitle["Thassarian, My Brother"])
+check(routeTarget == nil, "no-route quest sets no target")
+check(#msgs == before + 1 and string.find(lastmsg(), "no route point", 1, true),
+      "no-route quest emits the notice (got %q)", lastmsg())
+
+-- negative case: no route engine at all -> alt+click is a silent no-op
+pfQuest.route = nil
+before = #msgs
+local okc2, e2 = altclick(full)
+check(okc2, "alt+click with no route engine does not error%s",
+      okc2 and "" or " -> " .. tostring(e2))
+check(#msgs == before and routeTarget == nil,
+      "alt+click with no route engine is silent (no message, no target)")
+
+-- the row tooltip documents the binding
+check(full and type(full.tooltip) == "string" and
+      string.find(full.tooltip, "Alt", 1, true) ~= nil,
+      "quest row tooltip mentions the alt+click binding")
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
