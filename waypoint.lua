@@ -16,6 +16,7 @@ if not pfQuest or not pfQuest.route or not pfMap then return end
 
 local floor, sqrt = math.floor, math.sqrt
 local strfind, gsub = string.find, string.gsub
+local strlower, format = string.lower, string.format
 local GetTime = GetTime
 local GetPlayerMapPosition = GetPlayerMapPosition
 local GetRealZoneText = GetRealZoneText
@@ -29,6 +30,19 @@ local accent = pfQuestTheme and pfQuestTheme.accent or { 0.2, 1.0, 0.8 }
 -- radius (map percent, Euclidean -- ~2% of a zone axis)
 local ARRIVE_YD2 = 15 * 15
 local CLEAR_PCT2 = 2 * 2
+
+-- /way <class> (phase B2, docs/POI-DESIGN.md): the nearest utility POI of a
+-- class from db/poi-wotlk335.lua becomes the custom waypoint -- the full
+-- pylon treatment plus the arrival auto-clear, through the machinery above.
+-- The words are exactly the db class names; anything else falls through to
+-- the coordinate parse. POI_LABELS names the class in chat notices.
+local POI_WORDS = {
+  ["flight"] = true, ["mail"] = true, ["inn"] = true, ["repair"] = true,
+}
+local POI_LABELS = {
+  ["flight"] = "flight master", ["mail"] = "mailbox",
+  ["inn"] = "innkeeper", ["repair"] = "repair vendor",
+}
 
 local waypoint = {}
 pfQuest.waypoint = waypoint
@@ -103,13 +117,16 @@ local function PlaceMapNode()
   if pfMap.UpdateNodes then pfMap:UpdateNodes() end
 end
 
-function waypoint.Set(x, y, zone, label)
+-- silent suppresses the generic "Waypoint set" line: the /way <class> path
+-- (B2) prints its own richer notice naming the POI and the distance instead
+function waypoint.Set(x, y, zone, label, silent)
   if not pfQuest_config then return end
   x = floor(x * 10 + 0.5) / 10
   y = floor(y * 10 + 0.5) / 10
   pfQuest_config.customwaypoint = { ["x"] = x, ["y"] = y, ["zone"] = zone, ["label"] = label }
   BuildPinNode(label)
   PlaceMapNode()
+  if silent then return end
   local where = x .. ", " .. y
   Message(L["Waypoint set"] .. ": " .. where .. (label and (" (" .. label .. ")") or ""))
 end
@@ -141,19 +158,88 @@ local function CurrentZoneID()
   return zoneID
 end
 
+-- the /way argument grammar, one string so the three notice sites can never
+-- drift apart (the POI words ride the same line, B2)
+local function UsageText()
+  return L["Usage"] .. ": /way 45 67 [" .. L["label"] .. "], /way flight|mail|inn|repair"
+end
+
+-- /way <class> body (B2): nearest POI of the class in the player's zone.
+-- Ranking runs in aspect-corrected map percent (the compass dist2 metric,
+-- compass.lua BearingTo comment: x/y aspect 1.5) -- no size data needed to
+-- RANK; the chat DISTANCE is honest yards and is simply omitted for a zone
+-- without pfMap.minimap_sizes data (the YardsTo doctrine: never fabricate).
+function waypoint.SetNearestPoi(class)
+  local zone = CurrentZoneID()
+  if not zone then
+    Message(L["The current zone is not in the database"])
+    return
+  end
+  local xp, yp = GetPlayerMapPosition("player")
+  if xp == 0 and yp == 0 then
+    -- indoors/instance: the player's map position is unknown, so "nearest"
+    -- would be a guess -- notice, nothing set
+    Message(L["Your position in this zone is unknown"])
+    return
+  end
+  local db = pfDB and pfDB["poi-wotlk335"]
+  local entries = db and db[class] and db[class][zone]
+  local best, bestd2
+  if entries then
+    local px, py = xp * 100, yp * 100
+    for _, c in pairs(entries) do
+      -- 3-slot {xPct, yPct, name} tuples, the db contract
+      local dx, dy = (c[1] - px) * 1.5, c[2] - py
+      local d2 = dx * dx + dy * dy
+      if not bestd2 or d2 < bestd2 then
+        best, bestd2 = c, d2
+      end
+    end
+  end
+  local kind = L[POI_LABELS[class]]
+  if not best then
+    Message(format(L["No %s known in this zone"], kind))
+    return
+  end
+  local name = best[3] or kind
+  waypoint.Set(best[1], best[2], zone, name, true)
+  -- notice names the destination; distance converts at display time only
+  -- (the compassmetric doctrine, compass.lua YardsTo consumer)
+  local size = pfMap.minimap_sizes and pfMap.minimap_sizes[zone]
+  if size and size[1] and size[2] then
+    local dx = (best[1] / 100 - xp) * size[1]
+    local dy = (best[2] / 100 - yp) * size[2]
+    local yd = sqrt(dx * dx + dy * dy)
+    local metric = pfQuest_config["compassmetric"] == "1"
+    local shown = floor((metric and yd * 0.9144 or yd) + 0.5)
+    Message(L["Waypoint"] .. ": " .. name .. ", " .. shown .. (metric and " m" or " yd"))
+  else
+    Message(L["Waypoint"] .. ": " .. name)
+  end
+end
+
 -- /way body (registered in slashcmd.lua): "/way 45 67", "/way 45 67 Meet
--- here", "/way" alone clears. Kept here so the harness can drive the parse
--- cases without loading the whole slash file.
+-- here", "/way flight|mail|inn|repair" (B2), "/way" alone clears. Kept here
+-- so the harness can drive the parse cases without loading the whole slash
+-- file.
 function waypoint.HandleCommand(input)
   input = input or ""
+  -- POI words first (B2): a single known word targets the nearest POI of
+  -- that class; any other word falls through to the coordinate parse and
+  -- its usage notice
+  local _, _, word = strfind(input, "^%s*(%a+)%s*$")
+  if word and POI_WORDS[strlower(word)] then
+    waypoint.SetNearestPoi(strlower(word))
+    return
+  end
   local _, _, xs, ys, label = strfind(input, "^%s*([%d%.,]+)%s+([%d%.,]+)%s*(.-)%s*$")
   if not xs then
     if strfind(input, "%S") then
-      Message(L["Usage"] .. ": /way 45 67 [" .. L["label"] .. "], /way " .. L["clears the waypoint"])
+      Message(UsageText() .. ", /way " .. L["clears the waypoint"])
     elseif waypoint.Get() then
       waypoint.Clear()
     else
-      Message(L["No waypoint set"] .. ". " .. L["Usage"] .. ": /way 45 67 [" .. L["label"] .. "]")
+      Message(L["No waypoint set"] .. ". " .. UsageText())
     end
     return
   end
@@ -161,7 +247,7 @@ function waypoint.HandleCommand(input)
   local x = tonumber((gsub(xs, ",", ".")))
   local y = tonumber((gsub(ys, ",", ".")))
   if not x or not y or x < 0 or x > 100 or y < 0 or y > 100 then
-    Message(L["Invalid coordinates"] .. ". " .. L["Usage"] .. ": /way 45 67 [" .. L["label"] .. "]")
+    Message(L["Invalid coordinates"] .. ". " .. UsageText())
     return
   end
   local zone = CurrentZoneID()
