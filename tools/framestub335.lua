@@ -16,7 +16,7 @@ local noop = function() end
 -- harness exists to catch. Unknown keys therefore stay nil, exactly as on a real
 -- frame: reading a field gives nil, and calling a method that is not there errors.
 -- Widening the stub means adding a name to the lists below, on purpose.
-local FRAME_NOOPS = [[SetAlpha GetAlpha SetMovable
+local FRAME_NOOPS = [[SetMovable
 EnableMouse EnableMouseWheel SetClampedToScreen SetFrameStrata
 SetBackdrop SetBackdropColor SetBackdropBorderColor StartMoving StopMovingOrSizing
 SetUserPlaced RegisterForClicks RegisterForDrag SetID GetID SetToplevel Raise Lower
@@ -51,9 +51,14 @@ local function applySize(o)
   function o.GetFrameLevel(s) return s.frameLevel end
   function o.SetPoint(s, point, rel, relPoint, x, y)
     if type(point) ~= "string" then return end
-    s.points[point] = { rel = rel, x = tonumber(x) or 0 }
+    s.points[point] = { rel = rel, x = tonumber(x) or 0, y = tonumber(y) or 0 }
     if rel and type(rel) == "table" then s.anchorTo = rel end
   end
+  -- alpha modelled, not noop'd: the pins opacity setting is asserted on
+  -- GetAlpha, and a nil return would mask a SetAlpha that never ran
+  o.alpha = 1
+  function o.SetAlpha(s, a) s.alpha = a end
+  function o.GetAlpha(s) return s.alpha or 1 end
   function o.ClearAllPoints(s) s.points = {} end
   function o.SetAllPoints(s, rel) s.anchorTo = rel; s.fullWidth = true end
   local function anchoredWidth(s)

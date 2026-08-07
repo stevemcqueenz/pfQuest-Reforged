@@ -27,7 +27,7 @@ echo "== [5/6] compass: contract harness =="
 lua5.1 tools/compasscheck335.lua compass.lua || fail=1
 
 echo
-echo "== [6/6] pins: stage-1 contract harness =="
+echo "== [6/6] pins: contract harness =="
 lua5.1 tools/pinscheck335.lua pins.lua || fail=1
 
 echo
