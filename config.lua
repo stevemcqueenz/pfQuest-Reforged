@@ -131,6 +131,15 @@ pfQuest_defconfig = {
   { text = L["Show Help On Tooltips"], default = "1", type = "checkbox", config = "tooltiphelp" },
   { text = L["Show Database IDs"], default = "0", type = "checkbox", config = "showids" },
 
+  { text = L["Nameplates"], default = nil, type = "header" },
+  -- GW2 UI dedupe: nameplates.lua swaps this row's desc for the hint
+  -- "GW2 UI quest icons are active" when GW2 UI's own quest plate icons are
+  -- detected; the "1" is then treated as off (rule documented there).
+  { text = L["Quest Icons On Nameplates"], desc = L["Kill, loot, turn-in and quest giver icons beside enemy nameplates"], default = "1", type = "checkbox", config = "plateicons" },
+  { text = L["Nameplate Icon Scale"], desc = L["Percent, 50 to 200"], default = "100", type = "text", config = "plateiconscale" },
+  { text = L["Nameplate Icon X Offset"], default = "-17", type = "text", config = "plateiconx" },
+  { text = L["Nameplate Icon Y Offset"], default = "-7", type = "text", config = "plateicony" },
+
   { text = L["Compass Bar"], default = nil, type = "header" },
   { text = L["Enable Compass Bar"], desc = L["Quest directions on a bar at the top of the screen"], default = "0", type = "checkbox", config = "compass" },
   { text = L["Bar Width"], default = "420", type = "text", config = "compasswidth" },
