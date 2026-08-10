@@ -14,6 +14,7 @@
   <Include file="..\waypoint.lua" />
   <Include file="..\compass.lua" />
   <Include file="..\pins.lua" />
+  <Include file="..\nameplates.lua" />
   <Include file="..\tracker.lua" />
   <Include file="..\browser.lua" />
   <Include file="..\journal.lua" />

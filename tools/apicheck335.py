@@ -82,6 +82,12 @@ OpenColorPicker""".split())
 # demonstrably exists -- that makes these codex gaps, not addon bugs.
 EVENT_GAPS = set("""MINIMAP_ZONE_CHANGED""".split())
 
+# Client-mod events: AwesomeWotLK-class nameplate mods add the retail
+# NAME_PLATE_UNIT_* events to 3.3.5a. nameplates.lua registers them ONLY behind
+# the C_NamePlate feature-detect, so the RegisterEvent line never runs on a
+# stock client. Guarded, not native -- kept out of EVENT_GAPS on purpose.
+GUARDED_EVENTS = set("""NAME_PLATE_UNIT_ADDED NAME_PLATE_UNIT_REMOVED""".split())
+
 bad_api, bad_events = {}, {}
 for p, s in srcs.items():
     for ln, line in enumerate(s.split("\n"), 1):
@@ -95,7 +101,7 @@ for p, s in srcs.items():
             bad_api.setdefault(fn, []).append("%s:%d" % (p, ln))
         for m in re.finditer(r"""RegisterEvent\(\s*['"]([A-Z_0-9]+)['"]""", line):
             ev = m.group(1)
-            if ev not in EVENTS and ev not in EVENT_GAPS:
+            if ev not in EVENTS and ev not in EVENT_GAPS and ev not in GUARDED_EVENTS:
                 bad_events.setdefault(ev, []).append("%s:%d" % (p, ln))
 
 fail = False
