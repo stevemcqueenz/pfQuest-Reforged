@@ -72,6 +72,14 @@ pfQuest-wotlk client port (txtsd). Reforged adds:
 - **Quest tracker upgrades:** per-quest progress bars, adjustable width and
   scale, and alt+click on any quest row to point the arrow, compass, and pylon
   at it (alt+click again returns to automatic nearest-objective routing).
+- **Quest icons on nameplates:** the map's icon language beside enemy
+  nameplates: kill/collect/interact markers on objective mobs, a ? on ready
+  turn-in NPCs, and a ! on available quest givers in the zone. Works on stock
+  plates and on ElvUI/TidyPlates/Aloft/KUI skinned plates; with the
+  AwesomeWotLK client mod it uses real nameplate unit tokens instead of the
+  frame scan. Scale and position are adjustable, and when GW2 UI's own quest
+  plate icons are active pfQuest defers automatically so plates never carry
+  double icons. On by default: "Quest Icons On Nameplates" in `/db config`.
 - **A reorganized settings window:** `/db config` now opens a sectioned window
   with a sidebar (General, Quest Tracker, Map and Minimap, Compass Bar,
   In-world Pins, and more) instead of a wall of checkboxes; sections for
