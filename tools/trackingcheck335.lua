@@ -35,12 +35,20 @@ local ALLOWED_ZONES = {
   [210] = "Icecrown", [394] = "Grizzly Hills", [495] = "Howling Fjord",
   [3537] = "Borean Tundra", [3711] = "Sholazar Basin", [4395] = "Dalaran",
   [4197] = "Wintergrasp", [2817] = "Crystalsong Forest",
+  -- Eastern Plaguelands: not a WotLK zone, but the one Azeroth zone with no
+  -- mining data at all, and the one whose map rectangle database.lua corrects.
+  [139] = "Eastern Plaguelands",
 }
 
--- Zones whose model does NOT come from a fit against pfQuest's own data, so the
--- coordinates can only land correctly if pfQuest also has the matching map
--- rectangle. Without the pfDB.minimap entry the minimap loop skips the zone.
-local NEEDS_MINIMAP_ENTRY = { 4197, 2817 }
+-- Zones whose coordinates come from a map rectangle rather than a fit against
+-- pfQuest's own data. They only land correctly if pfDB.minimap carries THAT
+-- rectangle's width: without an entry at all the minimap loop skips the zone,
+-- and with the wrong width it undoes the placement on the minimap only. Eastern
+-- Plaguelands is the sharp case, since pfQuest ships a perfectly plausible 3:2
+-- size for it that happens to be the 1.12 one.
+local NEEDS_MINIMAP_ENTRY = {
+  { 4197, 2975.00 }, { 2817, 2722.92 }, { 139, 4031.25 },
+}
 
 -- Which pfDB database each track's ids live in, and which sign they carry.
 local TRACKS = {
@@ -72,6 +80,9 @@ local MUST_COVER = {
   { "units", 32485, "King Krush", 2 }, { "units", 32386, "Vigdis the War Maiden", 3 },
   -- Wintergrasp, reachable only through the WorldMapArea rectangle
   { "objects", 190176, "Frost Lotus", 80 },
+  -- Eastern Plaguelands mining (issue #18): pfQuest had none of it
+  { "objects", 2047, "Truesilver Deposit", 60 },
+  { "objects", 324, "Rich Thorium Vein", 20 },
 }
 
 -- ---------------------------------------------------------------------------
@@ -458,6 +469,83 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- Eastern Plaguelands rectangle correction (issue #18). Blizzard rescaled the
+-- EPL map during Wrath; pfQuest's data is still on the 1.12 rectangle, so every
+-- node there sat about 7.9% of the map from where it really is. database.lua
+-- converts them during the packing walk. Pin the conversion and the zone size
+-- that has to match it.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("database.lua"):read("*a")
+
+  -- it has to actually run: the corrector is only useful if the packing loop
+  -- calls it, and nothing else would notice if that call were dropped
+  -- look inside packEntryCoords itself: matching anywhere in the file would be
+  -- satisfied by the function's own definition
+  local packbody = string.match(src, "local function packEntryCoords.-\nend")
+  if packbody and string.find(packbody, "correctEPL") then
+    ok("EPL: the packing walk applies the correction")
+  else
+    fail("EPL: packEntryCoords does not call correctEPL, so nothing is corrected")
+  end
+
+  local block = string.match(src, "(local EPL_ZONE.-\nend)\npfDatabase%.CorrectEPLCoord")
+  local chunk = block and loadstring("local floor = math.floor\n" .. block .. "\nreturn correctEPL")
+  local f = chunk and chunk()
+  if not f then
+    fail("EPL: could not lift correctEPL out of database.lua")
+  else
+    -- a coordinate in any other zone must come back untouched
+    local other = { 50, 50, 1519, 300 }
+    f(other)
+    if other[1] == 50 and other[2] == 50 then ok("EPL: coordinates in other zones are left alone")
+    else fail("EPL: a zone-1519 coordinate was rewritten to %s, %s", other[1], other[2]) end
+
+    -- and the conversion itself, on three points spanning the map
+    local cases = { { 50, 50, 45.48, 44.46 }, { 10, 90, 7.06, 82.87 } }
+    local bad = 0
+    for i = 1, table.getn(cases) do
+      local c = cases[i]
+      local tup = { c[1], c[2], 139, 300 }
+      f(tup)
+      if math.abs(tup[1] - c[3]) > 0.01 or math.abs(tup[2] - c[4]) > 0.01 then
+        bad = bad + 1
+        fail("EPL: (%s, %s) converted to (%s, %s), expected (%s, %s)",
+             c[1], c[2], tup[1], tup[2], c[3], c[4])
+      end
+    end
+    if bad == 0 then ok("EPL: the 1.12 rectangle converts onto the 3.3.5a one") end
+
+    -- no shipped EPL coordinate may be pushed off the map by the conversion
+    pfDB = {}
+    dofile("db/init.lua")
+    for _, fn in ipairs({ "objects", "objects-tbc", "objects-wotlk", "objects-wotlk-sw335",
+                          "units", "units-tbc", "units-wotlk", "units-wotlk-icecrown335",
+                          "units-wotlk-acfill335", "areatrigger", "areatrigger-tbc" }) do
+      dofile("db/" .. fn .. ".lua")
+    end
+    local off, seen = 0, 0
+    for _, db in ipairs({ "objects", "units", "areatrigger" }) do
+      for _, key in ipairs({ "data", "data-tbc", "data-wotlk" }) do
+        for _, e in pairs(pfDB[db][key] or {}) do
+          for _, c in pairs(e.coords or {}) do
+            if c[3] == 139 then
+              local tup = { c[1], c[2], c[3], c[4] }
+              f(tup)
+              seen = seen + 1
+              if tup[1] < 0 or tup[1] > 100 or tup[2] < 0 or tup[2] > 100 then off = off + 1 end
+            end
+          end
+        end
+      end
+    end
+    if seen < 1000 then fail("EPL: only %d coordinates found, expected thousands", seen) end
+    if off == 0 then ok("EPL: all %d coordinates stay on the map after conversion", seen)
+    else fail("EPL: %d coordinates land outside 0..100 after conversion", off) end
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- the zones we place from a map rectangle must also have that rectangle in
 -- pfDB.minimap, or the minimap loop silently skips them
 -- ---------------------------------------------------------------------------
@@ -472,18 +560,25 @@ do
     for z, s in pairs(pfDB[k] or {}) do sizes[z] = s end
   end
   local bad = 0
-  for _, z in ipairs(NEEDS_MINIMAP_ENTRY) do
+  for _, want in ipairs(NEEDS_MINIMAP_ENTRY) do
+    local z, width = want[1], want[2]
     local s = sizes[z]
     if not s then
       bad = bad + 1
       fail("minimap: zone %d has nodes but no pfDB.minimap rectangle -- no minimap dots", z)
+    elseif math.abs(s[1] - width) > width * 0.01 then
+      bad = bad + 1
+      fail("minimap: zone %d is %.2f wide, the rectangle its coordinates use is %.2f", z, s[1], width)
     elseif math.abs(s[1] / s[2] - 1.5) > 0.01 then
       bad = bad + 1
       fail("minimap: zone %d is %.1f x %.1f, ratio %.3f -- every WorldMapArea is 3:2",
            z, s[1], s[2], s[1] / s[2])
     end
   end
-  if bad == 0 then ok("minimap: both rectangle-placed zones have a 3:2 pfDB.minimap entry") end
+  if bad == 0 then
+    ok("minimap: all %d rectangle-placed zones carry the matching 3:2 size",
+       table.getn(NEEDS_MINIMAP_ENTRY))
+  end
 end
 
 -- ---------------------------------------------------------------------------
