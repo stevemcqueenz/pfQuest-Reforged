@@ -190,6 +190,26 @@ do
   dofile("db/meta-tbc.lua")
   local meta = pfDB["meta"]
   for k, v in pairs(pfDB["meta-tbc"]) do meta[k] = v end
+  -- An entity can belong on a list without us adding a single coordinate for
+  -- it: pfQuest may already know exactly where it is and simply never have
+  -- listed it (Everfrost Chip, Netherwing Egg, Glowcap and eight others were
+  -- invisible that way). So a list entry is backed by OUR coords or pfQuest's.
+  local pfcoords = { objects = {}, units = {} }
+  for _, f in ipairs({ "objects", "objects-tbc", "objects-wotlk", "objects-wotlk-sw335",
+                       "units", "units-tbc", "units-wotlk", "units-wotlk-icecrown335",
+                       "units-wotlk-acfill335" }) do
+    dofile("db/" .. f .. ".lua")
+  end
+  for _, db in ipairs({ "objects", "units" }) do
+    for _, key in ipairs({ "data", "data-tbc", "data-wotlk" }) do
+      for id, e in pairs(pfDB[db][key] or {}) do
+        for _, c in pairs(e.coords or {}) do
+          pfcoords[db][id] = pfcoords[db][id] or {}
+          pfcoords[db][id][c[3]] = true
+        end
+      end
+    end
+  end
 
   local bad, count = 0, 0
   for track, entries in pairs(g["meta"]) do
@@ -203,8 +223,8 @@ do
         local raw = id * spec.sign
         if raw <= 0 then
           bad = bad + 1; fail("meta.%s: id %d has the wrong sign for a %s track", track, id, spec.db)
-        elseif g[spec.db]["coords"][raw] == nil then
-          bad = bad + 1; fail("meta.%s: %d is listed but has no coords", track, raw)
+        elseif g[spec.db]["coords"][raw] == nil and not pfcoords[spec.db][raw] then
+          bad = bad + 1; fail("meta.%s: %d is listed but nothing knows where it is", track, raw)
         elseif type(value) ~= spec.kind then
           bad = bad + 1; fail("meta.%s: %d has a %s value, pfQuest stores %s here", track, raw, type(value), spec.kind)
         elseif meta[track] and meta[track][id] then
@@ -214,6 +234,24 @@ do
     end
   end
   if bad == 0 then ok("meta: %d entries, all correctly signed, typed, backed by coords and absent from pfQuest's meta", count) end
+
+  -- Entities pfQuest could already place but never listed. Regenerating from
+  -- the emitted coordinates alone would silently drop every one of them.
+  local UNLISTED = {
+    { "chests", -193997, "Everfrost Chip" }, { "chests", -185915, "Netherwing Egg" },
+    { "chests", -182053, "Glowcap" }, { "chests", -184793, "Primitive Chest" },
+    { "chests", -184740, "Wicker Chest" }, { "chests", -184741, "Dented Footlocker" },
+    { "chests", -181665, "Burial Chest" }, { "herbs", -181285, "Nightmare Vine" },
+    { "rares", 32422, "Tukemuth" },
+  }
+  local gone = 0
+  for _, want in ipairs(UNLISTED) do
+    if (g["meta"][want[1]] or {})[want[2]] == nil then
+      gone = gone + 1
+      fail("meta.%s: %s (%d) had coords but no list entry -- it must be listed here", want[1], want[3], want[2])
+    end
+  end
+  if gone == 0 then ok("meta: all %d entities pfQuest could place but never listed are on a list now", table.getn(UNLISTED)) end
 
   -- pfQuest's own convention, restated so a regeneration cannot drift from it:
   -- the skill/level tracks are compared numerically against the slider, the

@@ -812,7 +812,33 @@ HEADER = """\
 """
 
 
-def emit(path, nodes, entries, ac, pf, ac_sha, stats_lines):
+def listable(entries, nodes, pf, emit_zones):
+    """Which entities belong on a tracking list.
+
+    NOT the same question as "which entities did we add coordinates for". An
+    entity that already had every coordinate it needs can still be missing from
+    the list entirely, and then enabling that tracker shows nothing for it --
+    which is how Everfrost Chip, Netherwing Egg, Glowcap and eight others were
+    invisible despite pfQuest knowing exactly where they are. So the rule is
+    simply: it is on the list if it has coordinates in an in-scope zone, from
+    either side, and pfQuest's own meta does not already answer it.
+    """
+    out = {}
+    for kind in ("O", "U"):
+        sign = 1 if kind == "U" else -1
+        keep = set()
+        for eid, (_name, track, _v) in entries[kind].items():
+            if (track, sign * eid) in pf.meta:
+                continue
+            zones = {c[2] for c in pf.coords(kind).get(eid, ())}
+            zones |= {p[2] for p in nodes[kind].get(eid, ())}
+            if zones & emit_zones:
+                keep.add(eid)
+        out[kind] = keep
+    return out
+
+
+def emit(path, nodes, entries, ac, pf, listable, ac_sha, stats_lines):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(HEADER % {"sha": ac_sha, "minpairs": MIN_PAIRS,
                           "maxresid": MAX_MEDIAN_RESID, "dedup": DEDUP_DIST,
@@ -853,9 +879,9 @@ def emit(path, nodes, entries, ac, pf, ac_sha, stats_lines):
             kind = "U" if track in UNIT_TRACKS else "O"
             sign = 1 if kind == "U" else -1
             f.write('    ["%s"] = {\n' % track)
-            for eid in sorted(nodes[kind]):
+            for eid in sorted(listable[kind]):
                 name, etrack, value = entries[kind][eid]
-                if etrack != track or (track, sign * eid) in pf.meta:
+                if etrack != track:
                     continue
                 shown = '"%s"' % value if isinstance(value, str) else str(value)
                 f.write("      [%d] = %s, -- %s\n" % (sign * eid, shown, lua_escape(name)))
@@ -960,6 +986,14 @@ def main():
                 assert 0 <= px <= 100 and 0 <= py <= 100, (eid, px, py)
                 per_zone[zone] = per_zone.get(zone, 0) + 1
 
+    emit_zones = {z for z, mo in models.items() if mo["map"] in EMIT_MAPS}
+    listed = listable(entries, nodes, pf, emit_zones)
+    extra = sum(1 for kind in ("O", "U") for eid in listed[kind]
+                if eid not in nodes[kind])
+    print("  tracking-list entries: %d, of which %d are entities pfQuest already "
+          "had coordinates for but never listed"
+          % (sum(len(v) for v in listed.values()), extra))
+
     stats_lines = [
         "%d nodes across %d objects, %d units and %d zones"
         % (total, len(nodes["O"]), len(nodes["U"]), len(per_zone)),
@@ -975,7 +1009,7 @@ def main():
         print("  " + line)
 
     print("writing %s ..." % OUT)
-    emit(OUT, nodes, entries, ac, pf, ac_sha, stats_lines)
+    emit(OUT, nodes, entries, ac, pf, listed, ac_sha, stats_lines)
     print("done")
 
 

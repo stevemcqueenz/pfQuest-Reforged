@@ -10865,6 +10865,7 @@ pfDB["tracking335"] = {
   },
   ["meta"] = {
     ["herbs"] = {
+      [-181285] = 365, -- Nightmare Vine
       [-189973] = 350, -- Goldclover
       [-190169] = 375, -- Tiger Lily
       [-190170] = 385, -- Talandra's Rose
@@ -10885,6 +10886,13 @@ pfDB["tracking335"] = {
     },
     ["chests"] = {
       [-2744] = 0, -- Giant Clam
+      [-181665] = 0, -- Burial Chest
+      [-182053] = 0, -- Glowcap
+      [-184740] = 0, -- Wicker Chest
+      [-184741] = 0, -- Dented Footlocker
+      [-184793] = 0, -- Primitive Chest
+      [-185915] = 0, -- Netherwing Egg
+      [-193997] = 0, -- Everfrost Chip
     },
     ["fish"] = {
       [-192046] = "AH", -- Musselback Sculpin School
@@ -10905,6 +10913,7 @@ pfDB["tracking335"] = {
       [32377] = 71, -- Perobas the Bloodthirster
       [32386] = 71, -- Vigdis the War Maiden
       [32398] = 71, -- King Ping
+      [32400] = 73, -- Tukemuth
       [32409] = 73, -- Crazed Indu'le Survivor
       [32417] = 73, -- Scarlet Highlord Daion
       [32422] = 74, -- Grocklar
@@ -10920,6 +10929,7 @@ pfDB["tracking335"] = {
       [32491] = 80, -- Time-Lost Proto Drake
       [32495] = 80, -- Hildana Deathstealer
       [32500] = 80, -- Dirkee
+      [32501] = 80, -- High Thane Jorfus
       [32517] = 76, -- Loque'nahak
       [32630] = 80, -- Vyragosa
       [33776] = 77, -- Gondria
