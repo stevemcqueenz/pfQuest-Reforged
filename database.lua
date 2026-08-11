@@ -1237,6 +1237,24 @@ local skill = {
   ["chests"] = true,
 }
 
+-- Reforged: several tracking lists carry internal server NPCs that are not real
+-- POIs -- the "[DND] TAR Pedestal - ..." set alone appears in vendor, repair AND
+-- banker, with spawns in every capital and starting zone (issue #16), plus a few
+-- [UNUSED]/[PH]/TEST leftovers. They are data, not display bugs, so filter them
+-- where the tracking nodes are built: one choke point covers every list and any
+-- future junk. Scoped to meta tracking only, so quest and search results can
+-- never be affected. Verified against the full merged database: 38 distinct
+-- names match, all of them genuinely internal, zero legitimate POIs.
+local invalidnames = { "%[DND%]", "%(DND%)", "%[UNUSED%]", "<UNUSED>", "UNUSED",
+                       "%[PH%]", "%[Not used%]", "TEST", "Only GM can see" }
+local function IsInvalidPOIName(name)
+  if not name then return nil end
+  for i = 1, table.getn(invalidnames) do
+    if string.find(name, invalidnames[i]) then return true end
+  end
+end
+pfDatabase.IsInvalidPOIName = IsInvalidPOIName
+
 function pfDatabase:SearchMetaRelation(query, meta, show)
   local maps = {}
 
@@ -1266,6 +1284,11 @@ function pfDatabase:SearchMetaRelation(query, meta, show)
         local prev_icon = meta.icon
         local object = pfDB["objects"]["loc"][math.abs(entry)]
         local unit = pfDB["units"]["loc"][entry]
+
+        -- skip internal/invalid entries (see IsInvalidPOIName above)
+        if IsInvalidPOIName(entry < 0 and object or unit) then
+          meta.icon = prev_icon
+        else
 
         -- set node as tracking result
         meta.tracking = true
@@ -1297,6 +1320,7 @@ function pfDatabase:SearchMetaRelation(query, meta, show)
         -- reset meta table
         meta.icon = prev_icon
         meta.tracking = false
+        end
       end
     end
   end

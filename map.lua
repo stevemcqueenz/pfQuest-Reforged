@@ -142,7 +142,37 @@ local function GetLayerByTexture(tex)
   end
 end
 
-local function minimap_indoor()
+-- Reforged: the indoor/outdoor probe below CHANGES the minimap zoom twice to
+-- disambiguate, and it used to run on every UpdateMinimap pass -- up to ~20
+-- times a second while moving. Any addon that hooks Minimap.SetZoom therefore
+-- got hammered: ElvUI's "reset zoom" feature hooks exactly that and re-arms a
+-- timer which forces the zoom back, so pfQuest's cached zoom and the real one
+-- drift apart and every node is culled as out-of-range -- an empty minimap
+-- while the world map is fine (issue #15). The state only changes when the
+-- player moves indoors/outdoors or the zoom actually changes, so compute it on
+-- those events instead and cache it. Also removes ~40 SetZoom calls a second.
+local indoorstate, indoordirty = 1, true
+local indoorwatch = CreateFrame("Frame")
+indoorwatch:RegisterEvent("PLAYER_ENTERING_WORLD")
+indoorwatch:RegisterEvent("ZONE_CHANGED")
+indoorwatch:RegisterEvent("ZONE_CHANGED_INDOORS")
+indoorwatch:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+indoorwatch:RegisterEvent("MINIMAP_UPDATE_ZOOM")
+indoorwatch:SetScript("OnEvent", function()
+  indoordirty = true
+end)
+
+-- GetMinimapShape is an addon convention rather than a client API: square
+-- minimap addons (ElvUI, and pfUI through its own flag above) define this
+-- global so pin addons can widen the round cull to the corners. Guarded call,
+-- because nothing defines it on a stock client.
+local function squareminimap()
+  if type(GetMinimapShape) ~= "function" then return nil end
+  local ok, shape = pcall(GetMinimapShape)
+  return ok and shape and shape ~= "ROUND" and true or nil
+end
+
+local function minimap_indoor_probe()
   local tempzoom = 0
   local state = 1
   if GetCVar("minimapZoom") == GetCVar("minimapInsideZoom") then
@@ -161,6 +191,14 @@ local function minimap_indoor()
 
   pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() + tempzoom)
   return state
+end
+
+local function minimap_indoor()
+  if indoordirty then
+    indoordirty = nil
+    indoorstate = minimap_indoor_probe()
+  end
+  return indoorstate
 end
 
 local function str2rgb(text)
@@ -1328,7 +1366,10 @@ function pfMap:UpdateMinimap()
     mm_zonename, mm_zoneid = rz, pfMap:GetMapIDByName(rz)
   end
   local mapID = mm_zoneid
-  local mapZoom = minimap_zoom[minimap_indoor()][mZoom]
+  -- an addon-driven zoom outside the known levels must not nil-index here: that
+  -- would throw out of the loop and leave the minimap blank until a reload
+  local zoomrow = minimap_zoom[minimap_indoor()] or minimap_zoom[1]
+  local mapZoom = zoomrow[mZoom] or zoomrow[0]
   local mapWidth = minimap_sizes[mapID] and minimap_sizes[mapID][1] or 0
   local mapHeight = minimap_sizes[mapID] and minimap_sizes[mapID][2] or 0
 
@@ -1376,7 +1417,7 @@ function pfMap:UpdateMinimap()
         local display = nil
         local distance = sqrt(xPos * xPos + yPos * yPos)
 
-        if pfUI.minimap then
+        if pfUI.minimap or squareminimap() then
           display = (abs(xPos) + 8 < halfW and abs(yPos) + 8 < halfH)
               and true
             or nil
