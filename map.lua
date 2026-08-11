@@ -1054,6 +1054,25 @@ function pfMap:BuildNode(name, parent)
 end
 
 pfMap.highlightdb = {}
+-- Reforged: a minimap pin is a CHILD of the minimap, and a child whose frame
+-- level is below its parent's renders BEHIND the parent's own textures. Upstream
+-- levels minimap pins at a fixed 4 + layer, which works only while the minimap
+-- itself sits near level 0, as Blizzard's does. ElvUI puts it at 10, so every
+-- pin below layer 7 was drawn behind ElvUI's minimap art: created, positioned
+-- and :IsShown() true, but invisible (issue #15, confirmed by a report showing
+-- pins=14 shown=14 with the minimap at level 10).
+--
+-- Level relative to whatever the minimap is actually at, so it does not matter
+-- which addon owns it. The minimap loop keeps pfMap.mlevel in step; fall back to
+-- asking the frame directly the first time through.
+local function minimapNodeLevel(layer)
+  local base = pfMap.mlevel
+    or (pfMap.drawlayer and pfMap.drawlayer.GetFrameLevel and pfMap.drawlayer:GetFrameLevel())
+    or 0
+  return base + 5 + (layer or 0)
+end
+pfMap.MinimapNodeLevel = minimapNodeLevel
+
 function pfMap:UpdateNode(frame, node, color, obj, distance)
   -- clear node to title association table
   if pfMap.highlightdb[frame] then
@@ -1163,7 +1182,11 @@ function pfMap:UpdateNode(frame, node, color, obj, distance)
   end
 
   if frame.updateLayer then
-    frame:SetFrameLevel((obj == "minimap" and 4 or 112) + frame.layer)
+    if obj == "minimap" then
+      frame:SetFrameLevel(minimapNodeLevel(frame.layer))
+    else
+      frame:SetFrameLevel(112 + frame.layer)
+    end
   end
 
   if frame.updateTexture or frame.updateVertex or frame.updateColor or frame.updateLayer or frame.updateIcon then
@@ -1444,7 +1467,7 @@ function pfMap:UpdateMinimap()
   if pfMap.mlevel ~= mlevel then
     pfMap.mlevel = mlevel
     for _, pin in pairs(pfMap.mpins) do
-      pin:SetFrameLevel(mlevel + 5)
+      pin:SetFrameLevel(minimapNodeLevel(pin.layer))
     end
   end
 
@@ -1491,7 +1514,7 @@ function pfMap:UpdateMinimap()
         if display then
           if not pfMap.mpins[i] then
             pfMap.mpins[i] = pfMap:BuildNode(nodename .. i, pfMap.drawlayer)
-            pfMap.mpins[i]:SetFrameLevel(mlevel + 5)
+            pfMap.mpins[i]:SetFrameLevel(minimapNodeLevel(pfMap.mpins[i].layer))
           end
 
           -- skip expensive UpdateNode work (highlightdb rebuild, node iteration,
