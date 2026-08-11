@@ -411,6 +411,53 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- node icons (issue #23). Without an icons.lua entry a node falls back to the
+-- generic profession icon, so every WotLK ore drew a mining pick. Two things
+-- to hold: every node we list has an icon, and every icon path resolves to a
+-- file that is actually shipped -- a typo there renders nothing at all, and
+-- nothing else in the addon would notice.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("icons.lua"):read("*a")
+  local registered, paths, n = {}, {}, 0
+  for id, path in string.gfind(src, "AddCustomIcon%((-?%d+), \"([^\"]+)\"") do
+    registered[tonumber(id)] = path
+    paths[path] = true
+    n = n + 1
+  end
+  if n < 100 then fail("icons: only %d registrations parsed out of icons.lua", n) end
+
+  local badfile = 0
+  for path in pairs(paths) do
+    -- icons.lua writes Lua-escaped backslashes; on disk it is a .tga under img/
+    local file = string.gsub(path, "[\\]+", "/") .. ".tga"
+    local fh = io.open(file, "rb")
+    if fh then
+      fh:close()
+    else
+      badfile = badfile + 1
+      fail("icons: %s is registered but %s is not shipped", path, file)
+    end
+  end
+  if badfile == 0 then ok("icons: all %d registered textures exist on disk", n) end
+
+  local noicon = 0
+  for track, entries in pairs(g["meta"]) do
+    if track ~= "fish" and track ~= "rares" then
+      for id in pairs(entries) do
+        if not registered[id] then
+          noicon = noicon + 1
+          if noicon <= 6 then
+            fail("icons: %s %d has no icon, it would draw the generic %s pick", track, id, track)
+          end
+        end
+      end
+    end
+  end
+  if noicon == 0 then ok("icons: every herb, ore and chest we list has its own icon") end
+end
+
+-- ---------------------------------------------------------------------------
 -- the zones we place from a map rectangle must also have that rectangle in
 -- pfDB.minimap, or the minimap loop silently skips them
 -- ---------------------------------------------------------------------------
