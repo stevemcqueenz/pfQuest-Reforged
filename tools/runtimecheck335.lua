@@ -103,5 +103,47 @@ else
   pfQuest_config["trackerbars"] = nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Invalid POI names in the tracking lists (issue #16). The merged database
+-- carries internal server NPCs -- the "[DND] TAR Pedestal" set spawns in every
+-- capital and rides the vendor, repair AND banker lists -- so SearchMetaRelation
+-- filters them by name. Pin the predicate: junk out, real POIs untouched.
+-- ---------------------------------------------------------------------------
+do
+  -- database.lua cannot be loaded here (it merges the whole DB at load time), so
+  -- lift the REAL predicate out of the real source and run that -- editing the
+  -- patterns in database.lua is what this check must notice.
+  local src = io.open("database.lua"):read("*a")
+  local block = string.match(src, "(local invalidnames.-\nend)\npfDatabase%.IsInvalidPOIName")
+  local chunk = block and loadstring(block .. "\nreturn IsInvalidPOIName")
+  local f = chunk and chunk()
+  if not f then
+    fail("meta filter: could not lift IsInvalidPOIName out of database.lua")
+  else
+    local junk = {
+      "[DND] TAR Pedestal - Accessories", "[DND] TAR Pedestal - Trainer, Priest",
+      "Spirit Healer (DND)", "test spirit healer (DND)", "[UNUSED] Grall Twomoons",
+      "[UNUSED] [PH] Berail Spiritwhisper", "Yor <UNUSED>", "TEST Resist Gear",
+      "Netherstorm Rare Chimaera UNUSED", "Waypoint (Only GM can see it)",
+    }
+    local real = {
+      "Innkeeper Gryshka", "Doras", "Thrall", "Gryphon Master Talonaxe",
+      "Auctioneer Fitch", "Bank of Ironforge", "Ancient Gem", "Protector Bialon",
+      "Grimtak", "Karolek", "Sana Shieldscar", "Mailbox",
+    }
+    local bad = 0
+    for i = 1, table.getn(junk) do
+      if not f(junk[i]) then fail("meta filter: junk NOT caught -> %s", junk[i]); bad = bad + 1 end
+    end
+    if bad == 0 then ok("meta filter: all %d internal names rejected", table.getn(junk)) end
+    bad = 0
+    for i = 1, table.getn(real) do
+      if f(real[i]) then fail("meta filter: real POI wrongly rejected -> %s", real[i]); bad = bad + 1 end
+    end
+    if bad == 0 then ok("meta filter: all %d legitimate POI names kept", table.getn(real)) end
+    if not f(nil) then ok("meta filter: nil name is not a match") else fail("meta filter: nil matched") end
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
