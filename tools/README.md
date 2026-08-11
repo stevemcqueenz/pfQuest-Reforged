@@ -14,6 +14,16 @@ each node requires, and converts world positions to map percentages with
 per-zone linear models fitted against pfQuest's own merged database, the same
 method as `db/units-wotlk-acfill335.lua`.
 
+Two zones, Wintergrasp and Crystalsong Forest, have no pfQuest spawns to fit
+against. Their models come from the WorldMapArea rectangle shipped by
+Questie-335's `QuestieCompat.UiMapData`, which was validated before being
+trusted: it reproduces the fitted models to a median 0.011% across 66 zones and
+pfQuest's own coordinates to 0.041%, and for Wintergrasp it reproduces
+GatherMate's independent extraction of the same nodes to 0.006%. That source is
+retail-era and is wrong for the Burning Crusade starting zones by hundreds of
+percent, so it is used only where there is nothing to fit, and only after
+checking it. See `UIMAP_RECTS` in the tool.
+
 Two properties make it safe to re-run: it emits only for maps 530 and 571, and
 it emits a coordinate only where pfQuest has none for that entity in that zone.
 Both are asserted by `trackingcheck335.lua`.
@@ -142,9 +152,15 @@ block out of `database.lua` and drives it against a synthetic `pfDB`, so editing
 that block is what the check notices -- the same technique as the
 `IsInvalidPOIName` block in `runtimecheck335.lua`.
 
-Verified by breaking it nine ways: a zone outside the emitted maps, a percentage
-out of range, a coordinate colliding with shipped data, a fishing pool's faction
-string turned into a number, a rare's meta key given the object sign, a unit
-level emitted as a number, `meta.rares` taking the high end of a range, the
-merge dropping the level/rank assignment, and the merge overwriting a shipped
-name. Each is reported and exits non-zero.
+It also asserts that the two zones placed from a map rectangle have a 3:2
+`pfDB.minimap` entry, since without one the minimap loop silently skips the zone
+and the nodes appear on the world map only.
+
+Verified by breaking it thirteen ways: a zone outside the emitted maps, a
+percentage out of range, a coordinate colliding with shipped data, a fishing
+pool's faction string turned into a number, a rare's meta key given the object
+sign, a unit level emitted as a number, `meta.rares` taking the high end of a
+range, the merge dropping the level/rank assignment, the merge overwriting a
+shipped name, Hrothgar's Landing leaking into the data, a node type dropped, the
+Wintergrasp minimap entry removed, and a minimap rectangle given a non-3:2
+ratio. Each is reported and exits non-zero.

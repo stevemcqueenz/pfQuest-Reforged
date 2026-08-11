@@ -18,10 +18,12 @@ local failures, checks = 0, 0
 local function fail(fmt, ...) failures = failures + 1; print("  FAIL  " .. string.format(fmt, ...)) end
 local function ok(fmt, ...) checks = checks + 1; print("  ok    " .. string.format(fmt, ...)) end
 
--- Outland + Northrend, the only maps the generator emits for (EMIT_MAPS). The
--- zones pfQuest has no rectangle for -- Wintergrasp 4197, Crystalsong Forest
--- 2817, Hrothgar's Landing 4742 -- are deliberately NOT here: nodes there
--- cannot be placed, so they must not be emitted.
+-- Outland + Northrend, the only maps the generator emits for (EMIT_MAPS).
+-- Hrothgar's Landing 4742 is deliberately NOT here: pfQuest has no rectangle for
+-- it and nothing to check one against, so nodes there cannot be placed and must
+-- not be emitted. Wintergrasp 4197 and Crystalsong Forest 2817 ARE here -- they
+-- are covered from the WorldMapArea rectangle, and both need a pfDB.minimap
+-- entry too, which is asserted separately below.
 local ALLOWED_ZONES = {
   -- Outland (map 530), including the TBC starting zones that share it
   [3483] = "Hellfire Peninsula", [3518] = "Nagrand", [3519] = "Terokkar Forest",
@@ -32,7 +34,13 @@ local ALLOWED_ZONES = {
   [65] = "Dragonblight", [66] = "Zul'Drak", [67] = "The Storm Peaks",
   [210] = "Icecrown", [394] = "Grizzly Hills", [495] = "Howling Fjord",
   [3537] = "Borean Tundra", [3711] = "Sholazar Basin", [4395] = "Dalaran",
+  [4197] = "Wintergrasp", [2817] = "Crystalsong Forest",
 }
+
+-- Zones whose model does NOT come from a fit against pfQuest's own data, so the
+-- coordinates can only land correctly if pfQuest also has the matching map
+-- rectangle. Without the pfDB.minimap entry the minimap loop skips the zone.
+local NEEDS_MINIMAP_ENTRY = { 4197, 2817 }
 
 -- Which pfDB database each track's ids live in, and which sign they carry.
 local TRACKS = {
@@ -62,6 +70,8 @@ local MUST_COVER = {
   -- rare mobs (issue #18)
   { "units", 32517, "Loque'nahak", 3 }, { "units", 32491, "Time-Lost Proto Drake", 2 },
   { "units", 32485, "King Krush", 2 }, { "units", 32386, "Vigdis the War Maiden", 3 },
+  -- Wintergrasp, reachable only through the WorldMapArea rectangle
+  { "objects", 190176, "Frost Lotus", 80 },
 }
 
 -- ---------------------------------------------------------------------------
@@ -360,6 +370,35 @@ do
       else fail("merge: left pfDB.tracking335 in memory") end
     end
   end
+end
+
+-- ---------------------------------------------------------------------------
+-- the zones we place from a map rectangle must also have that rectangle in
+-- pfDB.minimap, or the minimap loop silently skips them
+-- ---------------------------------------------------------------------------
+do
+  pfDB = {}
+  dofile("db/init.lua")
+  dofile("db/minimap.lua")
+  dofile("db/minimap-tbc.lua")
+  dofile("db/minimap-wotlk335.lua")
+  local sizes = {}
+  for _, k in ipairs({ "minimap", "minimap-tbc", "minimap-wotlk" }) do
+    for z, s in pairs(pfDB[k] or {}) do sizes[z] = s end
+  end
+  local bad = 0
+  for _, z in ipairs(NEEDS_MINIMAP_ENTRY) do
+    local s = sizes[z]
+    if not s then
+      bad = bad + 1
+      fail("minimap: zone %d has nodes but no pfDB.minimap rectangle -- no minimap dots", z)
+    elseif math.abs(s[1] / s[2] - 1.5) > 0.01 then
+      bad = bad + 1
+      fail("minimap: zone %d is %.1f x %.1f, ratio %.3f -- every WorldMapArea is 3:2",
+           z, s[1], s[2], s[1] / s[2])
+    end
+  end
+  if bad == 0 then ok("minimap: both rectangle-placed zones have a 3:2 pfDB.minimap entry") end
 end
 
 -- ---------------------------------------------------------------------------

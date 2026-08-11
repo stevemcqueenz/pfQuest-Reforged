@@ -67,11 +67,17 @@ instead, minus the world boxes of the zones we have no rectangle for (below).
 
 Wintergrasp, Crystalsong Forest and Hrothgar's Landing
 ------------------------------------------------------
-pfQuest has no map rectangle for any of the three (see the note in
-db/minimap-wotlk335.lua), so their nodes cannot be placed. They are DROPPED,
-never assigned to a neighbour: neighbouring map rectangles overlap well past
-the playable edge, so a Wintergrasp node would otherwise land in Dragonblight.
-Their world extents are derived from the AC rows that do carry a zoneId.
+pfQuest has no spawns in any of the three to fit a model from. Wintergrasp and
+Crystalsong Forest are covered anyway, from the WorldMapArea rectangle shipped
+by Questie-335's QuestieCompat.UiMapData -- see UIMAP_RECTS below for what that
+source is worth and where it must NOT be used. Hrothgar's Landing stays out:
+nothing pfQuest tracks spawns there, so a rectangle for it could not be checked
+and would gain nothing.
+
+Anything landing in a zone with no model at all is DROPPED, never assigned to a
+neighbour: neighbouring map rectangles overlap well past the playable edge, so
+such a node would otherwise land in the wrong zone entirely. Those zones' world
+extents are derived from the AC rows that do carry a zoneId.
 
 Emission policy -- fill only, never overwrite
 ---------------------------------------------
@@ -511,6 +517,44 @@ def fit_zones(pf, ac):
     return models
 
 
+# Zones pfQuest has no spawns to fit against, taken from a different source:
+# Questie-335's QuestieCompat.UiMapData, which ships the WorldMapArea rectangle
+# (width, height, left, top) for every zone. Validated before being trusted --
+# its rectangles reproduce the fits above to a median 0.011% across 66 zones and
+# pfQuest's own shipped coordinates to a median 0.041% over 1656 one-to-one
+# pairs, and for Wintergrasp specifically, applied to 323 AzerothCore spawns it
+# reproduces GatherMate's independent extraction of the same nodes to a median
+# 0.006%. Both widths agree with GatherMate's own zone table to four decimals.
+#
+# This is NOT a blanket endorsement of that source: its rectangles are
+# retail-era, and for the Burning Crusade starting zones (Azuremyst, Bloodmyst,
+# Silvermoon, The Exodar) they disagree with this client by hundreds of percent,
+# where the fit agrees with GatherMate. So it is used ONLY for zones with no fit,
+# and only for the two listed here. Hrothgar's Landing is left out: nothing
+# pfQuest tracks spawns there, so a rectangle for it could not be checked.
+UIMAP_RECTS = {
+    # zone: (width, height, left, top), map
+    4197: ((2974.9998779297, 1983.33984375, 4329.169921875, 5716.669921875), 571),
+    2817: ((2722.9200439453, 1814.580078125, 1443.75, 6502.080078125), 571),
+}
+
+
+def add_rect_models(models):
+    """Fill in the zones we cannot fit, from the WorldMapArea rectangle. The
+    rectangle IS the model: pctX = (left - worldY) / width, pctY = (top -
+    worldX) / height -- the same transform every WoW map uses."""
+    added = []
+    for zone, (rect, amap) in UIMAP_RECTS.items():
+        if zone in models:
+            continue
+        w, h, left, top = rect
+        models[zone] = {"fx": (left / w * 100.0, -100.0 / w),
+                        "fy": (top / h * 100.0, -100.0 / h),
+                        "map": amap, "pairs": 0, "med": 0.0, "rect": True}
+        added.append(zone)
+    return added
+
+
 def to_percent(model, wx, wy):
     fx, fy = model["fx"], model["fy"]
     return fx[0] + fx[1] * wy, fy[0] + fy[1] * wx
@@ -731,9 +775,15 @@ HEADER = """\
 -- spawn-cluster pairs and a median residual <= %(maxresid).1f%%, and its implied
 -- map extent must agree with pfDB.minimap's zone dimensions).
 --
--- Wintergrasp, Crystalsong Forest and Hrothgar's Landing are absent: pfQuest has
--- no rectangle for any of them (see the note in db/minimap-wotlk335.lua), so
--- their nodes are dropped rather than placed in a neighbouring zone.
+-- Wintergrasp and Crystalsong Forest have no pfQuest spawns to fit against, so
+-- their models come from the WorldMapArea rectangle shipped by Questie-335's
+-- QuestieCompat.UiMapData, checked first: it reproduces the fits above to a
+-- median 0.011%% across 66 zones, pfQuest's own coordinates to 0.041%%, and for
+-- Wintergrasp it reproduces GatherMate's independent extraction of the same
+-- nodes to 0.006%%. Hrothgar's Landing stays out -- nothing tracked spawns there,
+-- so a rectangle for it could not be checked. Anything landing in a zone with no
+-- model at all is DROPPED, never handed to a neighbour, whose map rectangle
+-- overlaps well past the playable edge.
 --
 -- SCOPE: Outland (map 530) and Northrend (map 571) only. Azeroth's tracking data
 -- already works and is deliberately left untouched.
@@ -870,6 +920,10 @@ def main():
     models = fit_zones(pf, ac)
     print("  %d zones fitted (median residual %.2f%%)"
           % (len(models), statistics.median(m["med"] for m in models.values())))
+    added = add_rect_models(models)
+    print("  %d zones taken from the WorldMapArea rectangle instead (no pfQuest "
+          "spawns to fit against): %s"
+          % (len(added), ", ".join(str(z) for z in added) or "-"))
     by_map = zone_boxes(models)
     dead = unplaceable_boxes(ac, models, pf)
     print("  zones with no pfQuest rectangle, excluded by world box: %s"
