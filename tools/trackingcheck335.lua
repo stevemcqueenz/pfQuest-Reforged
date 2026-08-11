@@ -480,13 +480,69 @@ do
 
   -- it has to actually run: the corrector is only useful if the packing loop
   -- calls it, and nothing else would notice if that call were dropped
-  -- look inside packEntryCoords itself: matching anywhere in the file would be
-  -- satisfied by the function's own definition
+  -- ORDER. The tracking335 overlay already stores its EPL nodes on the 3.3.5a
+  -- rectangle, so the correction has to run BEFORE that overlay merges. Running
+  -- it after -- which is what folding it into PackCoords did -- converts those
+  -- nodes a second time and lands every one about 7.2% out. Both halves of that
+  -- mistake are pinned here.
   local packbody = string.match(src, "local function packEntryCoords.-\nend")
   if packbody and string.find(packbody, "correctEPL") then
-    ok("EPL: the packing walk applies the correction")
+    fail("EPL: PackCoords applies the correction, which double-corrects the tracking335 nodes")
   else
-    fail("EPL: packEntryCoords does not call correctEPL, so nothing is corrected")
+    ok("EPL: the correction is not folded into the packing walk")
+  end
+  local atcall = string.find(src, "\ncorrectEPLDatabase%(pfDB%)")
+  local atmerge = string.find(src, "\nif pfDB%[\"tracking335\"%] then")
+  if atcall and atmerge and atcall < atmerge then
+    ok("EPL: the correction runs before the tracking335 overlay merges")
+  else
+    fail("EPL: the correction runs at %s and the tracking335 merge at %s -- it must come first",
+         tostring(atcall), tostring(atmerge))
+  end
+
+  -- and behaviourally, with the two real blocks run in the order the assertion
+  -- above requires: a shipped coordinate is corrected, an overlay coordinate is
+  -- left exactly as it was generated
+  local eplblock = string.match(src, "(local EPL_ZONE.-\nend)\npfDatabase%.CorrectEPLDatabase")
+  local mergeblock = string.match(src, "\n(if pfDB%[\"tracking335\"%] then\n.-\n  pfDB%[\"tracking335\"%] = nil\nend)\n")
+  local chunk = eplblock and mergeblock
+    and loadstring("local floor = math.floor\nlocal pfDatabase = {}\n" .. eplblock
+                   .. "\ncorrectEPLDatabase(pfDB)\n" .. mergeblock)
+  if not chunk then
+    fail("EPL: could not lift the correction and the merge to run them in order")
+  else
+    pfDB = {
+      locales = { enUS = "English" },
+      objects = {
+        data = { [2047] = { coords = { { 50, 50, 139, 300 } } } },
+        enUS = { [2047] = "Truesilver Deposit" },
+      },
+      units = { data = {}, enUS = {} },
+      areatrigger = { data = {} },
+      meta = { herbs = {}, mines = {}, chests = {}, fish = {}, rares = {} },
+      tracking335 = {
+        objects = { coords = { [324] = { { 60, 40, 139, 600 } } }, names = {} },
+        units = { coords = {}, names = {}, info = {} },
+        meta = { mines = { [-324] = 275 } },
+      },
+    }
+    local okc, err = pcall(chunk)
+    if not okc then
+      fail("EPL: running the correction and the merge in order errored -> %s", tostring(err))
+    else
+      local shipped = pfDB.objects.data[2047].coords[1]
+      if math.abs(shipped[1] - 45.48) < 0.01 and math.abs(shipped[2] - 44.46) < 0.01 then
+        ok("EPL: a coordinate pfQuest ships is converted onto the 3.3.5a rectangle")
+      else
+        fail("EPL: a shipped coordinate became (%s, %s), expected (45.48, 44.46)", shipped[1], shipped[2])
+      end
+      local added = pfDB.objects.data[324].coords[1]
+      if added[1] == 60 and added[2] == 40 then
+        ok("EPL: an overlay coordinate is left exactly as it was generated")
+      else
+        fail("EPL: an overlay coordinate was moved to (%s, %s) -- it is corrected twice", added[1], added[2])
+      end
+    end
   end
 
   local block = string.match(src, "(local EPL_ZONE.-\nend)\npfDatabase%.CorrectEPLCoord")

@@ -250,6 +250,71 @@ if pfDB["quests"]["eventtags"] then
   pfDB["quests"]["eventtags"] = nil
 end
 
+-- Reforged: Eastern Plaguelands (zone 139) coordinate correction.
+--
+-- Blizzard rescaled the Eastern Plaguelands world map during Wrath, and
+-- pfQuest's data is still on the 1.12 rectangle, so every EPL node -- herbs,
+-- chests, rares, quest givers, objectives, all of it -- sat about 7.9% of the
+-- map away from where it really is (issue #18). Same class of bug as the
+-- Stormwind one db/objects-wotlk-sw335.lua already corrects, and it is the ONLY
+-- other zone affected: comparing every zone's fitted model against the
+-- WorldMapArea rectangle, then arbitrating each disagreement with GatherMate's
+-- independent extraction, EPL is the one case where pfQuest is the wrong side.
+--
+-- Both rectangles are { width, height, left, top } in world yards. The 1.12 one
+-- was recovered by fitting pfQuest's own EPL coordinates against the server's
+-- spawn positions; it agrees with pfDB.minimap's shipped 1.12 size for the zone
+-- to 0.05%, which is what says the recovery is right. Converting is percent ->
+-- world through the old rectangle and back through the new one. Measured on the
+-- 63 entities that have exactly one EPL coordinate and one server spawn, this
+-- moves the median error from 7.86% to 0.04%. db/minimap-wotlk335.lua carries
+-- the matching zone size, without which the minimap would undo it.
+--
+-- THIS MUST RUN BEFORE THE tracking335 MERGE BELOW, and it must not be folded
+-- into PackCoords. The tracking335 overlay already stores its Eastern
+-- Plaguelands nodes on the 3.3.5a rectangle, so correcting after it merges
+-- converts those a second time and lands every one of them about 7.2% out --
+-- which is exactly what shipping it inside the packing walk did.
+--
+-- Only ["data"] is walked. patchtable copies entry REFERENCES, so the -tbc and
+-- -wotlk overlay tables hold the same tables that are already in ["data"];
+-- walking them too would correct those entries twice.
+local EPL_ZONE = 139
+local EPL_OLD = { 3872.71, 2580.90, -2184.64, 3799.83 }
+local EPL_NEW = { 4031.25, 2687.50, -2287.50, 3704.17 }
+local function correctEPL(tup)
+  if tup[3] ~= EPL_ZONE or not tup[1] or not tup[2] then
+    return
+  end
+  local wy = EPL_OLD[3] - tup[1] / 100 * EPL_OLD[1]
+  local wx = EPL_OLD[4] - tup[2] / 100 * EPL_OLD[2]
+  -- keep pfQuest's own precision: two decimals, as the sw335 correction emits
+  tup[1] = floor((EPL_NEW[3] - wy) / EPL_NEW[1] * 10000 + 0.5) / 100
+  tup[2] = floor((EPL_NEW[4] - wx) / EPL_NEW[2] * 10000 + 0.5) / 100
+end
+pfDatabase.CorrectEPLCoord = correctEPL
+
+-- 31ms over the whole database in a headless measure, which is why this is a
+-- plain walk rather than a shipped list of the entries that need it.
+local function correctEPLDatabase(root)
+  for _, db in pairs({ "units", "objects", "areatrigger" }) do
+    local data = root[db] and root[db]["data"]
+    if type(data) == "table" then
+      for _, entry in pairs(data) do
+        if type(entry) == "table" and type(entry["coords"]) == "table" then
+          for _, tup in pairs(entry["coords"]) do
+            if type(tup) == "table" then
+              correctEPL(tup)
+            end
+          end
+        end
+      end
+    end
+  end
+end
+pfDatabase.CorrectEPLDatabase = correctEPLDatabase
+correctEPLDatabase(pfDB)
+
 -- Reforged: Outland/Northrend map-tracking data (see db/tracking335.lua).
 -- pfQuest's pfDB["meta"] tracking lists are vanilla plus TBC: Northrend had ZERO
 -- entries in every one of them, so "Herbs & Flowers", "Mines & Ores", "Chests &
@@ -613,44 +678,6 @@ local coordMeta = {
   end,
 }
 
--- Reforged: Eastern Plaguelands (zone 139) coordinate correction.
---
--- Blizzard rescaled the Eastern Plaguelands world map during Wrath, and
--- pfQuest's data is still on the 1.12 rectangle, so every EPL node -- herbs,
--- chests, rares, quest givers, objectives, all of it -- sat about 7.9% of the
--- map away from where it really is (issue #18). Same class of bug as the
--- Stormwind one db/objects-wotlk-sw335.lua already corrects, and it is the ONLY
--- other zone affected: comparing every zone's fitted model against the
--- WorldMapArea rectangle, then arbitrating each disagreement with GatherMate's
--- independent extraction, EPL is the one case where pfQuest is the wrong side.
---
--- Both rectangles are { width, height, left, top } in world yards. The 1.12 one
--- was recovered by fitting pfQuest's own EPL coordinates against the server's
--- spawn positions; it agrees with pfDB.minimap's shipped 1.12 size for the zone
--- to 0.05%, which is what says the recovery is right. Converting is percent ->
--- world through the old rectangle and back through the new one. Measured on the
--- 63 entities that have exactly one EPL coordinate and one server spawn, this
--- moves the median error from 7.86% to 0.04%.
---
--- Applied inside the packing walk rather than as a data overlay: it is the same
--- pass PackCoords already makes, so it costs no extra walk, and no coordinates
--- have to be duplicated into a correction file. db/minimap-wotlk335.lua carries
--- the matching zone size, without which the minimap would undo it.
-local EPL_ZONE = 139
-local EPL_OLD = { 3872.71, 2580.90, -2184.64, 3799.83 }
-local EPL_NEW = { 4031.25, 2687.50, -2287.50, 3704.17 }
-local function correctEPL(tup)
-  if tup[3] ~= EPL_ZONE or not tup[1] or not tup[2] then
-    return
-  end
-  local wy = EPL_OLD[3] - tup[1] / 100 * EPL_OLD[1]
-  local wx = EPL_OLD[4] - tup[2] / 100 * EPL_OLD[2]
-  -- keep pfQuest's own precision: two decimals, as the sw335 correction emits
-  tup[1] = floor((EPL_NEW[3] - wy) / EPL_NEW[1] * 10000 + 0.5) / 100
-  tup[2] = floor((EPL_NEW[4] - wx) / EPL_NEW[2] * 10000 + 0.5) / 100
-end
-pfDatabase.CorrectEPLCoord = correctEPL
-
 local function packEntryCoords(entry)
   if type(entry) ~= "table" then return end
   local c = rawget(entry, "coords")
@@ -660,7 +687,6 @@ local function packEntryCoords(entry)
   for _, tup in ipairs(c) do
     if type(tup) == "table" then
       n = n + 1
-      correctEPL(tup)
       parts[n] = table.concat(tup, ",")
     end
   end
