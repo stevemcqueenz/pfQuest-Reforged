@@ -30,6 +30,15 @@ do -- /db track mines
   pfDatabase:AddCustomIcon(-181569, "img\\tracking\\mines\\Adamantite") -- Rich Adamantite Deposit
   pfDatabase:AddCustomIcon(-181557, "img\\tracking\\mines\\Khorium") -- Khorium Vein
   pfDatabase:AddCustomIcon(-185877, "img\\tracking\\mines\\Nethercite") -- Nethercite Deposit
+  -- WotLK. Icons taken from the GatherMate 1 fork
+  -- (github.com/stevemcqueenz/gathermate-and-database-3.3.5a, GPL v2), which
+  -- draws them from the same Blizzard item art the vanilla and TBC icons above
+  -- already use; rescaled to the 32x32 every file in these folders is.
+  pfDatabase:AddCustomIcon(-189978, "img\\tracking\\mines\\Cobalt") -- Cobalt Deposit
+  pfDatabase:AddCustomIcon(-189979, "img\\tracking\\mines\\Cobalt") -- Rich Cobalt Deposit
+  pfDatabase:AddCustomIcon(-189980, "img\\tracking\\mines\\Saronite") -- Saronite Deposit
+  pfDatabase:AddCustomIcon(-189981, "img\\tracking\\mines\\Saronite") -- Rich Saronite Deposit
+  pfDatabase:AddCustomIcon(-191133, "img\\tracking\\mines\\Titanium") -- Titanium Vein
 end
 
 do -- /db track herbs
@@ -73,6 +82,20 @@ do -- /db track herbs
   pfDatabase:AddCustomIcon(-181281, "img\\tracking\\herbs\\ManaThistle") -- Mana Thistle
   pfDatabase:AddCustomIcon(-185881, "img\\tracking\\herbs\\Netherdust") -- Netherdust Bush
   pfDatabase:AddCustomIcon(-157936, "img\\tracking\\herbs\\GraveMoss") -- Un'Goro Dirt Pile
+  pfDatabase:AddCustomIcon(-181285, "img\\tracking\\herbs\\NightmareVine") -- Nightmare Vine (second object id)
+  -- WotLK, same source as the ore icons above.
+  pfDatabase:AddCustomIcon(-189973, "img\\tracking\\herbs\\Goldclover") -- Goldclover
+  pfDatabase:AddCustomIcon(-190169, "img\\tracking\\herbs\\TigerLily") -- Tiger Lily
+  pfDatabase:AddCustomIcon(-190170, "img\\tracking\\herbs\\TalandrasRose") -- Talandra's Rose
+  pfDatabase:AddCustomIcon(-190171, "img\\tracking\\herbs\\Lichbloom") -- Lichbloom
+  pfDatabase:AddCustomIcon(-190172, "img\\tracking\\herbs\\Icethorn") -- Icethorn
+  pfDatabase:AddCustomIcon(-190173, "img\\tracking\\herbs\\FrozenHerb") -- Frozen Herb
+  pfDatabase:AddCustomIcon(-190175, "img\\tracking\\herbs\\FrozenHerb") -- Frozen Herb (second object id)
+  pfDatabase:AddCustomIcon(-190176, "img\\tracking\\herbs\\FrostLotus") -- Frost Lotus
+  pfDatabase:AddCustomIcon(-191019, "img\\tracking\\herbs\\AddersTongue") -- Adder's Tongue
+  -- Firethorn has no icon of its own; GatherMate uses the Briarthorn art, which
+  -- pfQuest already ships.
+  pfDatabase:AddCustomIcon(-191303, "img\\tracking\\herbs\\Briarthorn") -- Firethorn
 end
 
 do -- /db track chests
@@ -123,4 +146,6 @@ do -- /db track chests
   pfDatabase:AddCustomIcon(-181800, "img\\tracking\\chests\\Chest") -- Heavy Fel Iron Chest
   pfDatabase:AddCustomIcon(-181802, "img\\tracking\\chests\\Chest") -- Adamantite Bound Chest
   pfDatabase:AddCustomIcon(-181804, "img\\tracking\\chests\\Chest") -- Felsteel Chest
+  pfDatabase:AddCustomIcon(-184741, "img\\tracking\\chests\\Footlocker") -- Dented Footlocker (second object id)
+  pfDatabase:AddCustomIcon(-193997, "img\\tracking\\chests\\Everfrost") -- Everfrost Chip
 end
