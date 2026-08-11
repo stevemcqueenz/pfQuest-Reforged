@@ -250,6 +250,81 @@ if pfDB["quests"]["eventtags"] then
   pfDB["quests"]["eventtags"] = nil
 end
 
+-- Reforged: Outland/Northrend map-tracking data (see db/tracking335.lua).
+-- pfQuest's pfDB["meta"] tracking lists are vanilla plus TBC: Northrend had ZERO
+-- entries in every one of them, so "Herbs & Flowers", "Mines & Ores", "Chests &
+-- Treasures", "Fishing" and "Rare Mobs" all found nothing there (issue #18).
+-- Outland was mostly covered with one big hole: every WotLK ore and herb had no
+-- object entry at all, and the TBC ores plus several TBC herbs had an object
+-- entry with an EMPTY coords table.
+--
+-- Merged ADDITIVELY rather than through the -tbc/-wotlk overlay mechanism above:
+-- patchtable replaces a whole entry, and these entities must keep every field
+-- the base data already gives them (quest relations above all). The generator
+-- emits coordinates only for (entity, zone) pairs pfQuest has none for, so
+-- appending can never duplicate an existing node. Runs before
+-- pfDatabase.Reload/PackCoords, which compact these very tables.
+if pfDB["tracking335"] then
+  for _, db in pairs({ "objects", "units" }) do
+    local overlay = pfDB["tracking335"][db]
+    local data = pfDB[db]["data"]
+
+    for id, coords in pairs(overlay["coords"]) do
+      local entry = data[id]
+      if not entry then
+        entry = {}
+        data[id] = entry
+      end
+      if not entry["coords"] then
+        entry["coords"] = {}
+      end
+      for _, coord in pairs(coords) do
+        table.insert(entry["coords"], coord)
+      end
+    end
+
+    -- Names for the entities pfQuest has never heard of. English only, so write
+    -- them into every installed locale that lacks the id -- the same
+    -- honest-degrade the enUS expansion overlay already relies on above.
+    for id, name in pairs(overlay["names"]) do
+      for locale in pairs(pfDB.locales) do
+        if pfDB[db][locale] and not pfDB[db][locale][id] then
+          pfDB[db][locale][id] = name
+        end
+      end
+      if pfDB[db]["enUS"] and not pfDB[db]["enUS"][id] then
+        pfDB[db]["enUS"][id] = name
+      end
+    end
+
+    -- Level and rank for the new rare mobs, so the map tooltip reads like every
+    -- other mob. pfQuest stores both as STRINGS and lvl may be a range
+    -- ("71-72"), which is exactly what the generator emits.
+    for id, info in pairs(overlay["info"] or {}) do
+      local entry = data[id]
+      if entry then
+        entry["lvl"] = entry["lvl"] or info[1]
+        entry["rnk"] = entry["rnk"] or info[2]
+      end
+    end
+  end
+
+  -- The tracking lists themselves. Keys already carry pfQuest's sign convention
+  -- (negative for the object tracks, positive for the unit tracks) and the
+  -- values already match pfQuest's own types -- a number for the skill and
+  -- level tracks, the "AH" string for fishing pools, which SearchMetaRelation
+  -- matches with string.find and would throw on a number.
+  for track, entries in pairs(pfDB["tracking335"]["meta"]) do
+    if pfDB["meta"][track] then
+      for id, value in pairs(entries) do
+        pfDB["meta"][track][id] = value
+      end
+    end
+  end
+
+  pfDB["tracking335"] = nil
+end
+
 -- detect installed locales
 for key, name in pairs(pfDB.locales) do
   if not pfDB["quests"][key] then

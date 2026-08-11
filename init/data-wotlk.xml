@@ -16,4 +16,8 @@
   <!-- Northrend map rectangles. Without these the minimap loop skips the zone
        entirely, so Northrend had world map nodes but never minimap dots. -->
   <Include file="..\db\minimap-wotlk335.lua" />
+  <!-- Outland/Northrend tracking data: herbs, ores, chests, fishing pools and
+       rare mobs. Merged ADDITIVELY by database.lua (see the tracking335 block
+       there), not by patchtable. -->
+  <Include file="..\db\tracking335.lua" />
 </Ui>
