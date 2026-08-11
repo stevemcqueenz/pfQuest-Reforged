@@ -116,6 +116,12 @@ CONTINENTS = {0, 1, 530, 571}
 # the reported gap, and leaving Azeroth alone means a bugfix release cannot
 # disturb the vanilla tracking data that already works.
 EMIT_MAPS = {530, 571}
+# Zones outside those maps that we DO fill. Eastern Plaguelands is the one
+# Azeroth zone with no mining data at all (169 server spawns, zero pfQuest
+# coordinates, while its herbs and chests are covered), reported in #18. Its map
+# rectangle was rescaled in Wrath, so it is also the zone database.lua corrects;
+# both use the same 3.3.5a rectangle, from UIMAP_RECTS below.
+EMIT_ZONES_EXTRA = {139}
 MIN_PAIRS = 5
 MAX_MEDIAN_RESID = 1.5   # percent; same rejection bar as the acfill pipeline
 DEDUP_DIST = 0.3         # percent; collapse near-identical spawns
@@ -213,6 +219,21 @@ for id in pairs(pfDB["objects"]["data-wotlk"]) do print(string.format("WO\t%d\t0
 """
 
 
+# pfQuest's shipped Eastern Plaguelands coordinates are on the 1.12 rectangle;
+# database.lua rewrites them onto the 3.3.5a one at load. Apply the same
+# conversion here, so "does pfQuest already cover this spot" is asked in the
+# coordinate space the addon actually ends up using.
+EPL_OLD = (3872.71, 2580.90, -2184.64, 3799.83)
+EPL_NEW = (4031.25, 2687.50, -2287.50, 3704.17)
+
+
+def correct_epl(x, y):
+    wy = EPL_OLD[2] - x / 100.0 * EPL_OLD[0]
+    wx = EPL_OLD[3] - y / 100.0 * EPL_OLD[1]
+    return (round((EPL_NEW[2] - wy) / EPL_NEW[0] * 100.0, 2),
+            round((EPL_NEW[3] - wx) / EPL_NEW[1] * 100.0, 2))
+
+
 class PfQuest(object):
     def __init__(self):
         self.units = {}
@@ -256,8 +277,10 @@ def load_pfquest():
         elif tag in ("WU", "WO"):
             pf.corrected[tag[1]].add(int(parts[1]))
         else:
-            pf.coords(tag).setdefault(int(parts[1]), []).append(
-                (float(parts[2]), float(parts[3]), int(parts[4])))
+            x, y, zone = float(parts[2]), float(parts[3]), int(parts[4])
+            if zone in FORCE_RECT:
+                x, y = correct_epl(x, y)
+            pf.coords(tag).setdefault(int(parts[1]), []).append((x, y, zone))
     return pf
 
 
@@ -536,7 +559,18 @@ UIMAP_RECTS = {
     # zone: (width, height, left, top), map
     4197: ((2974.9998779297, 1983.33984375, 4329.169921875, 5716.669921875), 571),
     2817: ((2722.9200439453, 1814.580078125, 1443.75, 6502.080078125), 571),
+    # Eastern Plaguelands is fittable, but the fit reproduces pfQuest's STALE
+    # 1.12 rectangle -- see the correction in database.lua. Force the 3.3.5a
+    # rectangle so what we emit matches what the correction produces. GatherMate's
+    # independent extraction of the same nodes lands on this rectangle to 0.00%.
+    139: ((4031.25, 2687.5, -2287.50, 3704.17), 0),
 }
+
+
+# Zones where the rectangle REPLACES a perfectly good fit, because the fit is
+# anchored to coordinates that are themselves wrong (see database.lua's EPL
+# correction).
+FORCE_RECT = {139}
 
 
 def add_rect_models(models):
@@ -545,7 +579,7 @@ def add_rect_models(models):
     worldX) / height -- the same transform every WoW map uses."""
     added = []
     for zone, (rect, amap) in UIMAP_RECTS.items():
-        if zone in models:
+        if zone in models and zone not in FORCE_RECT:
             continue
         w, h, left, top = rect
         models[zone] = {"fx": (left / w * 100.0, -100.0 / w),
@@ -652,7 +686,7 @@ def collect(entries, kind, ac, models, by_map, dead, pf, stats):
         known_zones = {c[2] for c in known.get(eid, ())}
         pts = []
         for amap, aczone, wx, wy, respawn in spawn_table.get(eid, ()):
-            if amap not in EMIT_MAPS:
+            if amap not in EMIT_MAPS and aczone not in EMIT_ZONES_EXTRA:
                 stats["othermap"] += 1
                 continue
             if aczone and aczone not in models:

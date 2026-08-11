@@ -36,7 +36,13 @@
 --
 -- Still absent: Hrothgar's Landing. Nothing pfQuest tracks spawns there, so there is
 -- no way to check a rectangle for it and no benefit to adding one.
+-- Eastern Plaguelands is not a WotLK zone, but its map rectangle was rescaled
+-- during Wrath and pfQuest still ships the 1.12 size (3870.83 x 2581.25). The
+-- coordinate correction in database.lua moves every EPL node onto the 3.3.5a
+-- rectangle, so the minimap needs that rectangle's size too or it would undo the
+-- correction on the minimap while the world map showed it right.
 pfDB["minimap-wotlk"] = {
+  [139] = { 4031.25, 2687.5 }, -- Eastern Plaguelands (rescaled in Wrath)
   [2817] = { 2722.92, 1814.58 }, -- Crystalsong Forest (UiMapData)
   [4197] = { 2975.0, 1983.34 }, -- Wintergrasp (UiMapData)
   [3537] = { 5765.07, 3843.38 }, -- Borean Tundra (75 spawns)
