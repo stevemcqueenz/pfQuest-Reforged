@@ -1384,6 +1384,23 @@ function pfMap:UpdateMinimap()
   -- C-calls per node, per ~20/sec tick while moving).
   local halfW = pfMap.drawlayer:GetWidth() / 2
   local halfH = pfMap.drawlayer:GetHeight() / 2
+  -- shape and frame level are per-call properties of the minimap, not per node
+  local square = pfUI.minimap or squareminimap()
+
+  -- Reforged: keep the pins above the minimap in the frame-level order. Pins are
+  -- children of Minimap and inherit their level from it AT CREATION TIME, but a
+  -- UI addon may raise the minimap afterwards (ElvUI sets Minimap frame level 10
+  -- during its own init) -- and a child whose level is BELOW its parent renders
+  -- behind the parent's own textures, so every pin silently disappears while the
+  -- world map keeps working (issue #15). Cheap to keep honest: compare once per
+  -- call and only re-level when the minimap actually moved.
+  local mlevel = pfMap.drawlayer:GetFrameLevel() or 0
+  if pfMap.mlevel ~= mlevel then
+    pfMap.mlevel = mlevel
+    for _, pin in pairs(pfMap.mpins) do
+      pin:SetFrameLevel(mlevel + 5)
+    end
+  end
 
   local i = 1
 
@@ -1417,7 +1434,7 @@ function pfMap:UpdateMinimap()
         local display = nil
         local distance = sqrt(xPos * xPos + yPos * yPos)
 
-        if pfUI.minimap or squareminimap() then
+        if square then
           display = (abs(xPos) + 8 < halfW and abs(yPos) + 8 < halfH)
               and true
             or nil
@@ -1428,6 +1445,7 @@ function pfMap:UpdateMinimap()
         if display then
           if not pfMap.mpins[i] then
             pfMap.mpins[i] = pfMap:BuildNode(nodename .. i, pfMap.drawlayer)
+            pfMap.mpins[i]:SetFrameLevel(mlevel + 5)
           end
 
           -- skip expensive UpdateNode work (highlightdb rebuild, node iteration,
