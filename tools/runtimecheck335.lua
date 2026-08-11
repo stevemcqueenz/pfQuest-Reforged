@@ -145,5 +145,71 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Multiple things standing on one spot (issue #22). A spawn point can produce
+-- more than one node type -- the server pools Cobalt with Rich Cobalt and
+-- Saronite with Titanium at identical coordinates -- but the pin can only be
+-- described by one of them, so the rest were invisible and whole Northrend
+-- zones read as a single ore. Pin the collector the tooltip uses.
+-- ---------------------------------------------------------------------------
+do
+  -- map.lua cannot be loaded here (it builds frames at load time), so lift the
+  -- REAL function out of the real source and run that -- editing it in map.lua
+  -- is what this check must notice.
+  local src = io.open("map.lua"):read("*a")
+  local block = string.match(src, "(local function collectextras.-\nend)\npfMap%.CollectExtraSpawns")
+  local chunk = block and loadstring(block .. "\nreturn collectextras")
+  local f = chunk and chunk()
+  if not f then
+    fail("extra spawns: could not lift collectextras out of map.lua")
+  else
+    local node = {
+      ["Cobalt Deposit"] = { spawn = "Cobalt Deposit", level = "350 [Mining]" },
+      ["Rich Cobalt Deposit"] = { spawn = "Rich Cobalt Deposit", level = "375 [Mining]" },
+      ["Titanium Vein"] = { spawn = "Titanium Vein", level = "450 [Mining]" },
+    }
+    local extras = f(node, "Cobalt Deposit")
+    if extras and table.getn(extras) == 2 then ok("extra spawns: the two other nodes on the spot are returned")
+    else fail("extra spawns: got %s entries, expected 2", extras and table.getn(extras) or "nil") end
+    if extras and extras[1].spawn == "Rich Cobalt Deposit" and extras[2].spawn == "Titanium Vein" then
+      ok("extra spawns: stable alphabetical order, not table order")
+    else
+      fail("extra spawns: order was %s, %s", extras and extras[1] and extras[1].spawn,
+           extras and extras[2] and extras[2].spawn)
+    end
+    if extras and extras[1].level == "375 [Mining]" then ok("extra spawns: each carries its own skill requirement")
+    else fail("extra spawns: level came through as %s", extras and extras[1] and tostring(extras[1].level)) end
+
+    -- the header's own node must never be repeated
+    local only = f({ ["Cobalt Deposit"] = { spawn = "Cobalt Deposit" } }, "Cobalt Deposit")
+    if only == nil then ok("extra spawns: a spot holding only the pin's own node adds nothing")
+    else fail("extra spawns: the pin's own node was listed again") end
+
+    -- several quests on the SAME mob must collapse to one name, not one per quest
+    local quests = {
+      ["Quest A"] = { spawn = "Fizzcrank Mechagnome", quest = "Quest A" },
+      ["Quest B"] = { spawn = "Fizzcrank Mechagnome", quest = "Quest B" },
+      ["Quest C"] = { spawn = "Scourge Ghoul", quest = "Quest C" },
+    }
+    -- header is a THIRD name, so both mobs are extras and the repeat must collapse
+    local q = f(quests, "Cobalt Deposit")
+    if q and table.getn(q) == 2 and q[1].spawn == "Fizzcrank Mechagnome"
+      and q[2].spawn == "Scourge Ghoul" then
+      ok("extra spawns: repeated names collapse, so two quests on one mob list it once")
+    else
+      fail("extra spawns: quest case returned %s entries (%s)", q and table.getn(q) or "nil",
+           q and q[1] and q[1].spawn or "-")
+    end
+
+    -- entries with no spawn name (quest-only markers) must not produce blanks
+    local blanks = f({ ["Some Quest"] = { quest = "Some Quest" } }, "Cobalt Deposit")
+    if blanks == nil then ok("extra spawns: entries with no name are skipped")
+    else fail("extra spawns: a nameless entry was listed") end
+
+    if f(nil, "x") == nil then ok("extra spawns: an empty node table is handled")
+    else fail("extra spawns: nil node table did not return nil") end
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

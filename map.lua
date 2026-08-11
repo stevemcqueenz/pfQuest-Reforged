@@ -917,6 +917,34 @@ function pfMap:NodeClick()
   end
 end
 
+-- Reforged: one spot can hold more than one thing, and UpdateNode can only pick
+-- ONE of them to describe the pin -- the entry with the highest layer, or an
+-- arbitrary one when the layers tie. Naming only that winner hid the rest
+-- completely: the server pools Cobalt with Rich Cobalt and Saronite with
+-- Titanium at identical coordinates, so whole Northrend zones read as a single
+-- ore (issue #22). Collect everything else standing here, once per name and in
+-- a stable order, so the tooltip can list it under the header.
+local function collectextras(node, spawn)
+  local extras, seen = nil, nil
+  for _, meta in pairs(node or {}) do
+    if meta.spawn and meta.spawn ~= spawn then
+      seen = seen or {}
+      if not seen[meta.spawn] then
+        seen[meta.spawn] = true
+        extras = extras or {}
+        table.insert(extras, meta)
+      end
+    end
+  end
+  if extras then
+    table.sort(extras, function(a, b)
+      return a.spawn < b.spawn
+    end)
+  end
+  return extras
+end
+pfMap.CollectExtraSpawns = collectextras
+
 function pfMap:NodeEnter()
   -- wotlk: need to disable blop tooltips first
   if compat.client >= 30300 then
@@ -935,6 +963,24 @@ function pfMap:NodeEnter()
   tooltip:AddDoubleLine(pfQuest_Loc["Level"] .. ":", (this.level or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
   tooltip:AddDoubleLine(pfQuest_Loc["Type"] .. ":", (this.spawntype or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
   tooltip:AddDoubleLine(pfQuest_Loc["Respawn"] .. ":", (this.respawn or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
+
+  local extras = collectextras(this.node, this.spawn)
+  if extras then
+    tooltip:AddLine(pfQuest_Loc["Also here"] .. ":", 0.3, 1, 0.8)
+    for i = 1, table.getn(extras) do
+      local meta = extras[i]
+      tooltip:AddDoubleLine(
+        meta.spawn .. (pfQuest_config.showids == "1" and meta.spawnid and " |cffcccccc(" .. meta.spawnid .. ")|r" or ""),
+        (meta.level or ""),
+        1,
+        1,
+        1,
+        0.8,
+        0.8,
+        0.8
+      )
+    end
+  end
 
   for title, meta in pairs(this.node) do
     pfMap:ShowTooltip(meta, tooltip)
