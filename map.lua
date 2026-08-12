@@ -673,6 +673,30 @@ local submaps = {
   ["AmmenValeStart"]      = { 3524, 56.85, 29.86, 44.68, 44.67 }, -- Azuremyst Isle
 }
 
+-- The same eight, keyed by the zone id pfQuest ALREADY has for them: it has
+-- always known them as SUBZONES of their parent, so Northshire Valley is 9,
+-- Coldridge Valley is 132, and so on. Not one of those ids holds a single
+-- coordinate; every node in those places is stored on the parent zone, which is
+-- where pfQuest's own rectangle puts it. So anything resolving a zone by NAME
+-- has to be redirected or it lands on an empty zone and draws nothing. That is
+-- exactly what GetRealZoneText() gives while the player stands in a starter
+-- zone, which the minimap and the tracker's proximity list both key off.
+local subzoneparent = {
+  [9] = 12,      -- Northshire Valley -> Elwynn Forest
+  [132] = 1,     -- Coldridge Valley  -> Dun Morogh
+  [154] = 85,    -- Deathknell        -> Tirisfal Glades
+  [3431] = 3430, -- Sunstrider Isle   -> Eversong Woods
+  [188] = 141,   -- Shadowglen        -> Teldrassil
+  [363] = 14,    -- Valley of Trials  -> Durotar
+  [221] = 215,   -- Camp Narache      -> Mulgore
+  [3526] = 3524, -- Ammen Vale        -> Azuremyst Isle
+}
+
+function pfMap:ParentZone(id)
+  if not id then return nil end
+  return subzoneparent[id] or id
+end
+
 -- The sub-map currently being VIEWED, or nil. Keyed on GetMapInfo() on purpose:
 -- that is the same frame of reference GetPlayerMapPosition answers in, so the
 -- world map and the minimap stay in step even while the player browses a map
@@ -715,16 +739,24 @@ function pfMap:GetMapID(cid, mid)
 
   local list = map_zone_cache[cid]
   local name = list[mid]
-  local id = pfMap:GetMapIDByName(name)
-  -- A sub-map answers with its PARENT: that is the zone the coordinates in the
-  -- database belong to. Works whether the patch put these map areas into
-  -- GetMapZones (list[mid] is a name pfQuest has never heard of) or left them
-  -- reachable only by SetMapByID (mid is 0, so list[mid] is nil) -- both land
-  -- here with id still nil.
-  local sub = submaps[GetMapInfo() or ""]
-  id = id or (sub and sub[1]) or customids[GetMapInfo()]
 
-  return id
+  -- A sub-map answers with its PARENT: that is the zone the coordinates in the
+  -- database belong to. This has to take PRECEDENCE over the name lookup, not
+  -- fall back to it. The patch puts these map areas in GetMapZones under their
+  -- real names, and pfQuest has always had those names as subzone ids, so
+  -- "Northshire Valley" resolves to 9 -- a zone that holds no coordinates at
+  -- all. Answering 9 is worse than answering nothing: it looks like a perfectly
+  -- good zone with an empty map, which is what shipped in v1.0.47.
+  local sub = submaps[GetMapInfo() or ""]
+  if sub then
+    return sub[1]
+  end
+
+  local id = pfMap:GetMapIDByName(name)
+  id = id or customids[GetMapInfo()]
+  -- and the same redirect for anything that resolved to a starter subzone by
+  -- name without the map area being a sub-map (SetMapByID, addons, /way)
+  return pfMap:ParentZone(id)
 end
 
 function pfMap:AddNode(meta)
@@ -1558,7 +1590,9 @@ function pfMap:UpdateMinimap()
   -- Memoize by the raw zone-text string so the scan happens once per zone.
   local rz = GetRealZoneText()
   if rz ~= mm_zonename then
-    mm_zonename, mm_zoneid = rz, pfMap:GetMapIDByName(rz)
+    -- ParentZone because the zone TEXT is the subzone's own name while the
+    -- player is in a starter zone, and that id holds no coordinates
+    mm_zonename, mm_zoneid = rz, pfMap:ParentZone(pfMap:GetMapIDByName(rz))
   end
   local mapID = mm_zoneid
 
@@ -1714,12 +1748,12 @@ pfMap:SetScript("OnEvent", function()
       SetMapToCurrentZone()
       -- Cache the player's physical zone while the map is synced to it.
       -- GetMapID is safe here because SetMapToCurrentZone() was just called.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
+      pfMap.playerZone = pfMap:ParentZone(pfMap:GetMapIDByName(GetRealZoneText()))
         or pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
     else
       -- Map is open; only trust GetRealZoneText() which reads physical zone.
       -- GetMapID would return the user-browsed zone, not the player's.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
+      pfMap.playerZone = pfMap:ParentZone(pfMap:GetMapIDByName(GetRealZoneText()))
     end
 
     -- Mode 5: refresh tracker from player's physical zone,

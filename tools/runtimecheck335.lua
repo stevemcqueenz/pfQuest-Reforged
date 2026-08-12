@@ -555,8 +555,8 @@ end
 -- ---------------------------------------------------------------------------
 do
   local src = io.open("map.lua"):read("*a")
-  -- anchored on the LAST of the three helpers: a plain ".-\nend" stops at the
-  -- first one and silently lifts a third of the block
+  -- anchored on the LAST of the helpers: a plain ".-\nend" stops at the first
+  -- one and silently lifts a fraction of the block
   local block = string.match(src, "\n(local submaps = %{.-function pfMap:FromSubmap.-\nend)\n")
   -- the signature is matched in full on purpose: "function pfMap:GetMapID.-"
   -- also matches GetMapIDByName, which is defined earlier in the file
@@ -652,6 +652,55 @@ do
       end
     end
     if roundtrip == 0 then ok("submaps: the world map and minimap conversions are exact inverses") end
+
+    -- ---- the precedence rule, which is what v1.0.47 got wrong.
+    -- The patch puts these map areas in GetMapZones under their real names, and
+    -- pfQuest has always carried those names as SUBZONE ids: "Northshire
+    -- Valley" resolves to 9. Zone 9 holds no coordinates at all, so answering
+    -- it looks like a perfectly good zone with an empty map. The sub-map has to
+    -- WIN over the name lookup, not fall back to it.
+    pfMap.GetMapIDByName = function(_, n)
+      if n == "Durotar" then return 14 end
+      if n == "Northshire Valley" then return 9 end
+      return nil
+    end
+    env.GetMapZones = function() return "Northshire Valley" end
+    env.map_zone_cache = {}
+    mapinfo = "Northshire"
+    if pfMap:GetMapID(1, 1) == 12 then
+      ok("submaps: the sub-map beats a zone name that resolves to an empty subzone")
+    else
+      fail("submaps: Northshire Valley resolved to %s, expected the parent 12",
+           tostring(pfMap:GetMapID(1, 1)))
+    end
+    -- and it must beat ANY name, not only the eight the redirect table knows.
+    -- Without this the check passes on a version that merely falls back to the
+    -- sub-map, because the redirect quietly repairs the known ids afterwards.
+    pfMap.GetMapIDByName = function(_, n) return n == "SomethingElse" and 999 or nil end
+    env.GetMapZones = function() return "SomethingElse" end
+    env.map_zone_cache = {}
+    if pfMap:GetMapID(1, 1) == 12 then
+      ok("submaps: the sub-map wins outright, it is not consulted only as a fallback")
+    else
+      fail("submaps: a sub-map deferred to the zone name and answered %s",
+           tostring(pfMap:GetMapID(1, 1)))
+    end
+    -- and the same redirect when only the NAME is known, which is what
+    -- GetRealZoneText gives the minimap and the tracker
+    if pfMap:ParentZone(9) == 12 and pfMap:ParentZone(3526) == 3524 then
+      ok("submaps: a starter subzone id redirects to its parent")
+    else
+      fail("submaps: ParentZone(9)=%s ParentZone(3526)=%s",
+           tostring(pfMap:ParentZone(9)), tostring(pfMap:ParentZone(3526)))
+    end
+    if pfMap:ParentZone(12) == 12 and pfMap:ParentZone(nil) == nil then
+      ok("submaps: an ordinary zone id and nil pass through untouched")
+    else
+      fail("submaps: ParentZone mangled an ordinary id or nil")
+    end
+    env.GetMapZones = function() return "Durotar" end
+    env.map_zone_cache = {}
+    pfMap.GetMapIDByName = function(_, n) return n == "Durotar" and 14 or nil end
 
     -- ---- resolution, including the case that must NOT change
     mapinfo = "Northshire"
