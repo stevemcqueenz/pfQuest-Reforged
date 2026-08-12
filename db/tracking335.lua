@@ -28284,4 +28284,56 @@ pfDB["tracking335"] = {
       [38453] = 74, -- Arcturis
     },
   },
+  ["stale_rares"] = {
+    [2598] = true, -- Darbel Montrose
+    [2601] = true, -- Foulbelly
+    [2602] = true, -- Ruul Onestone
+    [10819] = true, -- Baron Bloodbane
+    [10820] = true, -- Duke Ragereaver
+  },
+  ["bankers"] = {
+    [2455] = "A", -- Olivia Burnside
+    [2456] = "A", -- Newton Burnside
+    [2457] = "A", -- John Burnside
+    [2458] = "H", -- Randolph Montague
+    [2459] = "H", -- Mortimer Montague
+    [2460] = "A", -- Barnum Stonemantle
+    [2461] = "A", -- Bailey Stonemantle
+    [2625] = "AH", -- Viznik Goldgrubber
+    [2996] = "H", -- Torn
+    [3309] = "H", -- Karus
+    [3318] = "H", -- Koma
+    [3320] = "H", -- Soran
+    [3496] = "AH", -- Fuzruckle
+    [3683] = "AH", -- Kiknikle
+    [4155] = "A", -- Idriana
+    [4208] = "A", -- Lairn
+    [4209] = "A", -- Garryeth
+    [4549] = "H", -- William Montague
+    [4550] = "H", -- Ophelia Montague
+    [5099] = "A", -- Soleil Stonemantle
+    [7799] = "AH", -- Gimblethorn
+    [8119] = "AH", -- Zikkel
+    [8123] = "AH", -- Rickle Goldgrubber
+    [8124] = "AH", -- Qizzik
+    [8356] = "H", -- Chesmu
+    [8357] = "H", -- Atepa
+    [13917] = "AH", -- Izzy Coppergrab
+    [16615] = "H", -- Novia
+    [16616] = "H", -- Periel
+    [16617] = "H", -- Daenice
+    [16710] = "A", -- Kellag
+    [17631] = "H", -- Ceera
+    [17632] = "H", -- Elana
+    [17633] = "H", -- Hatheon
+    [17773] = "A", -- Ossco
+    [18350] = "A", -- Jaela
+    [19034] = "AH", -- Mendorn
+    [19246] = "AH", -- Berudan Keysworn
+    [19318] = "AH", -- Gromden
+    [19338] = "AH", -- L'lura Goldspun
+    [21732] = "AH", -- Nandirx
+    [21733] = "AH", -- Karzo
+    [21734] = "AH", -- Zixxy
+  },
 }

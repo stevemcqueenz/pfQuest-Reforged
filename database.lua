@@ -437,6 +437,32 @@ if pfDB["tracking335"] then
     end
   end
 
+  -- Rare mobs the rare track advertises that this client's server never spawns
+  -- (issue #21). Baron Bloodbane and Duke Ragereaver are the reported pair: they
+  -- have creature templates, so they are in every database, but no spawn row
+  -- anywhere, so the pin sends players to a mob that cannot appear. Checked
+  -- against the RAW creature table, not the event-filtered view the generator
+  -- otherwise uses: Leprithus has no ordinary spawn either but IS spawned during
+  -- a game event, and stays.
+  --
+  -- Only the LIST entry goes. The unit keeps its coordinates, so a quest or a
+  -- search that names the mob still finds it; it just stops drawing itself on
+  -- the "Rare Mobs" overlay.
+  for id in pairs(pfDB["tracking335"]["stale_rares"] or {}) do
+    pfDB["meta"]["rares"][id] = nil
+  end
+
+  -- The banker list, replaced wholesale rather than merged (issue #29). What
+  -- pfQuest ships under "banker" is not a banker list: not one of its 420
+  -- entries carries UNIT_NPC_FLAG_BANKER (0x20000) on this client, and what it
+  -- does contain is barkeeps, innkeepers and general vendors -- which is exactly
+  -- what enabling the track showed. Adding to it would leave all 420 in place,
+  -- so it is dropped and rebuilt from the server's own flag, keeping the ones
+  -- pfQuest can already place on a map.
+  if pfDB["tracking335"]["bankers"] then
+    pfDB["meta"]["banker"] = pfDB["tracking335"]["bankers"]
+  end
+
   pfDB["tracking335"] = nil
 end
 
