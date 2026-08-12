@@ -974,6 +974,21 @@ function pfMap:NodeEnter()
     0.8
   )
   tooltip:AddDoubleLine(pfQuest_Loc["Level"] .. ":", (this.level or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
+  -- Reforged: a number of rares belong to one faction and simply cannot be
+  -- fought by the other, which sent players across a zone after a mob they were
+  -- never going to be able to attack (issue #31). pfQuest already knows this: it
+  -- stores who a unit is friendly to in units[id].fac, the same field the
+  -- browser's Reaction block and the quest faction filter read. Shown only when
+  -- it is ONE side -- "AH" and nil mean the mob belongs to neither, which is the
+  -- normal case and tells the player nothing.
+  if this.faction == "A" or this.faction == "H" then
+    tooltip:AddDoubleLine(
+      pfQuest_Loc["Faction"] .. ":",
+      this.faction == "A" and pfQuest_Loc["Alliance"] or pfQuest_Loc["Horde"],
+      0.8, 0.8, 0.8,
+      1, 1, 1
+    )
+  end
   tooltip:AddDoubleLine(pfQuest_Loc["Type"] .. ":", (this.spawntype or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
   tooltip:AddDoubleLine(pfQuest_Loc["Respawn"] .. ":", (this.respawn or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
 
@@ -1124,6 +1139,7 @@ function pfMap:UpdateNode(frame, node, color, obj, distance)
       frame.spawntype = tab.spawntype
       frame.respawn = tab.respawn
       frame.level = tab.level
+      frame.faction = tab.faction
       frame.questid = tab.questid
       frame.texture = tab.texture
       frame.vertex = tab.vertex
