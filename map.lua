@@ -151,7 +151,15 @@ end
 -- while the world map is fine (issue #15). The state only changes when the
 -- player moves indoors/outdoors or the zoom actually changes, so compute it on
 -- those events instead and cache it. Also removes ~40 SetZoom calls a second.
-local indoorstate, indoordirty = 1, true
+-- ... except it did not, until the guard below. The probe detects indoor/outdoor
+-- by NUDGING the minimap zoom and reading it back, and Minimap:SetZoom fires
+-- MINIMAP_UPDATE_ZOOM, which is one of the events that dirties this cache. So
+-- the probe invalidated itself, re-ran on the very next call, and kept the ~40
+-- SetZoom calls a second it was written to remove. Worse than wasted work: every
+-- one of those is an event other minimap addons react to, and with ElvUI loaded
+-- the result was a minimap that only showed its pins for the split second after
+-- a zone change (issue #15). Ignore the events the probe causes itself.
+local indoorstate, indoordirty, indoorprobing = 1, true, nil
 local indoorwatch = CreateFrame("Frame")
 indoorwatch:RegisterEvent("PLAYER_ENTERING_WORLD")
 indoorwatch:RegisterEvent("ZONE_CHANGED")
@@ -159,6 +167,9 @@ indoorwatch:RegisterEvent("ZONE_CHANGED_INDOORS")
 indoorwatch:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 indoorwatch:RegisterEvent("MINIMAP_UPDATE_ZOOM")
 indoorwatch:SetScript("OnEvent", function()
+  if indoorprobing then
+    return
+  end
   indoordirty = true
 end)
 
@@ -173,23 +184,25 @@ local function squareminimap()
 end
 
 local function minimap_indoor_probe()
-  local tempzoom = 0
   local state = 1
+  -- remember the real zoom rather than trying to undo the nudge by arithmetic:
+  -- SetZoom clamps to 0..5, so stepping off either end and adding the step back
+  -- left the minimap one level away from where it started, every probe.
+  local zoom = pfMap.drawlayer:GetZoom()
+  indoorprobing = true
+
   if GetCVar("minimapZoom") == GetCVar("minimapInsideZoom") then
-    if GetCVar("minimapInsideZoom") + 0 >= 3 then
-      pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() - 1)
-      tempzoom = 1
-    else
-      pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() + 1)
-      tempzoom = -1
-    end
+    -- the two CVars are equal, so the zoom alone cannot say which one is in
+    -- effect: nudge one step, in whichever direction stays in range
+    pfMap.drawlayer:SetZoom(zoom > 0 and zoom - 1 or zoom + 1)
   end
 
   if GetCVar("minimapInsideZoom") + 0 == pfMap.drawlayer:GetZoom() then
     state = 0
   end
 
-  pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() + tempzoom)
+  pfMap.drawlayer:SetZoom(zoom)
+  indoorprobing = nil
   return state
 end
 
@@ -659,6 +672,162 @@ local customids = {
   ["AlteracValley"] = 2597,
 }
 
+-- Reforged: sub-maps -- a map area that is a PIECE of a zone pfQuest has data
+-- for, rather than a zone of its own (issue #20).
+--
+-- The Caverns and Mines client patch, which the WDM addon collection is built
+-- for, registers the eight starter zones as their own map areas. pfQuest has no
+-- data keyed to them (its coordinates are all on the parent zone's rectangle),
+-- so GetMapID found no match, UpdateNodes bailed on a nil map, and the whole
+-- starter experience showed nothing at all.
+--
+-- The entry is { parent zone id, left, top, width, height }, the sub-map's
+-- rectangle expressed in the PARENT map's percentages. A parent coordinate
+-- becomes a sub-map coordinate with (value - left) / size * 100, and anything
+-- landing outside 0..100 is simply not on this map and gets culled.
+--
+-- DERIVED, not guessed. The WDM collection ships continent offsets and extents
+-- for both the sub-maps and their parents in its bundled Astrolabe, so each
+-- rectangle is (child.xOffset - parent.xOffset) / parent.width and so on. Three
+-- checks before trusting them: WDM's GatherMate ships the same eight extents
+-- independently and agrees to four decimals on every one; every rectangle comes
+-- out square in percentage terms (width% within 0.1% of height%), which has to
+-- hold because parent and child are both 3:2; and each one lands where the zone
+-- actually is, with Camp Narache and Ammen Vale reaching ~1.5% past the parent
+-- edge exactly as they should, both sitting on the map border.
+--
+-- The KEYS are GetMapInfo() values. Confirmed from two independent tables in
+-- that collection that are documented in code to be GetMapInfo()-keyed
+-- (Astrolabe's zoneData, GatherMate's zone_data) plus WDM's own mdlevels, which
+-- carries Blizzard's "Ogrimmar" misspelling as a giveaway that these are raw
+-- map file names. Inert without the patch: these map areas do not exist, so
+-- GetMapInfo() never returns any of them.
+local submaps = {
+  -- Eastern Kingdoms
+  ["Northshire"]          = { 12,   38.84, 27.27, 27.91, 27.90 }, -- Elwynn Forest
+  ["ColdridgeValley"]     = { 1,    16.71, 63.51, 19.59, 19.61 }, -- Dun Morogh
+  ["DeathknellStart"]     = { 85,   19.59, 52.00, 24.11, 24.14 }, -- Tirisfal Glades
+  ["SunstriderIsleStart"] = { 3430, 18.19,  6.34, 32.49, 32.49 }, -- Eversong Woods
+  -- Kalimdor
+  ["ShadowglenStart"]     = { 141,  45.62, 23.51, 28.48, 28.48 }, -- Teldrassil
+  ["ValleyofTrialsStart"] = { 14,   31.75, 51.30, 25.53, 25.53 }, -- Durotar
+  ["CampNaracheStart"]    = { 215,  35.32, 67.28, 34.39, 34.37 }, -- Mulgore
+  ["AmmenValeStart"]      = { 3524, 56.85, 29.86, 44.68, 44.67 }, -- Azuremyst Isle
+
+  -- The mine, cave and cavern interiors the same patch adds (issue #20 again).
+  -- Same mechanism, and the same reason they were empty: pfQuest stores what is
+  -- inside them at the PARENT zone's coordinates, because that is the only
+  -- rectangle its data has ever had. Generated straight from the patch's
+  -- WorldMapArea.dbc rather than derived, walking parentWorldMapID up to the
+  -- first ancestor pfQuest holds coordinates for. That resolves the awkward
+  -- ones by construction: Frostmane Hovel is a floor of Coldridge Valley, which
+  -- is itself a sub-map, and both reduce to Dun Morogh; Scarlet Monastery and
+  -- the Deadmines carry no parent at all and are placed by containment.
+  --
+  -- KNOWN LIMIT, and it is worth saying plainly: pfQuest has no z coordinate,
+  -- so "inside this rectangle" cannot distinguish the cave from the hillside
+  -- above it. Surface nodes over a mine will appear on the mine's map. That is
+  -- tolerable for the small ones, where nearly everything in the rectangle IS
+  -- the mine, and noticeable for the big ones, where Blackrock Mountain, Uldaman
+  -- and Ragefire Chasm each cover a fifth or more of their zone. An overlaid
+  -- pin is still better than the blank map these all drew before.
+  ["Fargodeepmine1_"]             = { 12,     36.12,  76.06,  6.91,  6.91 }, -- Elwynn
+  ["Fargodeepmine2_"]             = { 12,     35.90,  76.49,  7.35,  7.34 }, -- Elwynn
+  ["EchoRidgeMine3_"]             = { 12,     45.02,  24.21,  8.04,  8.04 }, -- Elwynn
+  ["GoldCoastQuarry4_"]           = { 40,     26.30,  44.14,  7.50,  7.50 }, -- Westfall
+  ["JangolodeMine5_"]             = { 40,     41.32,  17.09,  7.91,  7.91 }, -- Westfall
+  ["ColdridgePass6_"]             = { 1,      31.62,  65.27,  6.70,  6.70 }, -- DunMorogh
+  ["TheGrizzledDen7_"]            = { 1,      35.93,  43.73, 10.26, 10.26 }, -- DunMorogh
+  ["FrostmaneHold8_"]             = { 1,      19.37,  48.97,  6.94,  7.14 }, -- DunMorogh
+  ["FrostmaneHovel9_"]            = { 1,      26.27,  78.23,  5.41,  5.41 }, -- DunMorogh
+  ["GnomereganEntrance10_"]       = { 1,      14.60,  26.98, 14.83, 14.23 }, -- DunMorogh
+  ["GolBolarQuarry11_"]           = { 1,      67.92,  49.03,  7.59,  7.59 }, -- DunMorogh
+  ["NightWebsHollow12_"]          = { 85,     22.43,  56.90,  4.87,  4.87 }, -- Tirisfal
+  ["ScarletMonasteryEntrance13_"] = { 28,     25.04,  14.58,  4.77,  4.77 }, -- WesternPlaguelands
+  ["BlackrockMountain14_"]        = { 46,     16.88,  15.05, 24.32, 24.33 }, -- BurningSteppes
+  ["BlackrockMountain15_"]        = { 46,     29.99,  22.99,  8.71,  8.71 }, -- BurningSteppes
+  ["BlackrockMountain16_"]        = { 46,     12.32,   2.84, 25.95, 25.96 }, -- BurningSteppes
+  ["DeadminesWestfall17_"]        = { 40,     34.98,  70.93, 12.86, 12.86 }, -- Westfall
+  ["Uldaman18_"]                  = { 3,      26.92,   3.94, 22.61, 22.61 }, -- Badlands
+  ["JasperlodeMine19_"]           = { 12,     57.08,  45.17,  9.31,  9.31 }, -- Elwynn
+  ["Ogrimmar1_"]                  = { 1637,   34.46,  36.52, 25.82, 25.81 }, -- Ogrimmar
+  ["ShadowthreadCave2_"]          = { 141,    52.53,  23.46,  9.43,  9.43 }, -- Teldrassil
+  ["FelRock3_"]                   = { 141,    50.37,  47.72,  5.49,  5.49 }, -- Teldrassil
+  ["BanethilBarrowden4_"]         = { 141,    41.82,  57.45,  4.52,  4.52 }, -- Teldrassil
+  ["BanethilBarrowden5_"]         = { 141,    40.84,  55.97,  7.46,  7.46 }, -- Teldrassil
+  ["PalemaneRock6_"]              = { 215,    28.57,  58.11,  6.81,  6.81 }, -- Mulgore
+  ["TheVentureCoMine7_"]          = { 215,    55.78,  33.96, 14.42, 14.42 }, -- Mulgore
+  ["BurningBladeCoven8_"]         = { 14,     41.68,  51.14,  5.03,  5.03 }, -- Durotar
+  ["TiragardeKeep10_"]            = { 14,     58.44,  57.07,  2.36,  2.36 }, -- Durotar
+  ["TiragardeKeep11_"]            = { 14,     58.44,  57.07,  2.36,  2.36 }, -- Durotar
+  ["SkullRock12_"]                = { 14,     50.43,   6.46,  5.11,  5.11 }, -- Durotar
+  ["TwilightsRun13_"]             = { 1377,   68.22,   9.69,  7.25,  7.25 }, -- Silithus
+  ["TheSlitheringScar14_"]        = { 490,    41.00,  79.59, 10.34, 10.34 }, -- UngoroCrater
+  ["TheNoxiousLair15_"]           = { 440,    28.57,  38.37, 10.87, 10.87 }, -- Tanaris
+  ["TheGapingChasm16_"]           = { 440,    49.18,  65.76, 12.83, 12.83 }, -- Tanaris
+  ["CavernsofTime17_"]            = { 440,    57.17,  45.24, 16.05, 16.05 }, -- Tanaris
+  ["CavernsofTime18_"]            = { 440,    50.56,  46.99, 18.93, 18.93 }, -- Tanaris
+  ["DustwindCave19_"]             = { 14,     50.31,  23.75,  4.88,  4.88 }, -- Durotar
+  ["WailingCavernsBarrens20_"]    = { 17,     44.66,  31.12,  5.63,  5.62 }, -- Barrens
+  ["MaraudonOutside21_"]          = { 405,    25.53,  56.78, 13.35, 13.34 }, -- Desolace
+  ["MaraudonOutside22_"]          = { 405,    23.76,  51.52, 12.46, 12.45 }, -- Desolace
+  ["AmaniCatacombs1_"]            = { 3433,   57.47,  25.30,  9.09,  9.09 }, -- Ghostlands
+  ["TidesHollow2_"]               = { 3524,   21.35,  68.01,  9.21,  9.21 }, -- AzuremystIsle
+  ["StillpineHold3_"]             = { 3524,   42.93,   7.94, 11.67, 11.67 }, -- AzuremystIsle
+}
+
+-- The same eight, keyed by the zone id pfQuest ALREADY has for them: it has
+-- always known them as SUBZONES of their parent, so Northshire Valley is 9,
+-- Coldridge Valley is 132, and so on. Not one of those ids holds a single
+-- coordinate; every node in those places is stored on the parent zone, which is
+-- where pfQuest's own rectangle puts it. So anything resolving a zone by NAME
+-- has to be redirected or it lands on an empty zone and draws nothing. That is
+-- exactly what GetRealZoneText() gives while the player stands in a starter
+-- zone, which the minimap and the tracker's proximity list both key off.
+local subzoneparent = {
+  [9] = 12,      -- Northshire Valley -> Elwynn Forest
+  [132] = 1,     -- Coldridge Valley  -> Dun Morogh
+  [154] = 85,    -- Deathknell        -> Tirisfal Glades
+  [3431] = 3430, -- Sunstrider Isle   -> Eversong Woods
+  [188] = 141,   -- Shadowglen        -> Teldrassil
+  [363] = 14,    -- Valley of Trials  -> Durotar
+  [221] = 215,   -- Camp Narache      -> Mulgore
+  [3526] = 3524, -- Ammen Vale        -> Azuremyst Isle
+}
+
+function pfMap:ParentZone(id)
+  if not id then return nil end
+  return subzoneparent[id] or id
+end
+
+-- The sub-map currently being VIEWED, or nil. Keyed on GetMapInfo() on purpose:
+-- that is the same frame of reference GetPlayerMapPosition answers in, so the
+-- world map and the minimap stay in step even while the player browses a map
+-- they are not standing in.
+function pfMap:GetSubmap()
+  return submaps[GetMapInfo() or ""]
+end
+
+-- Parent percentage -> sub-map percentage. Second return is false when the
+-- point is not inside this sub-map at all.
+function pfMap:ToSubmap(sub, x, y)
+  x = (x - sub[2]) / sub[4] * 100
+  y = (y - sub[3]) / sub[5] * 100
+  -- the epsilon is for float equality only, not a margin: a node sitting
+  -- exactly on the sub-map's edge divides out to 100.00000000000001 and would
+  -- otherwise be culled from the map it is actually on
+  local e = 0.000001
+  return x, y, (x >= -e and x <= 100 + e and y >= -e and y <= 100 + e)
+end
+
+-- Sub-map percentage -> parent percentage. The minimap converts this way round
+-- instead: the player position is the ONE value it reads in sub-map space, and
+-- lifting it into the parent leaves node coordinates, zone sizes and the yard
+-- scale all in the space they were already in.
+function pfMap:FromSubmap(sub, x, y)
+  return sub[2] + x / 100 * sub[4], sub[3] + y / 100 * sub[5]
+end
+
 local map_zone_cache = {}
 function pfMap:GetMapID(cid, mid)
   cid = cid or GetCurrentMapContinent()
@@ -673,10 +842,24 @@ function pfMap:GetMapID(cid, mid)
 
   local list = map_zone_cache[cid]
   local name = list[mid]
+
+  -- A sub-map answers with its PARENT: that is the zone the coordinates in the
+  -- database belong to. This has to take PRECEDENCE over the name lookup, not
+  -- fall back to it. The patch puts these map areas in GetMapZones under their
+  -- real names, and pfQuest has always had those names as subzone ids, so
+  -- "Northshire Valley" resolves to 9 -- a zone that holds no coordinates at
+  -- all. Answering 9 is worse than answering nothing: it looks like a perfectly
+  -- good zone with an empty map, which is what shipped in v1.0.47.
+  local sub = submaps[GetMapInfo() or ""]
+  if sub then
+    return sub[1]
+  end
+
   local id = pfMap:GetMapIDByName(name)
   id = id or customids[GetMapInfo()]
-
-  return id
+  -- and the same redirect for anything that resolved to a starter subzone by
+  -- name without the map area being a sub-map (SetMapByID, addons, /way)
+  return pfMap:ParentZone(id)
 end
 
 function pfMap:AddNode(meta)
@@ -959,6 +1142,34 @@ function pfMap:NodeClick()
   end
 end
 
+-- Reforged: one spot can hold more than one thing, and UpdateNode can only pick
+-- ONE of them to describe the pin -- the entry with the highest layer, or an
+-- arbitrary one when the layers tie. Naming only that winner hid the rest
+-- completely: the server pools Cobalt with Rich Cobalt and Saronite with
+-- Titanium at identical coordinates, so whole Northrend zones read as a single
+-- ore (issue #22). Collect everything else standing here, once per name and in
+-- a stable order, so the tooltip can list it under the header.
+local function collectextras(node, spawn)
+  local extras, seen = nil, nil
+  for _, meta in pairs(node or {}) do
+    if meta.spawn and meta.spawn ~= spawn then
+      seen = seen or {}
+      if not seen[meta.spawn] then
+        seen[meta.spawn] = true
+        extras = extras or {}
+        table.insert(extras, meta)
+      end
+    end
+  end
+  if extras then
+    table.sort(extras, function(a, b)
+      return a.spawn < b.spawn
+    end)
+  end
+  return extras
+end
+pfMap.CollectExtraSpawns = collectextras
+
 function pfMap:NodeEnter()
   -- wotlk: need to disable blop tooltips first
   if compat.client >= 30300 then
@@ -975,8 +1186,41 @@ function pfMap:NodeEnter()
     0.8
   )
   tooltip:AddDoubleLine(pfQuest_Loc["Level"] .. ":", (this.level or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
+  -- Reforged: a number of rares belong to one faction and simply cannot be
+  -- fought by the other, which sent players across a zone after a mob they were
+  -- never going to be able to attack (issue #31). pfQuest already knows this: it
+  -- stores who a unit is friendly to in units[id].fac, the same field the
+  -- browser's Reaction block and the quest faction filter read. Shown only when
+  -- it is ONE side -- "AH" and nil mean the mob belongs to neither, which is the
+  -- normal case and tells the player nothing.
+  if this.faction == "A" or this.faction == "H" then
+    tooltip:AddDoubleLine(
+      pfQuest_Loc["Faction"] .. ":",
+      this.faction == "A" and pfQuest_Loc["Alliance"] or pfQuest_Loc["Horde"],
+      0.8, 0.8, 0.8,
+      1, 1, 1
+    )
+  end
   tooltip:AddDoubleLine(pfQuest_Loc["Type"] .. ":", (this.spawntype or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
   tooltip:AddDoubleLine(pfQuest_Loc["Respawn"] .. ":", (this.respawn or UNKNOWN), 0.8, 0.8, 0.8, 1, 1, 1)
+
+  local extras = collectextras(this.node, this.spawn)
+  if extras then
+    tooltip:AddLine(pfQuest_Loc["Also here"] .. ":", 0.3, 1, 0.8)
+    for i = 1, table.getn(extras) do
+      local meta = extras[i]
+      tooltip:AddDoubleLine(
+        meta.spawn .. (pfQuest_config.showids == "1" and meta.spawnid and " |cffcccccc(" .. meta.spawnid .. ")|r" or ""),
+        (meta.level or ""),
+        1,
+        1,
+        1,
+        0.8,
+        0.8,
+        0.8
+      )
+    end
+  end
 
   for title, meta in pairs(this.node) do
     pfMap:ShowTooltip(meta, tooltip)
@@ -1050,6 +1294,25 @@ function pfMap:BuildNode(name, parent)
 end
 
 pfMap.highlightdb = {}
+-- Reforged: a minimap pin is a CHILD of the minimap, and a child whose frame
+-- level is below its parent's renders BEHIND the parent's own textures. Upstream
+-- levels minimap pins at a fixed 4 + layer, which works only while the minimap
+-- itself sits near level 0, as Blizzard's does. ElvUI puts it at 10, so every
+-- pin below layer 7 was drawn behind ElvUI's minimap art: created, positioned
+-- and :IsShown() true, but invisible (issue #15, confirmed by a report showing
+-- pins=14 shown=14 with the minimap at level 10).
+--
+-- Level relative to whatever the minimap is actually at, so it does not matter
+-- which addon owns it. The minimap loop keeps pfMap.mlevel in step; fall back to
+-- asking the frame directly the first time through.
+local function minimapNodeLevel(layer)
+  local base = pfMap.mlevel
+    or (pfMap.drawlayer and pfMap.drawlayer.GetFrameLevel and pfMap.drawlayer:GetFrameLevel())
+    or 0
+  return base + 5 + (layer or 0)
+end
+pfMap.MinimapNodeLevel = minimapNodeLevel
+
 function pfMap:UpdateNode(frame, node, color, obj, distance)
   -- clear node to title association table
   if pfMap.highlightdb[frame] then
@@ -1088,6 +1351,7 @@ function pfMap:UpdateNode(frame, node, color, obj, distance)
       frame.spawntype = tab.spawntype
       frame.respawn = tab.respawn
       frame.level = tab.level
+      frame.faction = tab.faction
       frame.questid = tab.questid
       frame.texture = tab.texture
       frame.vertex = tab.vertex
@@ -1159,7 +1423,11 @@ function pfMap:UpdateNode(frame, node, color, obj, distance)
   end
 
   if frame.updateLayer then
-    frame:SetFrameLevel((obj == "minimap" and 4 or 112) + frame.layer)
+    if obj == "minimap" then
+      frame:SetFrameLevel(minimapNodeLevel(frame.layer))
+    else
+      frame:SetFrameLevel(112 + frame.layer)
+    end
   end
 
   if frame.updateTexture or frame.updateVertex or frame.updateColor or frame.updateLayer or frame.updateIcon then
@@ -1254,6 +1522,8 @@ function pfMap:UpdateNodes()
   -- is resized between calls the new values will invalidate cached px/py.
   local mapW = WorldMapButton:GetWidth()
   local mapH = WorldMapButton:GetHeight()
+  -- nil on every ordinary map, so this costs one table lookup per call there
+  local submap = pfMap:GetSubmap()
   for addon, _ in pairs(pfMap.nodes) do
     if pfMap.nodes[addon][map] then
       for coords, node in pairs(pfMap.nodes[addon][map]) do
@@ -1282,13 +1552,24 @@ function pfMap:UpdateNodes()
           coord_cache[coords] = { x, y }
         end
 
+        -- Reforged: on a sub-map, lift the parent zone's percentages into this
+        -- map's own before anything reads them (issue #20). Done here rather
+        -- than at the SetPoint below so the route planner gets the converted
+        -- values too. Only the LOCALS are rewritten; coord_cache stays in
+        -- parent space, which is what every other map expects.
+        local onmap = true
+        if submap then
+          x, y, onmap = pfMap:ToSubmap(submap, x, y)
+        end
+
         -- write points to the route plan
         if
+          onmap and (
           (pfQuest_config["routecluster"] == "1" and pfMap.pins[i].layer >= 9)
           or (pfQuest_config["routeender"] == "1" and pfMap.pins[i].layer == 4)
           or (pfQuest_config["routestarter"] == "1" and pfMap.pins[i].layer == 1 and pfMap.pins[i].texture)
           or (pfQuest_config["routestarter"] == "1" and pfMap.pins[i].layer == 2)
-          or pfMap.pins[i].arrow == true
+          or pfMap.pins[i].arrow == true)
         then
           local watched = nil
           local questid = pfMap.pins[i].questid
@@ -1301,8 +1582,11 @@ function pfMap:UpdateNodes()
           pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid })
         end
 
+        -- a node belonging to the parent zone but lying outside this sub-map
+        if not onmap then
+          pfMap.pins[i]:Hide()
         -- hide cluster nodes if set
-        if pfQuest_config["showcluster"] == "0" and pfMap.pins[i].cluster then
+        elseif pfQuest_config["showcluster"] == "0" and pfMap.pins[i].cluster then
           pfMap.pins[i]:Hide()
         -- hide individual quest spawns
         elseif pfQuest_config["showspawn"] == "0" and addon == "PFQUEST" and not pfMap.pins[i].texture then
@@ -1349,8 +1633,12 @@ function pfMap:UpdateNodes()
     pfQuest.tracker.DoLayout()
   end
 
-  -- record which zone was rendered so WORLD_MAP_UPDATE can skip no-op opens
+  -- record which zone was rendered so WORLD_MAP_UPDATE can skip no-op opens.
+  -- The map FILE is recorded too, because a sub-map reports its parent's zone
+  -- id: without this, switching between Elwynn Forest and Northshire looks like
+  -- "same zone" and the redraw that converts the coordinates never runs.
   pfMap.lastUpdateZone = map
+  pfMap.lastUpdateMap = GetMapInfo()
   pfMap.dirtyMaps[map] = nil
   -- map has fully rendered; subsequent zone changes are deliberate user actions
   pfMap.mapJustOpened = nil
@@ -1405,9 +1693,28 @@ function pfMap:UpdateMinimap()
   -- Memoize by the raw zone-text string so the scan happens once per zone.
   local rz = GetRealZoneText()
   if rz ~= mm_zonename then
-    mm_zonename, mm_zoneid = rz, pfMap:GetMapIDByName(rz)
+    -- ParentZone because the zone TEXT is the subzone's own name while the
+    -- player is in a starter zone, and that id holds no coordinates
+    mm_zonename, mm_zoneid = rz, pfMap:ParentZone(pfMap:GetMapIDByName(rz))
   end
   local mapID = mm_zoneid
+
+  -- Reforged: while a sub-map is the one being viewed, GetPlayerMapPosition
+  -- answers in ITS percentages, but the nodes, the pfDB.minimap rectangle and
+  -- the yard scale below are all the parent zone's (issue #20). Lift the player
+  -- into the parent, which is the single value that is in the wrong space, and
+  -- everything downstream stays as it was.
+  --
+  -- mapID is corrected too, for the case where the patch also renames the zone
+  -- text: normally GetRealZoneText still says "Elwynn Forest" inside Northshire
+  -- and the lookup above already answers, but if it ever says "Northshire
+  -- Valley" that lookup returns nil and the minimap goes quiet, which is
+  -- exactly the failure this issue is about.
+  local msub = pfMap:GetSubmap()
+  if msub then
+    xPlayer, yPlayer = pfMap:FromSubmap(msub, xPlayer, yPlayer)
+    mapID = mapID or msub[1]
+  end
   -- an addon-driven zoom outside the known levels must not nil-index here: that
   -- would throw out of the loop and leave the minimap blank until a reload
   local zoomrow = minimap_zoom[minimap_indoor()] or minimap_zoom[1]
@@ -1440,7 +1747,7 @@ function pfMap:UpdateMinimap()
   if pfMap.mlevel ~= mlevel then
     pfMap.mlevel = mlevel
     for _, pin in pairs(pfMap.mpins) do
-      pin:SetFrameLevel(mlevel + 5)
+      pin:SetFrameLevel(minimapNodeLevel(pin.layer))
     end
   end
 
@@ -1487,7 +1794,7 @@ function pfMap:UpdateMinimap()
         if display then
           if not pfMap.mpins[i] then
             pfMap.mpins[i] = pfMap:BuildNode(nodename .. i, pfMap.drawlayer)
-            pfMap.mpins[i]:SetFrameLevel(mlevel + 5)
+            pfMap.mpins[i]:SetFrameLevel(minimapNodeLevel(pfMap.mpins[i].layer))
           end
 
           -- skip expensive UpdateNode work (highlightdb rebuild, node iteration,
@@ -1544,12 +1851,12 @@ pfMap:SetScript("OnEvent", function()
       SetMapToCurrentZone()
       -- Cache the player's physical zone while the map is synced to it.
       -- GetMapID is safe here because SetMapToCurrentZone() was just called.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
+      pfMap.playerZone = pfMap:ParentZone(pfMap:GetMapIDByName(GetRealZoneText()))
         or pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
     else
       -- Map is open; only trust GetRealZoneText() which reads physical zone.
       -- GetMapID would return the user-browsed zone, not the player's.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
+      pfMap.playerZone = pfMap:ParentZone(pfMap:GetMapIDByName(GetRealZoneText()))
     end
 
     -- Mode 5: refresh tracker from player's physical zone,
@@ -1580,14 +1887,17 @@ pfMap:SetScript("OnEvent", function()
         pfQuest.route.drawlayer:Hide()
       end
       pfMap.lastUpdateZone = nil
+      pfMap.lastUpdateMap = nil
     elseif pfMap.mapJustOpened then
       -- map just opened on a zone: ensure route layer is visible and debounce
       if pfQuest and pfQuest.route and pfQuest.route.drawlayer then
         pfQuest.route.drawlayer:Show()
       end
       pfMap.queue_update = GetTime()
-    elseif newzone ~= pfMap.lastUpdateZone then
-      -- deliberate zone change: update immediately, no debounce
+    elseif newzone ~= pfMap.lastUpdateZone or GetMapInfo() ~= pfMap.lastUpdateMap then
+      -- deliberate zone change: update immediately, no debounce. The map file is
+      -- compared as well as the zone id, so moving between a sub-map and its
+      -- parent counts as a change even though both answer with the same id.
       if pfQuest and pfQuest.route and pfQuest.route.drawlayer then
         pfQuest.route.drawlayer:Show()
       end

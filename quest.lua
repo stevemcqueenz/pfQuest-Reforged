@@ -845,9 +845,58 @@ function pfQuest:AddWorldMapIntegration()
   -- ResetFrameLevels) sits at a very low frame level, leaving its children
   -- below WorldMapButton's 90.
   pfQuest.mapButton:SetFrameLevel((WORLDMAP_POI_FRAMELEVEL or 100) + 2)
+
+  -- Reforged: step out of the way of anything else living in this corner
+  -- (issue #20). Two things do, both from WDM:
+  --
+  --  * WDM_WorldMapButton, a minimap-style tracking button anchored to
+  --    WorldMapButton TOPRIGHT (-4,-4) at strata TOOLTIP. Same corner as this
+  --    dropdown, and TOOLTIP outranks us, so it draws straight over our right
+  --    end -- which is exactly where our own arrow sits.
+  --  * Blizzard's floor dropdown, which WDM shows on far more maps than the
+  --    stock client (it is normally limited to a handful of micro-dungeons).
+  --    UIDropDownMenuTemplate hangs 64px of artwork off a 32px frame, 17 above
+  --    and 15 below, so its textures and ours overlap by 20px even though the
+  --    visible boxes look 4px apart.
+  --
+  -- Detected by frame name and IsShown, never by addon presence: both are
+  -- ordinary frames, so with WDM absent or its modules switched off this
+  -- leaves the dropdown exactly where it has always been.
+  local BASE_X, BASE_Y = 0, -10
+  local function reposition()
+    local x, y = BASE_X, BASE_Y
+    local corner = _G["WDM_WorldMapButton"]
+    if corner and corner:IsShown() then
+      x = x - 40 -- its 32px width at -4, plus a 4px gap
+    end
+    if WorldMapLevelDropDown and WorldMapLevelDropDown:IsShown() then
+      y = y - 26 -- the 20px of texture overlap, plus a 6px margin
+    end
+    if pfQuest.mapButton.offsetX ~= x or pfQuest.mapButton.offsetY ~= y then
+      pfQuest.mapButton.offsetX, pfQuest.mapButton.offsetY = x, y
+      pfQuest.mapButton:ClearAllPoints()
+      pfQuest.mapButton:SetPoint("TOPRIGHT", mapAnchor, "TOPRIGHT", x, y)
+    end
+  end
+  pfQuest.RepositionMapDropdown = reposition
+
+  -- Hooked to the floor dropdown's own visibility rather than to
+  -- WorldMapFrame_Update: WorldMapFrame_UpdateMap calls
+  -- WorldMapLevelDropDown_Update AFTER WorldMapFrame_Update, so a hook on the
+  -- latter reads the previous map's state, and hooking
+  -- WorldMapLevelDropDown_Update itself would race WDM's hook on the same
+  -- function. OnShow/OnHide fire whoever changed it.
+  if WorldMapLevelDropDown and WorldMapLevelDropDown.HookScript then
+    WorldMapLevelDropDown:HookScript("OnShow", reposition)
+    WorldMapLevelDropDown:HookScript("OnHide", reposition)
+  end
+
   pfQuest.mapButton:SetScript("OnShow", function()
     pfQuest.mapButton.current = tonumber(pfQuest_config["trackingmethod"])
     pfQuest.mapButton:UpdateMenu()
+    -- WDM_WorldMapButton is built in its addon's OnEnable, which may well run
+    -- after ours; the map being open is always later than both.
+    reposition()
   end)
 
   pfQuest.mapButton.point = "TOPLEFT"

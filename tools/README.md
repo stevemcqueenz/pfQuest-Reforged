@@ -1,5 +1,38 @@
 # Data provenance (not shipped in releases)
 
+`gen_tracking335.py` generates `db/tracking335.lua`, the Outland and Northrend
+entries for pfQuest's map tracking lists. pfQuest's `pfDB["meta"]` lists are
+vanilla plus TBC: Northrend had ZERO entries in every one of them, so "Herbs &
+Flowers", "Mines & Ores", "Chests & Treasures", "Fishing" and "Rare Mobs" all
+found nothing there (issue #18); Outland was mostly covered apart from the ores
+and several herbs, whose object entries shipped with an empty coords table.
+
+It reads AzerothCore's `gameobject` / `gameobject_template` / `creature` /
+`creature_template` base dumps (fetch instructions in the file's docstring) plus
+GatherMate 1's `Constants.lua` for the curated gathering roster and the skill
+each node requires, and converts world positions to map percentages with
+per-zone linear models fitted against pfQuest's own merged database, the same
+method as `db/units-wotlk-acfill335.lua`.
+
+Two zones, Wintergrasp and Crystalsong Forest, have no pfQuest spawns to fit
+against. Their models come from the WorldMapArea rectangle shipped by
+Questie-335's `QuestieCompat.UiMapData`, which was validated before being
+trusted: it reproduces the fitted models to a median 0.011% across 66 zones and
+pfQuest's own coordinates to 0.041%, and for Wintergrasp it reproduces
+GatherMate's independent extraction of the same nodes to 0.006%. That source is
+retail-era and is wrong for the Burning Crusade starting zones by hundreds of
+percent, so it is used only where there is nothing to fit, and only after
+checking it. See `UIMAP_RECTS` in the tool.
+
+Two properties make it safe to re-run: it emits only for maps 530 and 571, and
+it emits a coordinate only where pfQuest has none for that entity in that zone.
+Both are asserted by `trackingcheck335.lua`.
+
+```sh
+python3 tools/gen_tracking335.py --ac-dir ~/refs/ac-world \
+    --gathermate ~/gathermate-and-database-3.3.5a/GatherMate
+```
+
 `convert.lua` is the Questie→pfDB converter that generated the WotLK data
 overlay in `db/*-wotlk.lua` (quests, NPCs, objects, items, zone names). It
 reads [Questie](https://github.com/Questie/Questie)'s `Database/Wotlk/*.lua`
@@ -20,7 +53,7 @@ lua5.1 convert.lua
 # Verification gates
 
 `./tools/check.sh` runs everything. The release workflow already runs the parse
-gate; the other two are new and exist because a green parse is not evidence the
+gate; the others are new and exist because a green parse is not evidence the
 addon works.
 
 ## apicheck335.py -- 3.3.5a API surface
@@ -99,3 +132,35 @@ harness fakes); it is covered in `runtimecheck335.lua` with a known track width.
 
 None of this replaces in-game QA. It catches the class of bug where the addon is
 plainly broken on load, which is the class that shipped twice.
+
+## trackingcheck335.lua -- the tracking data and the merge that consumes it
+
+`db/tracking335.lua` is ~10k generated coordinates that nothing in the addon
+validates at runtime, so a regeneration that widened the scope, lost the
+fill-only policy or got one of pfQuest's value TYPES wrong would look exactly
+like a good one. The type matters more than it sounds: `SearchMetaRelation` runs
+`string.find(value, faction)` on the non-skill tracks, so a number in
+`meta.fish` throws, while a string in `meta.herbs` silently breaks the skill
+slider comparison.
+
+This asserts the data invariants (tuple shape, 0..100, Outland/Northrend zones
+only, no coordinate where pfQuest already covers that entity in that zone, each
+track's id sign and value type, unit level and rank as the strings pfQuest
+stores, `meta.rares` taking the low end of a level range) and that the entities
+the release exists to add are actually present. It then lifts the real merge
+block out of `database.lua` and drives it against a synthetic `pfDB`, so editing
+that block is what the check notices -- the same technique as the
+`IsInvalidPOIName` block in `runtimecheck335.lua`.
+
+It also asserts that the two zones placed from a map rectangle have a 3:2
+`pfDB.minimap` entry, since without one the minimap loop silently skips the zone
+and the nodes appear on the world map only.
+
+Verified by breaking it thirteen ways: a zone outside the emitted maps, a
+percentage out of range, a coordinate colliding with shipped data, a fishing
+pool's faction string turned into a number, a rare's meta key given the object
+sign, a unit level emitted as a number, `meta.rares` taking the high end of a
+range, the merge dropping the level/rank assignment, the merge overwriting a
+shipped name, Hrothgar's Landing leaking into the data, a node type dropped, the
+Wintergrasp minimap entry removed, and a minimap rectangle given a non-3:2
+ratio. Each is reported and exits non-zero.

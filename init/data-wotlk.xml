@@ -21,4 +21,8 @@
        mirror + ambient markers), pins.lua (extras) and waypoint.lua
        (/way flight|mail|inn|repair) -- see docs/POI-DESIGN.md. -->
   <Include file="..\db\poi-wotlk335.lua" />
+  <!-- Outland/Northrend tracking data: herbs, ores, chests, fishing pools and
+       rare mobs. Merged ADDITIVELY by database.lua (see the tracking335 block
+       there), not by patchtable. -->
+  <Include file="..\db\tracking335.lua" />
 </Ui>
