@@ -349,5 +349,116 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Faction on the map tooltip (issue #31). Several rares belong to one faction
+-- and cannot be fought by the other. Two halves have to hold: the search
+-- functions have to put units[id].fac on the node, and the tooltip has to show
+-- it only when it names one side.
+--
+-- The sharp part is not the display, it is the ASSIGNMENT. SearchMetaRelation
+-- and the quest walk reuse ONE meta table for every entity they visit, so a
+-- faction written for one unit and not cleared for the next would label an
+-- unrelated node -- and with 9979 units carrying a fac, that would be most of
+-- them.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("database.lua"):read("*a")
+  local mob = string.match(src, "\n(function pfDatabase:SearchMobID.-\nend)\n")
+  local obj = string.match(src, "\n(function pfDatabase:SearchObjectID.-\nend)\n")
+  if not mob or not obj then
+    fail("faction: could not lift SearchMobID/SearchObjectID out of database.lua")
+  else
+    local nodes = {}
+    local env = {
+      pfDatabase = { BuildQuestDescription = function() return "" end,
+                     SearchObjectSkill = function() return nil, nil end },
+      -- called as pfMap:AddNode(meta), so the meta table is the SECOND argument
+      pfMap = { AddNode = function(_, m)
+        -- AddNode copies the meta table key by key; mirror that, or every node
+        -- would alias the one table and the leak this checks for would vanish
+        local copy = {}
+        for k, v in pairs(m) do copy[k] = v end
+        table.insert(nodes, copy)
+      end },
+      pfQuest_Loc = setmetatable({}, { __index = function(_, k) return k end }),
+      pfDB = { units = { loc = { [1] = "Faction Rare", [2] = "Plain Rare" } },
+               objects = { loc = { [3] = "A Chest" } } },
+      UNKNOWN = "Unknown",
+      SecondsToTime = function(s) return tostring(s) end,
+      units = {
+        [1] = { fac = "A", lvl = "60", coords = { { 10, 10, 139, 300 } } },
+        [2] = { lvl = "60", coords = { { 20, 20, 139, 300 } } },
+      },
+      objects = { [3] = { coords = { { 30, 30, 139, 300 } } } },
+    }
+    local chunk = loadstring(mob .. "\n" .. obj)
+    setfenv(chunk, setmetatable(env, { __index = _G }))
+    chunk()
+
+    -- ONE shared meta table, walked the way SearchMetaRelation walks a track.
+    -- The faction-carrying unit goes FIRST and both a factionless object and a
+    -- factionless unit follow it, so either one inheriting it is caught.
+    local meta = {}
+    env.pfDatabase:SearchMobID(1, meta)
+    env.pfDatabase:SearchObjectID(3, meta)
+    env.pfDatabase:SearchMobID(2, meta)
+
+    if nodes[1] and nodes[1].faction == "A" then ok("faction: a unit's fac reaches the node")
+    else fail("faction: the node has faction=%s", tostring(nodes[1] and nodes[1].faction)) end
+    if nodes[2] and nodes[2].faction == nil then
+      ok("faction: an object does not inherit a unit's faction through the shared meta table")
+    else
+      fail("faction: the object leaked faction=%s from the unit before it",
+           tostring(nodes[2] and nodes[2].faction))
+    end
+    if nodes[3] and nodes[3].faction == nil then
+      ok("faction: a unit with no fac does not inherit the previous unit's")
+    else
+      fail("faction: unit 2 leaked faction=%s", tostring(nodes[3] and nodes[3].faction))
+    end
+  end
+
+  -- and the display half: the value has to reach the frame the tooltip reads
+  local msrc = io.open("map.lua"):read("*a")
+  if string.find(msrc, "frame%.faction = tab%.faction") then
+    ok("faction: the node frame carries it through to the tooltip")
+  else
+    fail("faction: map.lua never copies faction onto the node frame, so the tooltip cannot see it")
+  end
+
+  local lines
+  local tooltip = {
+    AddDoubleLine = function(_, l, r) table.insert(lines, tostring(l) .. " " .. tostring(r)) end,
+  }
+  -- lifted loosely on purpose: the point is to run whatever condition the
+  -- source carries against every fac value, not to pin one spelling of it
+  local block = string.match(msrc, "\n(  if this%.faction.-\n  end)\n")
+  if not block then
+    fail("faction: could not lift the tooltip block out of map.lua")
+  else
+    local chunk = loadstring("local this, tooltip = ...\n" .. block)
+    setfenv(chunk, setmetatable(
+      { pfQuest_Loc = setmetatable({}, { __index = function(_, k) return k end }) },
+      { __index = _G }))
+    local cases = {
+      { "A", "Faction: Alliance" }, { "H", "Faction: Horde" },
+      { "AH", nil }, { nil, nil },
+    }
+    local bad = 0
+    for _, case in ipairs(cases) do
+      lines = {}
+      chunk({ faction = case[1] }, tooltip)
+      if lines[1] ~= case[2] then
+        bad = bad + 1
+        fail("faction: fac=%s drew %s, expected %s",
+             tostring(case[1]), tostring(lines[1]), tostring(case[2]))
+      end
+    end
+    if bad == 0 then
+      ok("faction: Alliance and Horde are named, \"AH\" and no faction draw nothing")
+    end
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

@@ -1408,6 +1408,11 @@ function pfDatabase:SearchMobID(id, meta, maps, prio)
   meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
   meta["level"] = units[id]["lvl"] or UNKNOWN
   meta["spawntype"] = pfQuest_Loc["Unit"]
+  -- Reforged: who this unit belongs to, for the map tooltip (issue #31). Set
+  -- unconditionally, nil included: SearchMetaRelation and the quest walk reuse
+  -- ONE meta table across every entity they visit, so leaving the previous
+  -- unit's faction in place would label the next node with it.
+  meta["faction"] = units[id]["fac"]
   -- description only depends on the above invariant fields + QTYPE/quest/item
   -- compute once here; AddNode will skip its own BuildQuestDescription call
   meta["description"] = pfDatabase:BuildQuestDescription(meta)
@@ -1694,6 +1699,9 @@ function pfDatabase:SearchObjectID(id, meta, maps, prio)
   meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
   meta["level"] = skill and string.format("%s [%s]", skill, caption) or nil
   meta["spawntype"] = pfQuest_Loc["Object"]
+  -- same reason as SearchMobID above: always assign, so a unit visited earlier
+  -- through the same meta table cannot leak its faction onto this object
+  meta["faction"] = objects[id]["fac"]
   -- description only depends on invariant fields; compute once
   meta["description"] = pfDatabase:BuildQuestDescription(meta)
 
