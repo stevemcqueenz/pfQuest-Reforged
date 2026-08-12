@@ -518,6 +518,27 @@ do
     end
     if clash == 0 then ok("rebuild: no object is both filled and rebuilt in the same zone") end
 
+    -- Respawn must look like a spawn timer. The column next to spawntimesecs in
+    -- AzerothCore's gameobject table is animprogress, which is 255 on nearly
+    -- every row, and reading it by mistake put "Respawn: 4 Min 15 Sec" on every
+    -- node without anything noticing. Real timers are whole tens of seconds and
+    -- at least a minute; 255 is neither.
+    local sane, odd = 0, 0
+    for _, db in ipairs({ "rebuild", "objects" }) do
+      local src = (db == "rebuild") and rb["objects"] or g["objects"]["coords"]
+      for _, coords in pairs(src) do
+        for _, c in pairs(coords) do
+          local r = c[4]
+          if r >= 60 and math.mod(r, 10) == 0 then sane = sane + 1 else odd = odd + 1 end
+        end
+      end
+    end
+    if sane > (sane + odd) * 0.9 then
+      ok("rebuild: %d of %d respawn values look like real spawn timers", sane, sane + odd)
+    else
+      fail("rebuild: only %d of %d respawn values look like spawn timers -- wrong SQL column?", sane, sane + odd)
+    end
+
     -- the zones players actually reported as empty or thin must come back full
     local short = 0
     for _, want in ipairs(REBUILD_MUST_COVER) do
@@ -544,15 +565,21 @@ do
 end
 
 -- ---------------------------------------------------------------------------
--- The invariant the removal rests on: not one rebuilt object may be a quest
--- objective, start or end. If that ever stops holding, the rebuild silently
--- moves or deletes quest pins.
+-- The invariant the removal rests on. An earlier version of this check asked
+-- whether a rebuilt object was a quest objective through obj/start/end -> O,
+-- got zero hits, and concluded no quest pin could be affected. That was the
+-- wrong question: pfQuest pins a gathering node for a quest through the ITEM,
+-- obj.I -> items[item].O, obj.IR -> itemreq, and items[item].R -> refloot.
+-- Asked properly, 132 quests DO have object pins in the rebuilt zones. What has
+-- to hold is not that none are touched, but that none is left with nothing.
 -- ---------------------------------------------------------------------------
 do
   local rb = g["rebuild"]
   pfDB = {}
   dofile("db/init.lua")
-  for _, f in ipairs({ "quests", "quests-tbc", "quests-wotlk" }) do
+  for _, f in ipairs({ "quests", "quests-tbc", "quests-wotlk",
+                       "items", "items-tbc", "items-wotlk", "refloot",
+                       "objects", "objects-tbc", "objects-wotlk" }) do
     dofile("db/" .. f .. ".lua")
   end
   local function patch(base, diff)
@@ -560,28 +587,53 @@ do
       if v == "_" then base[k] = nil else base[k] = v end
     end
   end
-  patch(pfDB["quests"]["data"], pfDB["quests"]["data-tbc"])
-  patch(pfDB["quests"]["data"], pfDB["quests"]["data-wotlk"])
-  local used = {}
-  local seen = 0
+  for _, db in ipairs({ "quests", "items", "objects" }) do
+    patch(pfDB[db]["data"], pfDB[db]["data-tbc"])
+    patch(pfDB[db]["data"], pfDB[db]["data-wotlk"])
+  end
+
+  local function objectsForItem(item, out)
+    local it = pfDB["items"]["data"][item]
+    if not it then return end
+    for o in pairs(it["O"] or {}) do out[o] = true end
+    for ref in pairs(it["R"] or {}) do
+      local rl = pfDB["refloot"]["data"] and pfDB["refloot"]["data"][ref]
+      for o in pairs(rl and rl["O"] or {}) do out[o] = true end
+    end
+  end
+
+  local seen, touched, zeroed = 0, 0, 0
   for _, q in pairs(pfDB["quests"]["data"]) do
     seen = seen + 1
+    local objs = {}
     for _, key in ipairs({ "obj", "start", "end" }) do
       local t = q[key]
       if type(t) == "table" then
-        for _, o in pairs(t["O"] or {}) do used[o] = true end
+        for _, o in pairs(t["O"] or {}) do objs[o] = true end
+        for _, i in pairs(t["I"] or {}) do objectsForItem(i, objs) end
+        for _, i in pairs(t["IR"] or {}) do objectsForItem(math.abs(i), objs) end
       end
+    end
+    local before, after, hit = 0, 0, false
+    for o in pairs(objs) do
+      local e = pfDB["objects"]["data"][o]
+      for _, c in pairs(e and e["coords"] or {}) do
+        before = before + 1
+        if rb["objects"][o] and rb["zones"][c[3]] then hit = true else after = after + 1 end
+      end
+      for _, _c in pairs(rb["objects"][o] or {}) do after = after + 1 end
+    end
+    if hit then
+      touched = touched + 1
+      if before > 0 and after == 0 then zeroed = zeroed + 1 end
     end
   end
   if seen < 1000 then fail("rebuild: only %d quests loaded, the quest check is not meaningful", seen) end
-  local hits = 0
-  for id in pairs(rb and rb["objects"] or {}) do
-    if used[id] then
-      hits = hits + 1
-      if hits <= 5 then fail("rebuild: object %d is used by a quest and must not be rebuilt", id) end
-    end
+  if zeroed == 0 then
+    ok("rebuild: %d quests have object pins in the rebuilt zones and not one is left with zero", touched)
+  else
+    fail("rebuild: %d quests would be left with NO object pins at all", zeroed)
   end
-  if hits == 0 then ok("rebuild: none of the rebuilt objects is used by any quest (%d quests scanned)", seen) end
 end
 
 -- ---------------------------------------------------------------------------

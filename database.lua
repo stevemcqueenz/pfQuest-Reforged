@@ -337,21 +337,33 @@ if pfDB["tracking335"] then
   -- object in the wrong spot or an object that is not there at all. So for these
   -- objects, in these zones, the shipped coordinates are dropped and replaced.
   --
-  -- This is the one place that REMOVES data, so it is deliberately narrow. It
-  -- touches only the 168 objects on the gathering roster, only in the zones
-  -- listed by the generator, and it is safe against quest pins because none of
-  -- those 168 objects is a quest objective, start or end anywhere in pfQuest's
-  -- quest data. Coordinates in any other zone, on any other object, and every
-  -- unit, are left exactly as they are.
+  -- This is the one place that REMOVES data, so it is deliberately narrow: only
+  -- the 168 objects on the gathering roster, only in the zones the generator
+  -- lists. Coordinates in any other zone, on any other object, and every unit,
+  -- are left exactly as they are.
+  --
+  -- Quest pins DO depend on some of these objects, which an earlier version of
+  -- this comment got wrong. None of the 168 is a quest objective/start/end
+  -- directly, but a quest reaches them through its required ITEM: obj.I ->
+  -- items[item].O, obj.IR -> itemreq, and items[item].R -> refloot. Resolved
+  -- that way, 132 quests have object pins in the rebuilt zones and 115 end up
+  -- with fewer. The invariant that makes that acceptable, and which
+  -- trackingcheck335.lua enforces, is that NO quest is left with zero object
+  -- pins: the pins that go were positions this server never spawns, so what
+  -- remains is where the objective actually is.
   local rebuild = pfDB["tracking335"]["rebuild"]
   if rebuild then
     local objectdata = pfDB["objects"]["data"]
     for id, coords in pairs(rebuild["objects"]) do
       local entry = objectdata[id]
-      if not entry then
+      if not entry and next(coords) == nil then
+        -- nothing to add and nothing to prune: do not invent an empty entry
+        entry = nil
+      elseif not entry then
         entry = {}
         objectdata[id] = entry
       end
+      if entry then
       local keep, n = {}, 0
       for _, coord in pairs(entry["coords"] or {}) do
         if not rebuild["zones"][coord[3]] then
@@ -364,6 +376,7 @@ if pfDB["tracking335"] then
         keep[n] = coord
       end
       entry["coords"] = keep
+      end
     end
   end
 

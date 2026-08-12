@@ -461,12 +461,14 @@ def load_ac(ac_dir):
             continue
         ac.cspawn.setdefault(int(r[1]), []).append(
             (int(r[4]), int(r[5]), float(r[10]), float(r[11]), int(r[14])))
-    # gameobject: guid=1 id=2 map=3 zoneId=4 x=8 y=9 spawntimesecs=17
+    # gameobject, 0-based: guid=0 id=1 map=2 zoneId=3 x=7 y=8 spawntimesecs=15.
+    # NOT 16: that is animprogress, which is 255 on nearly every row, and reading
+    # it put "Respawn: 4 Min 15 Sec" on every node this tool has ever emitted.
     for r in sql_rows(p("gameobject"), "gameobject"):
         if int(r[2]) not in CONTINENTS or int(r[0]) in ev_go:
             continue
         ac.gspawn.setdefault(int(r[1]), []).append(
-            (int(r[2]), int(r[3]), float(r[7]), float(r[8]), int(r[16])))
+            (int(r[2]), int(r[3]), float(r[7]), float(r[8]), int(r[15])))
     return ac
 
 
@@ -900,13 +902,14 @@ HEADER = """\
 -- model at all is DROPPED, never handed to a neighbour, whose map rectangle
 -- overlaps well past the playable edge.
 --
--- SCOPE: Outland (map 530) and Northrend (map 571) only. Azeroth's tracking data
--- already works and is deliberately left untouched.
+-- TWO POLICIES. Outland and Northrend are FILLED: a coordinate is emitted only
+-- where pfQuest has none for that entity in that zone, so nothing is replaced.
+-- Azeroth is REBUILT: the ["rebuild"] section below carries every herb, ore and
+-- chest coordinate for those zones and database.lua drops the shipped ones
+-- first, because only 47%% of them sit on a node this server spawns.
 --
--- FILL ONLY: a coordinate is emitted for an entity in a zone only where
--- pfQuest's merged database has none for that entity in that zone, so existing
--- data is never replaced. game_event-linked spawns and instance maps are
--- excluded; near-identical spawns (< %(dedup).1f%% apart) are collapsed.
+-- game_event-linked spawns and instance maps are excluded from both; near
+-- identical spawns (< %(dedup).1f%% apart) are collapsed.
 --
 -- Shape (units and objects are separate databases in pfQuest):
 --   pfDB["tracking335"]["objects"]["coords"][id] = { { xPct, yPct, zone, respawn }, ... }
@@ -920,8 +923,11 @@ HEADER = """\
 -- values match pfQuest's own types exactly -- a NUMBER for the skill and level
 -- tracks, the "AH" STRING for fishing pools, which pfQuest matches with
 -- string.find and would throw on a number.
--- database.lua merges this additively after the expansion overlays; see the
--- tracking335 block there.
+-- The rebuild section is:
+--   pfDB["tracking335"]["rebuild"]["zones"][zone]    = true
+--   pfDB["tracking335"]["rebuild"]["objects"][id]    = { { xPct, yPct, zone, respawn }, ... }
+-- database.lua applies the rebuild first, then merges the rest additively, after
+-- the expansion overlays; see the tracking335 block there.
 --
 %(stats)s
 """
