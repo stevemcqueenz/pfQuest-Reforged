@@ -80,9 +80,19 @@ local MUST_COVER = {
   { "units", 32485, "King Krush", 2 }, { "units", 32386, "Vigdis the War Maiden", 3 },
   -- Wintergrasp, reachable only through the WorldMapArea rectangle
   { "objects", 190176, "Frost Lotus", 80 },
-  -- Eastern Plaguelands mining (issue #18): pfQuest had none of it
-  { "objects", 2047, "Truesilver Deposit", 60 },
-  { "objects", 324, "Rich Thorium Vein", 20 },
+}
+
+-- Zone-level coverage the REBUILD owes, for the two zones players reported as
+-- empty or thin. These come through the rebuild rather than the additive path,
+-- so they are counted separately.
+-- An id of nil means "the whole zone", which is the honest assertion where the
+-- complaint was that a zone was empty rather than that one ore was missing.
+local REBUILD_MUST_COVER = {
+  { 139, 2047, "Truesilver Deposit", "Eastern Plaguelands", 60 },
+  { 139, 324, "Rich Thorium Vein", "Eastern Plaguelands", 20 },
+  { 4, 2047, "Truesilver Deposit", "Blasted Lands", 25 },
+  { 4, nil, "every gathering node", "Blasted Lands", 150 },
+  { 17, nil, "every gathering node", "The Barrens", 500 },
 }
 
 -- ---------------------------------------------------------------------------
@@ -340,8 +350,15 @@ do
     pfDB = {
       locales = { enUS = "English" },
       objects = {
-        -- an object the base database already knows, with a coordinate
-        data = { [181555] = { coords = { { 10, 20, 3483, 300 } }, quest = true } },
+        data = {
+          -- an object the base database already knows, with a coordinate
+          [181555] = { coords = { { 10, 20, 3483, 300 } }, quest = true },
+          -- a rebuilt object with one coordinate in a rebuilt zone and one
+          -- outside it: the first must go, the second must survive
+          [1731] = { coords = { { 10, 10, 12, 300 }, { 90, 90, 3483, 300 } } },
+          -- and one that is NOT rebuilt, sitting in a rebuilt zone: untouched
+          [9999] = { coords = { { 55, 55, 12, 300 } } },
+        },
         enUS = { [181555] = "Fel Iron Deposit" },
       },
       units = {
@@ -371,6 +388,10 @@ do
           mines = { [-189978] = 350 },
           fish = { [-192046] = "AH" },
           rares = { [32491] = 80 },
+        },
+        rebuild = {
+          zones = { [12] = true },
+          objects = { [1731] = { { 40, 41, 12, 300 } } },
         },
       },
     }
@@ -415,10 +436,152 @@ do
       if pfDB.meta.mines[-181555] == 300 then ok("merge: leaves an existing skill requirement alone")
       else fail("merge: overwrote a shipped skill requirement") end
 
+      local rebuilt = pfDB.objects.data[1731].coords
+      local inzone, outzone, fresh = 0, 0, 0
+      for _, c in pairs(rebuilt) do
+        if c[3] == 12 and c[1] == 10 then inzone = inzone + 1 end
+        if c[3] == 3483 then outzone = outzone + 1 end
+        if c[3] == 12 and c[1] == 40 then fresh = fresh + 1 end
+      end
+      if inzone == 0 then ok("rebuild merge: the shipped coordinate in a rebuilt zone is dropped")
+      else fail("rebuild merge: a shipped coordinate survived in a rebuilt zone") end
+      if outzone == 1 then ok("rebuild merge: the same object's coordinate outside the rebuilt zones survives")
+      else fail("rebuild merge: an out-of-scope coordinate was dropped, count %d", outzone) end
+      if fresh == 1 then ok("rebuild merge: the server coordinate replaces it")
+      else fail("rebuild merge: the replacement coordinate is missing") end
+      if pfDB.objects.data[9999] and table.getn(pfDB.objects.data[9999].coords) == 1 then
+        ok("rebuild merge: an object that is not rebuilt keeps its coordinates in the same zone")
+      else
+        fail("rebuild merge: a non-rebuilt object in a rebuilt zone lost its coordinates")
+      end
+
       if pfDB.tracking335 == nil then ok("merge: frees the overlay when it is done")
       else fail("merge: left pfDB.tracking335 in memory") end
     end
   end
+end
+
+-- ---------------------------------------------------------------------------
+-- The Azeroth gathering REBUILD (issue #28). This is the only part of the
+-- addon that REMOVES shipped data, so it gets the most assertions: the right
+-- objects, the right zones, nothing overlapping the additive path, and above
+-- all the invariant the removal rests on, that none of these objects is used by
+-- a quest.
+-- ---------------------------------------------------------------------------
+do
+  local rb = g["rebuild"]
+  if type(rb) ~= "table" or type(rb["zones"]) ~= "table" or type(rb["objects"]) ~= "table" then
+    fail("rebuild: db/tracking335.lua has no rebuild section")
+  else
+    -- zones must be Azeroth only: never a zone the additive path emits into
+    local bad, nz = 0, 0
+    for z in pairs(rb["zones"]) do
+      nz = nz + 1
+      if ALLOWED_ZONES[z] and z ~= 139 then
+        bad = bad + 1
+        fail("rebuild: zone %d (%s) is an Outland/Northrend zone and must not be rebuilt", z, ALLOWED_ZONES[z])
+      end
+    end
+    if bad == 0 then ok("rebuild: all %d rebuilt zones are Azeroth", nz) end
+
+    -- coordinates: shape, range, and a zone that is actually being rebuilt
+    local n, badshape, badpct, badzone = 0, 0, 0, 0
+    for id, coords in pairs(rb["objects"]) do
+      for _, c in pairs(coords) do
+        n = n + 1
+        if type(c[1]) ~= "number" or type(c[2]) ~= "number"
+          or type(c[3]) ~= "number" or type(c[4]) ~= "number" or c[5] ~= nil then
+          badshape = badshape + 1
+        elseif c[1] < 0 or c[1] > 100 or c[2] < 0 or c[2] > 100 or c[4] < 0 then
+          badpct = badpct + 1
+        elseif not rb["zones"][c[3]] then
+          badzone = badzone + 1
+          if badzone <= 3 then fail("rebuild: object %d has a coord in zone %d, which is not being rebuilt", id, c[3]) end
+        end
+      end
+    end
+    if badshape == 0 and badpct == 0 then ok("rebuild: all %d coordinates are in-range { xPct, yPct, zone, respawn }", n)
+    else fail("rebuild: %d malformed and %d out-of-range coordinates", badshape, badpct) end
+    if badzone == 0 then ok("rebuild: every coordinate lands in a zone the rebuild owns") end
+
+    -- nothing may be in BOTH the additive path and the rebuild, or a node gets two pins
+    local clash = 0
+    for id, coords in pairs(g["objects"]["coords"]) do
+      if rb["objects"][id] then
+        for _, c in pairs(coords) do
+          if rb["zones"][c[3]] then
+            clash = clash + 1
+            if clash <= 3 then fail("rebuild: object %d is filled AND rebuilt in zone %d -- two pins per node", id, c[3]) end
+          end
+        end
+      end
+    end
+    if clash == 0 then ok("rebuild: no object is both filled and rebuilt in the same zone") end
+
+    -- the zones players actually reported as empty or thin must come back full
+    local short = 0
+    for _, want in ipairs(REBUILD_MUST_COVER) do
+      local zone, id, name, zonename, least = want[1], want[2], want[3], want[4], want[5]
+      local cnt = 0
+      if id then
+        for _, c in pairs(rb["objects"][id] or {}) do
+          if c[3] == zone then cnt = cnt + 1 end
+        end
+      else
+        for _, coords in pairs(rb["objects"]) do
+          for _, c in pairs(coords) do
+            if c[3] == zone then cnt = cnt + 1 end
+          end
+        end
+      end
+      if cnt < least then
+        short = short + 1
+        fail("rebuild: %s in %s has %d nodes, expected at least %d", name, zonename, cnt, least)
+      end
+    end
+    if short == 0 then ok("rebuild: the zones reported as empty or thin are covered") end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- The invariant the removal rests on: not one rebuilt object may be a quest
+-- objective, start or end. If that ever stops holding, the rebuild silently
+-- moves or deletes quest pins.
+-- ---------------------------------------------------------------------------
+do
+  local rb = g["rebuild"]
+  pfDB = {}
+  dofile("db/init.lua")
+  for _, f in ipairs({ "quests", "quests-tbc", "quests-wotlk" }) do
+    dofile("db/" .. f .. ".lua")
+  end
+  local function patch(base, diff)
+    for k, v in pairs(diff or {}) do
+      if v == "_" then base[k] = nil else base[k] = v end
+    end
+  end
+  patch(pfDB["quests"]["data"], pfDB["quests"]["data-tbc"])
+  patch(pfDB["quests"]["data"], pfDB["quests"]["data-wotlk"])
+  local used = {}
+  local seen = 0
+  for _, q in pairs(pfDB["quests"]["data"]) do
+    seen = seen + 1
+    for _, key in ipairs({ "obj", "start", "end" }) do
+      local t = q[key]
+      if type(t) == "table" then
+        for _, o in pairs(t["O"] or {}) do used[o] = true end
+      end
+    end
+  end
+  if seen < 1000 then fail("rebuild: only %d quests loaded, the quest check is not meaningful", seen) end
+  local hits = 0
+  for id in pairs(rb and rb["objects"] or {}) do
+    if used[id] then
+      hits = hits + 1
+      if hits <= 5 then fail("rebuild: object %d is used by a quest and must not be rebuilt", id) end
+    end
+  end
+  if hits == 0 then ok("rebuild: none of the rebuilt objects is used by any quest (%d quests scanned)", seen) end
 end
 
 -- ---------------------------------------------------------------------------

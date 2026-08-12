@@ -330,6 +330,43 @@ correctEPLDatabase(pfDB)
 -- appending can never duplicate an existing node. Runs before
 -- pfDatabase.Reload/PackCoords, which compact these very tables.
 if pfDB["tracking335"] then
+  -- Reforged: Azeroth's gathering coordinates are REBUILT from the server's own
+  -- spawn table rather than appended to (issue #28). pfQuest's vanilla herb, ore
+  -- and chest coordinates come from a different world revision: only 47% of them
+  -- sit on a node this server actually spawns, and the rest are either the right
+  -- object in the wrong spot or an object that is not there at all. So for these
+  -- objects, in these zones, the shipped coordinates are dropped and replaced.
+  --
+  -- This is the one place that REMOVES data, so it is deliberately narrow. It
+  -- touches only the 168 objects on the gathering roster, only in the zones
+  -- listed by the generator, and it is safe against quest pins because none of
+  -- those 168 objects is a quest objective, start or end anywhere in pfQuest's
+  -- quest data. Coordinates in any other zone, on any other object, and every
+  -- unit, are left exactly as they are.
+  local rebuild = pfDB["tracking335"]["rebuild"]
+  if rebuild then
+    local objectdata = pfDB["objects"]["data"]
+    for id, coords in pairs(rebuild["objects"]) do
+      local entry = objectdata[id]
+      if not entry then
+        entry = {}
+        objectdata[id] = entry
+      end
+      local keep, n = {}, 0
+      for _, coord in pairs(entry["coords"] or {}) do
+        if not rebuild["zones"][coord[3]] then
+          n = n + 1
+          keep[n] = coord
+        end
+      end
+      for _, coord in pairs(coords) do
+        n = n + 1
+        keep[n] = coord
+      end
+      entry["coords"] = keep
+    end
+  end
+
   for _, db in pairs({ "objects", "units" }) do
     local overlay = pfDB["tracking335"][db]
     local data = pfDB[db]["data"]
