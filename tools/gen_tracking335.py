@@ -79,15 +79,28 @@ neighbour: neighbouring map rectangles overlap well past the playable edge, so
 such a node would otherwise land in the wrong zone entirely. Those zones' world
 extents are derived from the AC rows that do carry a zoneId.
 
-Emission policy -- fill only, never overwrite
----------------------------------------------
-A coordinate is emitted for an entity in a zone ONLY when pfQuest's merged
-database has no coordinate for that entity in that zone at all, so the merge in
-database.lua can append without ever duplicating an existing node and vanilla
-data is untouched by construction. Measured on the Outland overlap: 97.7% of
-the AC spawns this rule skips sit within 0.3% of the pfQuest coordinate they
-would have duplicated, which is both why the rule is right and an independent
-check on the transform.
+Two emission policies
+---------------------
+FILL, for Outland and Northrend: a coordinate is emitted for an entity in a
+zone ONLY when pfQuest's merged database has none for that entity in that zone,
+so the merge can append without ever duplicating a node. Measured on the Outland
+overlap, 97.7% of the spawns this rule skips sit within 0.3% of the pfQuest
+coordinate they would have duplicated, which is both why the rule is right and
+an independent check on the transform.
+
+REBUILD, for Azeroth (issue #28): every herb, ore and chest coordinate in the
+rebuilt zones is REPLACED by the server's. pfQuest's vanilla gathering data
+comes from a different world revision and only 47% of its pins sit on a node
+this server spawns; 12400 are the right object in the right zone but the wrong
+spot and 1989 are for an object that is not there at all. The pin count drops
+about 38%, from 27353 to 16954, and what remains is the server's actual nodes.
+
+The rebuild is the only thing here that REMOVES data, so it is narrow by
+construction: only the gathering roster, only the listed zones, and it rests on
+the checked invariant that none of those objects is a quest objective, start or
+end anywhere in pfQuest's quest data. Fishing pools and rares are deliberately
+NOT rebuilt: pfQuest has 1427 vanilla pool pins against 258 in the dump, and
+until that gap is explained it is not safe to call one of them wrong.
 
 Validation (printed on every run)
 ---------------------------------
@@ -116,12 +129,23 @@ CONTINENTS = {0, 1, 530, 571}
 # the reported gap, and leaving Azeroth alone means a bugfix release cannot
 # disturb the vanilla tracking data that already works.
 EMIT_MAPS = {530, 571}
-# Zones outside those maps that we DO fill. Eastern Plaguelands is the one
-# Azeroth zone with no mining data at all (169 server spawns, zero pfQuest
-# coordinates, while its herbs and chests are covered), reported in #18. Its map
-# rectangle was rescaled in Wrath, so it is also the zone database.lua corrects;
-# both use the same 3.3.5a rectangle, from UIMAP_RECTS below.
-EMIT_ZONES_EXTRA = {139}
+# Eastern Plaguelands used to be filled here as a special case (#18: the one
+# Azeroth zone with no mining data at all). It no longer is: the vanilla rebuild
+# below covers every Azeroth zone, EPL included, and filling it twice would put
+# two pins on every node.
+EMIT_ZONES_EXTRA = set()
+# Maps whose gathering data is REBUILT rather than filled: every herb, ore and
+# chest coordinate in these zones is replaced by the server's own spawn table
+# (issue #28). pfQuest's vanilla gathering coordinates come from a different
+# world revision, and only 47% of them sit on a node this server actually
+# spawns: 12964 of 27353 pins match, 12400 are the right object in the right
+# zone but the wrong spot, and 1989 are for an object the server never spawns
+# there. Rebuilding drops the pin count about 40% and every remaining pin is a
+# real node. Deliberately limited to herbs/mines/chests: fishing pools and rares
+# are left alone, since pfQuest has 1427 vanilla pool pins against 258 in the
+# dump and that gap is unexplained.
+REBUILD_MAPS = {0, 1}
+REBUILD_TRACKS = ("herbs", "mines", "chests")
 MIN_PAIRS = 5
 MAX_MEDIAN_RESID = 1.5   # percent; same rejection bar as the acfill pipeline
 DEDUP_DIST = 0.3         # percent; collapse near-identical spawns
@@ -437,12 +461,14 @@ def load_ac(ac_dir):
             continue
         ac.cspawn.setdefault(int(r[1]), []).append(
             (int(r[4]), int(r[5]), float(r[10]), float(r[11]), int(r[14])))
-    # gameobject: guid=1 id=2 map=3 zoneId=4 x=8 y=9 spawntimesecs=17
+    # gameobject, 0-based: guid=0 id=1 map=2 zoneId=3 x=7 y=8 spawntimesecs=15.
+    # NOT 16: that is animprogress, which is 255 on nearly every row, and reading
+    # it put "Respawn: 4 Min 15 Sec" on every node this tool has ever emitted.
     for r in sql_rows(p("gameobject"), "gameobject"):
         if int(r[2]) not in CONTINENTS or int(r[0]) in ev_go:
             continue
         ac.gspawn.setdefault(int(r[1]), []).append(
-            (int(r[2]), int(r[3]), float(r[7]), float(r[8]), int(r[16])))
+            (int(r[2]), int(r[3]), float(r[7]), float(r[8]), int(r[15])))
     return ac
 
 
@@ -668,6 +694,63 @@ def assign_zone(by_map, models, amap, wx, wy):
 
 # --------------------------------------------------------------- node building
 
+def rebuild(entries, ac, models, by_map, dead, stats):
+    """Every gathering coordinate for the rebuilt maps, straight from the server.
+
+    Unlike collect() this is NOT fill-only: the merge in database.lua drops the
+    shipped coordinates for these objects in these zones first. That is only
+    safe because none of these 168 objects is a quest objective, start or end
+    in pfQuest's own quest data, so no quest pin depends on them.
+
+    Returns (zones, coords): the set of zones whose data is being replaced, and
+    id -> [(x, y, zone, respawn)]. Objects with no server spawn anywhere in the
+    rebuilt zones still get an empty list, so their phantom pins are pruned.
+    """
+    zones = {z for z, mo in models.items() if mo["map"] in REBUILD_MAPS}
+    out = {}
+    for eid, (_name, track, _v) in entries["O"].items():
+        if track not in REBUILD_TRACKS:
+            continue
+        pts = []
+        for amap, aczone, wx, wy, respawn in ac.gspawn.get(eid, ()):
+            if amap not in REBUILD_MAPS:
+                continue
+            if aczone and (aczone not in zones or models[aczone]["map"] != amap):
+                stats["rebuild_nozone"] += 1
+                continue
+            if aczone:
+                px, py = to_percent(models[aczone], wx, wy)
+                zone = aczone
+            else:
+                # 4% of the vanilla rows carry no zoneId. In a fill-only pass
+                # dropping those was harmless, because pfQuest's own pin stayed.
+                # Here it would delete the node outright, so place them the same
+                # way creatures are placed: fitted-rectangle containment, minus
+                # the zones we have no rectangle for.
+                if in_unplaceable(dead, amap, wx, wy):
+                    stats["rebuild_nozone"] += 1
+                    continue
+                hit = assign_zone(by_map, models, amap, wx, wy)
+                if not hit or hit[0] not in zones:
+                    stats["rebuild_nozone"] += 1
+                    continue
+                zone, px, py = hit
+            if not (0 <= px <= 100 and 0 <= py <= 100):
+                stats["rebuild_offmap"] += 1
+                continue
+            pts.append((round(px, 1), round(py, 1), zone, respawn))
+        kept = []
+        for pt in sorted(pts, key=lambda t: (t[2], t[0], t[1])):
+            if any(pt[2] == k[2]
+                   and (pt[0] - k[0]) ** 2 + (pt[1] - k[1]) ** 2 < DEDUP_DIST ** 2
+                   for k in kept):
+                stats["rebuild_dedup"] += 1
+                continue
+            kept.append(pt)
+        out[eid] = kept
+    return zones, out
+
+
 def collect(entries, kind, ac, models, by_map, dead, pf, stats):
     """entries: entity id -> (name, track, value).
 
@@ -819,13 +902,14 @@ HEADER = """\
 -- model at all is DROPPED, never handed to a neighbour, whose map rectangle
 -- overlaps well past the playable edge.
 --
--- SCOPE: Outland (map 530) and Northrend (map 571) only. Azeroth's tracking data
--- already works and is deliberately left untouched.
+-- TWO POLICIES. Outland and Northrend are FILLED: a coordinate is emitted only
+-- where pfQuest has none for that entity in that zone, so nothing is replaced.
+-- Azeroth is REBUILT: the ["rebuild"] section below carries every herb, ore and
+-- chest coordinate for those zones and database.lua drops the shipped ones
+-- first, because only 47%% of them sit on a node this server spawns.
 --
--- FILL ONLY: a coordinate is emitted for an entity in a zone only where
--- pfQuest's merged database has none for that entity in that zone, so existing
--- data is never replaced. game_event-linked spawns and instance maps are
--- excluded; near-identical spawns (< %(dedup).1f%% apart) are collapsed.
+-- game_event-linked spawns and instance maps are excluded from both; near
+-- identical spawns (< %(dedup).1f%% apart) are collapsed.
 --
 -- Shape (units and objects are separate databases in pfQuest):
 --   pfDB["tracking335"]["objects"]["coords"][id] = { { xPct, yPct, zone, respawn }, ... }
@@ -839,8 +923,11 @@ HEADER = """\
 -- values match pfQuest's own types exactly -- a NUMBER for the skill and level
 -- tracks, the "AH" STRING for fishing pools, which pfQuest matches with
 -- string.find and would throw on a number.
--- database.lua merges this additively after the expansion overlays; see the
--- tracking335 block there.
+-- The rebuild section is:
+--   pfDB["tracking335"]["rebuild"]["zones"][zone]    = true
+--   pfDB["tracking335"]["rebuild"]["objects"][id]    = { { xPct, yPct, zone, respawn }, ... }
+-- database.lua applies the rebuild first, then merges the rest additively, after
+-- the expansion overlays; see the tracking335 block there.
 --
 %(stats)s
 """
@@ -872,7 +959,7 @@ def listable(entries, nodes, pf, emit_zones):
     return out
 
 
-def emit(path, nodes, entries, ac, pf, listable, ac_sha, stats_lines):
+def emit(path, nodes, entries, ac, pf, listable, rebuilt, ac_sha, stats_lines):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(HEADER % {"sha": ac_sha, "minpairs": MIN_PAIRS,
                           "maxresid": MAX_MEDIAN_RESID, "dedup": DEDUP_DIST,
@@ -907,6 +994,21 @@ def emit(path, nodes, entries, ac, pf, listable, ac_sha, stats_lines):
                     f.write('      [%d] = { "%s", "%d" },\n' % (eid, lvl, rank))
                 f.write("    },\n")
             f.write("  },\n")
+
+        rzones, robjects = rebuilt
+        f.write('  ["rebuild"] = {\n')
+        f.write('    ["zones"] = {\n')
+        for z in sorted(rzones):
+            f.write("      [%d] = true,\n" % z)
+        f.write("    },\n")
+        f.write('    ["objects"] = {\n')
+        for eid in sorted(robjects):
+            f.write("      [%d] = { -- %s\n" % (eid, lua_escape(entries["O"][eid][0])))
+            for px, py, zone, respawn in robjects[eid]:
+                f.write("        { %.1f, %.1f, %d, %d },\n" % (px, py, zone, respawn))
+            f.write("      },\n")
+        f.write("    },\n")
+        f.write("  },\n")
 
         f.write('  ["meta"] = {\n')
         for track in OBJECT_TRACKS + UNIT_TRACKS:
@@ -1006,7 +1108,8 @@ def main():
           % (agree, dis, 100.0 * dis / max(1, agree + dis)))
 
     stats = dict.fromkeys(
-        ["nozone", "nosize", "already", "dedup", "othermap", "norect", "offmap"], 0)
+        ["nozone", "nosize", "already", "dedup", "othermap", "norect", "offmap",
+         "rebuild_nozone", "rebuild_offmap", "rebuild_dedup"], 0)
     nodes = {kind: collect(entries[kind], kind, ac, models, by_map, dead, pf, stats)
              for kind in ("O", "U")}
 
@@ -1020,6 +1123,20 @@ def main():
                 assert 0 <= px <= 100 and 0 <= py <= 100, (eid, px, py)
                 per_zone[zone] = per_zone.get(zone, 0) + 1
 
+    rebuilt = rebuild(entries, ac, models, by_map, dead, stats)
+    rzones, robjects = rebuilt
+    rtotal = sum(len(v) for v in robjects.values())
+    pruned = 0
+    for eid in robjects:
+        pruned += sum(1 for c in pf.coords("O").get(eid, ()) if c[2] in rzones)
+    print("  rebuild: %d objects, %d server nodes across %d zones, replacing %d "
+          "shipped coordinates (%+d, %+.0f%%)"
+          % (len(robjects), rtotal, len(rzones), pruned, rtotal - pruned,
+             100.0 * (rtotal - pruned) / max(1, pruned)))
+    print("         dropped while rebuilding: %d with no usable zone, %d off the "
+          "fitted map, %d duplicates"
+          % (stats["rebuild_nozone"], stats["rebuild_offmap"], stats["rebuild_dedup"]))
+
     emit_zones = {z for z, mo in models.items() if mo["map"] in EMIT_MAPS}
     listed = listable(entries, nodes, pf, emit_zones)
     extra = sum(1 for kind in ("O", "U") for eid in listed[kind]
@@ -1032,6 +1149,8 @@ def main():
         "%d nodes across %d objects, %d units and %d zones"
         % (total, len(nodes["O"]), len(nodes["U"]), len(per_zone)),
         "by track: " + ", ".join("%s %d" % kv for kv in sorted(per_track.items())),
+        "rebuilt: %d server nodes over %d objects on Azeroth, replacing %d shipped "
+        "coordinates" % (rtotal, len(robjects), pruned),
         "skipped: %d on Azeroth (out of scope), %d already covered by pfQuest "
         "in that zone, %d in a zone pfQuest has no rectangle for, %d outside "
         "every fitted zone, %d off the fitted map, %d in a zone with no "
@@ -1043,7 +1162,7 @@ def main():
         print("  " + line)
 
     print("writing %s ..." % OUT)
-    emit(OUT, nodes, entries, ac, pf, listed, ac_sha, stats_lines)
+    emit(OUT, nodes, entries, ac, pf, listed, rebuilt, ac_sha, stats_lines)
     print("done")
 
 
