@@ -250,6 +250,222 @@ if pfDB["quests"]["eventtags"] then
   pfDB["quests"]["eventtags"] = nil
 end
 
+-- Reforged: Eastern Plaguelands (zone 139) coordinate correction.
+--
+-- Blizzard rescaled the Eastern Plaguelands world map during Wrath, and
+-- pfQuest's data is still on the 1.12 rectangle, so every EPL node -- herbs,
+-- chests, rares, quest givers, objectives, all of it -- sat about 7.9% of the
+-- map away from where it really is (issue #18). Same class of bug as the
+-- Stormwind one db/objects-wotlk-sw335.lua already corrects, and it is the ONLY
+-- other zone affected: comparing every zone's fitted model against the
+-- WorldMapArea rectangle, then arbitrating each disagreement with GatherMate's
+-- independent extraction, EPL is the one case where pfQuest is the wrong side.
+--
+-- Both rectangles are { width, height, left, top } in world yards. The 1.12 one
+-- was recovered by fitting pfQuest's own EPL coordinates against the server's
+-- spawn positions; it agrees with pfDB.minimap's shipped 1.12 size for the zone
+-- to 0.05%, which is what says the recovery is right. Converting is percent ->
+-- world through the old rectangle and back through the new one. Measured on the
+-- 63 entities that have exactly one EPL coordinate and one server spawn, this
+-- moves the median error from 7.86% to 0.04%. db/minimap-wotlk335.lua carries
+-- the matching zone size, without which the minimap would undo it.
+--
+-- THIS MUST RUN BEFORE THE tracking335 MERGE BELOW, and it must not be folded
+-- into PackCoords. The tracking335 overlay already stores its Eastern
+-- Plaguelands nodes on the 3.3.5a rectangle, so correcting after it merges
+-- converts those a second time and lands every one of them about 7.2% out --
+-- which is exactly what shipping it inside the packing walk did.
+--
+-- Only ["data"] is walked. patchtable copies entry REFERENCES, so the -tbc and
+-- -wotlk overlay tables hold the same tables that are already in ["data"];
+-- walking them too would correct those entries twice.
+local EPL_ZONE = 139
+local EPL_OLD = { 3872.71, 2580.90, -2184.64, 3799.83 }
+local EPL_NEW = { 4031.25, 2687.50, -2287.50, 3704.17 }
+local function correctEPL(tup)
+  if tup[3] ~= EPL_ZONE or not tup[1] or not tup[2] then
+    return
+  end
+  local wy = EPL_OLD[3] - tup[1] / 100 * EPL_OLD[1]
+  local wx = EPL_OLD[4] - tup[2] / 100 * EPL_OLD[2]
+  -- keep pfQuest's own precision: two decimals, as the sw335 correction emits
+  tup[1] = floor((EPL_NEW[3] - wy) / EPL_NEW[1] * 10000 + 0.5) / 100
+  tup[2] = floor((EPL_NEW[4] - wx) / EPL_NEW[2] * 10000 + 0.5) / 100
+end
+pfDatabase.CorrectEPLCoord = correctEPL
+
+-- 31ms over the whole database in a headless measure, which is why this is a
+-- plain walk rather than a shipped list of the entries that need it.
+local function correctEPLDatabase(root)
+  for _, db in pairs({ "units", "objects", "areatrigger" }) do
+    local data = root[db] and root[db]["data"]
+    if type(data) == "table" then
+      for _, entry in pairs(data) do
+        if type(entry) == "table" and type(entry["coords"]) == "table" then
+          for _, tup in pairs(entry["coords"]) do
+            if type(tup) == "table" then
+              correctEPL(tup)
+            end
+          end
+        end
+      end
+    end
+  end
+end
+pfDatabase.CorrectEPLDatabase = correctEPLDatabase
+correctEPLDatabase(pfDB)
+
+-- Reforged: Outland/Northrend map-tracking data (see db/tracking335.lua).
+-- pfQuest's pfDB["meta"] tracking lists are vanilla plus TBC: Northrend had ZERO
+-- entries in every one of them, so "Herbs & Flowers", "Mines & Ores", "Chests &
+-- Treasures", "Fishing" and "Rare Mobs" all found nothing there (issue #18).
+-- Outland was mostly covered with one big hole: every WotLK ore and herb had no
+-- object entry at all, and the TBC ores plus several TBC herbs had an object
+-- entry with an EMPTY coords table.
+--
+-- Merged ADDITIVELY rather than through the -tbc/-wotlk overlay mechanism above:
+-- patchtable replaces a whole entry, and these entities must keep every field
+-- the base data already gives them (quest relations above all). The generator
+-- emits coordinates only for (entity, zone) pairs pfQuest has none for, so
+-- appending can never duplicate an existing node. Runs before
+-- pfDatabase.Reload/PackCoords, which compact these very tables.
+if pfDB["tracking335"] then
+  -- Reforged: Azeroth's gathering coordinates are REBUILT from the server's own
+  -- spawn table rather than appended to (issue #28). pfQuest's vanilla herb, ore
+  -- and chest coordinates come from a different world revision: only 47% of them
+  -- sit on a node this server actually spawns, and the rest are either the right
+  -- object in the wrong spot or an object that is not there at all. So for these
+  -- objects, in these zones, the shipped coordinates are dropped and replaced.
+  --
+  -- This is the one place that REMOVES data, so it is deliberately narrow: only
+  -- the 168 objects on the gathering roster, only in the zones the generator
+  -- lists. Coordinates in any other zone, on any other object, and every unit,
+  -- are left exactly as they are.
+  --
+  -- Quest pins DO depend on some of these objects, which an earlier version of
+  -- this comment got wrong. None of the 168 is a quest objective/start/end
+  -- directly, but a quest reaches them through its required ITEM: obj.I ->
+  -- items[item].O, obj.IR -> itemreq, and items[item].R -> refloot. Resolved
+  -- that way, 132 quests have object pins in the rebuilt zones and 115 end up
+  -- with fewer. The invariant that makes that acceptable, and which
+  -- trackingcheck335.lua enforces, is that NO quest is left with zero object
+  -- pins: the pins that go were positions this server never spawns, so what
+  -- remains is where the objective actually is.
+  local rebuild = pfDB["tracking335"]["rebuild"]
+  if rebuild then
+    local objectdata = pfDB["objects"]["data"]
+    for id, coords in pairs(rebuild["objects"]) do
+      local entry = objectdata[id]
+      if not entry and next(coords) == nil then
+        -- nothing to add and nothing to prune: do not invent an empty entry
+        entry = nil
+      elseif not entry then
+        entry = {}
+        objectdata[id] = entry
+      end
+      if entry then
+      local keep, n = {}, 0
+      for _, coord in pairs(entry["coords"] or {}) do
+        if not rebuild["zones"][coord[3]] then
+          n = n + 1
+          keep[n] = coord
+        end
+      end
+      for _, coord in pairs(coords) do
+        n = n + 1
+        keep[n] = coord
+      end
+      entry["coords"] = keep
+      end
+    end
+  end
+
+  for _, db in pairs({ "objects", "units" }) do
+    local overlay = pfDB["tracking335"][db]
+    local data = pfDB[db]["data"]
+
+    for id, coords in pairs(overlay["coords"]) do
+      local entry = data[id]
+      if not entry then
+        entry = {}
+        data[id] = entry
+      end
+      if not entry["coords"] then
+        entry["coords"] = {}
+      end
+      for _, coord in pairs(coords) do
+        table.insert(entry["coords"], coord)
+      end
+    end
+
+    -- Names for the entities pfQuest has never heard of. English only, so write
+    -- them into every installed locale that lacks the id -- the same
+    -- honest-degrade the enUS expansion overlay already relies on above.
+    for id, name in pairs(overlay["names"]) do
+      for locale in pairs(pfDB.locales) do
+        if pfDB[db][locale] and not pfDB[db][locale][id] then
+          pfDB[db][locale][id] = name
+        end
+      end
+      if pfDB[db]["enUS"] and not pfDB[db]["enUS"][id] then
+        pfDB[db]["enUS"][id] = name
+      end
+    end
+
+    -- Level and rank for the new rare mobs, so the map tooltip reads like every
+    -- other mob. pfQuest stores both as STRINGS and lvl may be a range
+    -- ("71-72"), which is exactly what the generator emits.
+    for id, info in pairs(overlay["info"] or {}) do
+      local entry = data[id]
+      if entry then
+        entry["lvl"] = entry["lvl"] or info[1]
+        entry["rnk"] = entry["rnk"] or info[2]
+      end
+    end
+  end
+
+  -- The tracking lists themselves. Keys already carry pfQuest's sign convention
+  -- (negative for the object tracks, positive for the unit tracks) and the
+  -- values already match pfQuest's own types -- a number for the skill and
+  -- level tracks, the "AH" string for fishing pools, which SearchMetaRelation
+  -- matches with string.find and would throw on a number.
+  for track, entries in pairs(pfDB["tracking335"]["meta"]) do
+    if pfDB["meta"][track] then
+      for id, value in pairs(entries) do
+        pfDB["meta"][track][id] = value
+      end
+    end
+  end
+
+  -- Rare mobs the rare track advertises that this client's server never spawns
+  -- (issue #21). Baron Bloodbane and Duke Ragereaver are the reported pair: they
+  -- have creature templates, so they are in every database, but no spawn row
+  -- anywhere, so the pin sends players to a mob that cannot appear. Checked
+  -- against the RAW creature table, not the event-filtered view the generator
+  -- otherwise uses: Leprithus has no ordinary spawn either but IS spawned during
+  -- a game event, and stays.
+  --
+  -- Only the LIST entry goes. The unit keeps its coordinates, so a quest or a
+  -- search that names the mob still finds it; it just stops drawing itself on
+  -- the "Rare Mobs" overlay.
+  for id in pairs(pfDB["tracking335"]["stale_rares"] or {}) do
+    pfDB["meta"]["rares"][id] = nil
+  end
+
+  -- The banker list, replaced wholesale rather than merged (issue #29). What
+  -- pfQuest ships under "banker" is not a banker list: not one of its 420
+  -- entries carries UNIT_NPC_FLAG_BANKER (0x20000) on this client, and what it
+  -- does contain is barkeeps, innkeepers and general vendors -- which is exactly
+  -- what enabling the track showed. Adding to it would leave all 420 in place,
+  -- so it is dropped and rebuilt from the server's own flag, keeping the ones
+  -- pfQuest can already place on a map.
+  if pfDB["tracking335"]["bankers"] then
+    pfDB["meta"]["banker"] = pfDB["tracking335"]["bankers"]
+  end
+
+  pfDB["tracking335"] = nil
+end
+
 -- detect installed locales
 for key, name in pairs(pfDB.locales) do
   if not pfDB["quests"][key] then
@@ -1192,6 +1408,11 @@ function pfDatabase:SearchMobID(id, meta, maps, prio)
   meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
   meta["level"] = units[id]["lvl"] or UNKNOWN
   meta["spawntype"] = pfQuest_Loc["Unit"]
+  -- Reforged: who this unit belongs to, for the map tooltip (issue #31). Set
+  -- unconditionally, nil included: SearchMetaRelation and the quest walk reuse
+  -- ONE meta table across every entity they visit, so leaving the previous
+  -- unit's faction in place would label the next node with it.
+  meta["faction"] = units[id]["fac"]
   -- description only depends on the above invariant fields + QTYPE/quest/item
   -- compute once here; AddNode will skip its own BuildQuestDescription call
   meta["description"] = pfDatabase:BuildQuestDescription(meta)
@@ -1478,6 +1699,9 @@ function pfDatabase:SearchObjectID(id, meta, maps, prio)
   meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
   meta["level"] = skill and string.format("%s [%s]", skill, caption) or nil
   meta["spawntype"] = pfQuest_Loc["Object"]
+  -- same reason as SearchMobID above: always assign, so a unit visited earlier
+  -- through the same meta table cannot leak its faction onto this object
+  meta["faction"] = objects[id]["fac"]
   -- description only depends on invariant fields; compute once
   meta["description"] = pfDatabase:BuildQuestDescription(meta)
 

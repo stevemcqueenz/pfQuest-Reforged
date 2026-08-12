@@ -17,12 +17,34 @@
 -- came out on the exact 3:2 rectangle every WorldMapArea uses, with a 0.00% median
 -- residual -- so width and height are averaged across both axes and squared to 3:2.
 --
--- Deliberately absent -- too few unambiguous spawns to fit, and a size that is merely
--- plausible would put every minimap dot in the wrong place:
---   Crystalsong Forest (2 pairs; the 2-point fit lands on ratio 1.59, not 1.50)
---   Wintergrasp (0), Hrothgar's Landing (1)
--- They keep the current behaviour: world map nodes only, no minimap dots.
+-- Crystalsong Forest and Wintergrasp could not be fitted this way (2 pairs and 0),
+-- so they were left out. They are now filled in from a DIFFERENT source, since
+-- pfQuest has no spawns there to fit against: Questie-335's QuestieCompat.UiMapData,
+-- which ships the WorldMapArea rectangle (width, height, left, top) for every zone.
+-- That source was validated before being trusted -- its rectangles reproduce the
+-- fitted models above to a median 0.011% across 66 zones, and pfQuest's own shipped
+-- coordinates to a median 0.041% over 1656 one-to-one spawn pairs. For Wintergrasp
+-- specifically, its rectangle applied to 323 AzerothCore spawns reproduces
+-- GatherMate's independent extraction of the same nodes to a median 0.006%.
+-- Both widths also agree with GatherMate's own zone table to four decimals.
+--
+-- NOT a blanket endorsement of that source: its rectangles are retail-era, and for
+-- the Burning Crusade starting zones (Azuremyst, Bloodmyst, Silvermoon, The Exodar)
+-- they disagree with this client by hundreds of percent. Those zones keep the
+-- fitted values, which GatherMate agrees with. Use UiMapData only where there is
+-- nothing to fit, and only after checking it.
+--
+-- Still absent: Hrothgar's Landing. Nothing pfQuest tracks spawns there, so there is
+-- no way to check a rectangle for it and no benefit to adding one.
+-- Eastern Plaguelands is not a WotLK zone, but its map rectangle was rescaled
+-- during Wrath and pfQuest still ships the 1.12 size (3870.83 x 2581.25). The
+-- coordinate correction in database.lua moves every EPL node onto the 3.3.5a
+-- rectangle, so the minimap needs that rectangle's size too or it would undo the
+-- correction on the minimap while the world map showed it right.
 pfDB["minimap-wotlk"] = {
+  [139] = { 4031.25, 2687.5 }, -- Eastern Plaguelands (rescaled in Wrath)
+  [2817] = { 2722.92, 1814.58 }, -- Crystalsong Forest (UiMapData)
+  [4197] = { 2975.0, 1983.34 }, -- Wintergrasp (UiMapData)
   [3537] = { 5765.07, 3843.38 }, -- Borean Tundra (75 spawns)
   [4395] = { 830.12, 553.41 }, -- Dalaran (12 spawns)
   [65] = { 5609.0, 3739.33 }, -- Dragonblight (53 spawns)

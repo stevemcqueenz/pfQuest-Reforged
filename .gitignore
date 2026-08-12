@@ -1,3 +1,5 @@
 dist/
 *.zip
 *.tsv
+
+__pycache__/
