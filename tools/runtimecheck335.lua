@@ -211,5 +211,66 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Minimap pin frame level (issue #15). A minimap pin is a CHILD of the minimap,
+-- and a child below its parent's frame level renders behind the parent's own
+-- textures. Upstream used a fixed 4 + layer, which only works while the minimap
+-- sits near level 0. ElvUI puts it at 10, and the reporter's own output showed
+-- pins=14 shown=14 with nothing visible. Pin the rule that the level is relative
+-- to whatever the minimap is actually at.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("map.lua"):read("*a")
+  local block = string.match(src, "(local function minimapNodeLevel.-\nend)\npfMap%.MinimapNodeLevel")
+  local chunk = block and loadstring("pfMap = pfMap or {}\n" .. block .. "\nreturn minimapNodeLevel")
+  local f = chunk and chunk()
+  if not f then
+    fail("minimap level: could not lift minimapNodeLevel out of map.lua")
+  else
+    -- Blizzard's minimap, near the bottom of the stack
+    pfMap = { mlevel = 0 }
+    if f(0) > 0 then ok("minimap level: a pin sits above a level-0 minimap")
+    else fail("minimap level: pin at %d is not above a level-0 minimap", f(0)) end
+
+    -- ElvUI's, at 10: every layer must still clear it, which the old 4 + layer did not
+    pfMap = { mlevel = 10 }
+    local worst, bad = nil, 0
+    for layer = 0, 20 do
+      local lvl = f(layer)
+      if lvl <= 10 then bad = bad + 1; worst = worst or layer end
+    end
+    if bad == 0 then ok("minimap level: every layer clears a level-10 minimap (ElvUI)")
+    else fail("minimap level: %d layers still sit at or below a level-10 minimap, from layer %s", bad, tostring(worst)) end
+
+    -- and it must track the minimap rather than assume a number
+    pfMap = { mlevel = 200 }
+    if f(0) > 200 then ok("minimap level: it follows the minimap wherever another addon puts it")
+    else fail("minimap level: pin at %d does not clear a level-200 minimap", f(0)) end
+
+    -- higher layers must still stack above lower ones
+    pfMap = { mlevel = 10 }
+    if f(3) > f(1) then ok("minimap level: higher layers still stack above lower ones")
+    else fail("minimap level: layer 3 (%d) does not sit above layer 1 (%d)", f(3), f(1)) end
+
+    -- no cached level yet: fall back to asking the frame, not to zero
+    pfMap = { drawlayer = { GetFrameLevel = function() return 10 end } }
+    if f(0) > 10 then ok("minimap level: with no cached level it asks the minimap directly")
+    else fail("minimap level: first-call fallback gave %d for a level-10 minimap", f(0)) end
+
+    -- the upstream constant must be gone from the minimap path, and the world
+    -- map must still keep its own fixed level
+    if string.find(src, 'obj == "minimap" and 4') then
+      fail("minimap level: the minimap path is back on the fixed 4 + layer, which ElvUI sits above")
+    else
+      ok("minimap level: the minimap path no longer uses a fixed constant")
+    end
+    if string.find(src, "frame:SetFrameLevel%(112 %+ frame%.layer%)") then
+      ok("minimap level: the world map keeps its own fixed level")
+    else
+      fail("minimap level: the world map path no longer uses its fixed level")
+    end
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
