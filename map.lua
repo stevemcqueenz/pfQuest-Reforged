@@ -671,6 +671,67 @@ local submaps = {
   ["ValleyofTrialsStart"] = { 14,   31.75, 51.30, 25.53, 25.53 }, -- Durotar
   ["CampNaracheStart"]    = { 215,  35.32, 67.28, 34.39, 34.37 }, -- Mulgore
   ["AmmenValeStart"]      = { 3524, 56.85, 29.86, 44.68, 44.67 }, -- Azuremyst Isle
+
+  -- The mine, cave and cavern interiors the same patch adds (issue #20 again).
+  -- Same mechanism, and the same reason they were empty: pfQuest stores what is
+  -- inside them at the PARENT zone's coordinates, because that is the only
+  -- rectangle its data has ever had. Generated straight from the patch's
+  -- WorldMapArea.dbc rather than derived, walking parentWorldMapID up to the
+  -- first ancestor pfQuest holds coordinates for. That resolves the awkward
+  -- ones by construction: Frostmane Hovel is a floor of Coldridge Valley, which
+  -- is itself a sub-map, and both reduce to Dun Morogh; Scarlet Monastery and
+  -- the Deadmines carry no parent at all and are placed by containment.
+  --
+  -- KNOWN LIMIT, and it is worth saying plainly: pfQuest has no z coordinate,
+  -- so "inside this rectangle" cannot distinguish the cave from the hillside
+  -- above it. Surface nodes over a mine will appear on the mine's map. That is
+  -- tolerable for the small ones, where nearly everything in the rectangle IS
+  -- the mine, and noticeable for the big ones, where Blackrock Mountain, Uldaman
+  -- and Ragefire Chasm each cover a fifth or more of their zone. An overlaid
+  -- pin is still better than the blank map these all drew before.
+  ["Fargodeepmine1_"]             = { 12,     36.12,  76.06,  6.91,  6.91 }, -- Elwynn
+  ["Fargodeepmine2_"]             = { 12,     35.90,  76.49,  7.35,  7.34 }, -- Elwynn
+  ["EchoRidgeMine3_"]             = { 12,     45.02,  24.21,  8.04,  8.04 }, -- Elwynn
+  ["GoldCoastQuarry4_"]           = { 40,     26.30,  44.14,  7.50,  7.50 }, -- Westfall
+  ["JangolodeMine5_"]             = { 40,     41.32,  17.09,  7.91,  7.91 }, -- Westfall
+  ["ColdridgePass6_"]             = { 1,      31.62,  65.27,  6.70,  6.70 }, -- DunMorogh
+  ["TheGrizzledDen7_"]            = { 1,      35.93,  43.73, 10.26, 10.26 }, -- DunMorogh
+  ["FrostmaneHold8_"]             = { 1,      19.37,  48.97,  6.94,  7.14 }, -- DunMorogh
+  ["FrostmaneHovel9_"]            = { 1,      26.27,  78.23,  5.41,  5.41 }, -- DunMorogh
+  ["GnomereganEntrance10_"]       = { 1,      14.60,  26.98, 14.83, 14.23 }, -- DunMorogh
+  ["GolBolarQuarry11_"]           = { 1,      67.92,  49.03,  7.59,  7.59 }, -- DunMorogh
+  ["NightWebsHollow12_"]          = { 85,     22.43,  56.90,  4.87,  4.87 }, -- Tirisfal
+  ["ScarletMonasteryEntrance13_"] = { 28,     25.04,  14.58,  4.77,  4.77 }, -- WesternPlaguelands
+  ["BlackrockMountain14_"]        = { 46,     16.88,  15.05, 24.32, 24.33 }, -- BurningSteppes
+  ["BlackrockMountain15_"]        = { 46,     29.99,  22.99,  8.71,  8.71 }, -- BurningSteppes
+  ["BlackrockMountain16_"]        = { 46,     12.32,   2.84, 25.95, 25.96 }, -- BurningSteppes
+  ["DeadminesWestfall17_"]        = { 40,     34.98,  70.93, 12.86, 12.86 }, -- Westfall
+  ["Uldaman18_"]                  = { 3,      26.92,   3.94, 22.61, 22.61 }, -- Badlands
+  ["JasperlodeMine19_"]           = { 12,     57.08,  45.17,  9.31,  9.31 }, -- Elwynn
+  ["Ogrimmar1_"]                  = { 1637,   34.46,  36.52, 25.82, 25.81 }, -- Ogrimmar
+  ["ShadowthreadCave2_"]          = { 141,    52.53,  23.46,  9.43,  9.43 }, -- Teldrassil
+  ["FelRock3_"]                   = { 141,    50.37,  47.72,  5.49,  5.49 }, -- Teldrassil
+  ["BanethilBarrowden4_"]         = { 141,    41.82,  57.45,  4.52,  4.52 }, -- Teldrassil
+  ["BanethilBarrowden5_"]         = { 141,    40.84,  55.97,  7.46,  7.46 }, -- Teldrassil
+  ["PalemaneRock6_"]              = { 215,    28.57,  58.11,  6.81,  6.81 }, -- Mulgore
+  ["TheVentureCoMine7_"]          = { 215,    55.78,  33.96, 14.42, 14.42 }, -- Mulgore
+  ["BurningBladeCoven8_"]         = { 14,     41.68,  51.14,  5.03,  5.03 }, -- Durotar
+  ["TiragardeKeep10_"]            = { 14,     58.44,  57.07,  2.36,  2.36 }, -- Durotar
+  ["TiragardeKeep11_"]            = { 14,     58.44,  57.07,  2.36,  2.36 }, -- Durotar
+  ["SkullRock12_"]                = { 14,     50.43,   6.46,  5.11,  5.11 }, -- Durotar
+  ["TwilightsRun13_"]             = { 1377,   68.22,   9.69,  7.25,  7.25 }, -- Silithus
+  ["TheSlitheringScar14_"]        = { 490,    41.00,  79.59, 10.34, 10.34 }, -- UngoroCrater
+  ["TheNoxiousLair15_"]           = { 440,    28.57,  38.37, 10.87, 10.87 }, -- Tanaris
+  ["TheGapingChasm16_"]           = { 440,    49.18,  65.76, 12.83, 12.83 }, -- Tanaris
+  ["CavernsofTime17_"]            = { 440,    57.17,  45.24, 16.05, 16.05 }, -- Tanaris
+  ["CavernsofTime18_"]            = { 440,    50.56,  46.99, 18.93, 18.93 }, -- Tanaris
+  ["DustwindCave19_"]             = { 14,     50.31,  23.75,  4.88,  4.88 }, -- Durotar
+  ["WailingCavernsBarrens20_"]    = { 17,     44.66,  31.12,  5.63,  5.62 }, -- Barrens
+  ["MaraudonOutside21_"]          = { 405,    25.53,  56.78, 13.35, 13.34 }, -- Desolace
+  ["MaraudonOutside22_"]          = { 405,    23.76,  51.52, 12.46, 12.45 }, -- Desolace
+  ["AmaniCatacombs1_"]            = { 3433,   57.47,  25.30,  9.09,  9.09 }, -- Ghostlands
+  ["TidesHollow2_"]               = { 3524,   21.35,  68.01,  9.21,  9.21 }, -- AzuremystIsle
+  ["StillpineHold3_"]             = { 3524,   42.93,   7.94, 11.67, 11.67 }, -- AzuremystIsle
 }
 
 -- The same eight, keyed by the zone id pfQuest ALREADY has for them: it has
