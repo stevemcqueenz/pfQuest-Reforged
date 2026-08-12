@@ -606,19 +606,40 @@ do
         fail("submaps: %s rectangle %.2f,%.2f %.2fx%.2f is not on the parent map",
              name, s[2], s[3], s[4], s[5])
       end
-      -- parent and child are both 3:2, so the child's width and height as
-      -- PERCENTAGES of the parent must come out equal. This is the check that
-      -- catches a transposed or mistyped offset.
-      if math.abs(s[4] - s[5]) > 0.1 then
+      -- A sub-map's width and height as PERCENTAGES of the parent come out
+      -- close to equal, because parent and child are both near 3:2. This is
+      -- what catches a transposed or mistyped pair. Held loosely at 5%: the
+      -- starter zones are square to two decimals, but a few of the mine
+      -- rectangles genuinely are not, Gnomeregan Entrance most of all at 4%.
+      if math.abs(s[4] - s[5]) > s[4] * 0.05 then
         badratio = badratio + 1
-        fail("submaps: %s is %.2f%% wide but %.2f%% tall; on a 3:2 parent those must match",
+        fail("submaps: %s is %.2f%% wide but %.2f%% tall, too far apart to be one rectangle",
              name, s[4], s[5])
       end
     end
-    if n ~= 8 then fail("submaps: %d entries, expected the 8 starter zones", n) end
-    if missing == 0 and n == 8 then ok("submaps: all 8 starter zones map to the right parent zone") end
+    if n ~= 51 then fail("submaps: %d entries, expected 8 starter zones and 43 interiors", n) end
+    if missing == 0 and n == 51 then ok("submaps: all 51 sub-maps map to a parent zone, the 8 starter zones included") end
     if badshape == 0 then ok("submaps: every rectangle sits on its parent map") end
-    if badratio == 0 then ok("submaps: every rectangle is square in percentage terms, as a 3:2 parent requires") end
+    if badratio == 0 then ok("submaps: every rectangle's width and height agree, so none is transposed") end
+    -- exact values for one starter zone and one interior, so the count above is
+    -- not the only thing standing between a regenerated table and a wrong one
+    local spot = {
+      { "Northshire", 12, 38.84, 27.27, 27.91, 27.90 },
+      { "Fargodeepmine1_", 12, 36.12, 76.06, 6.91, 6.91 },
+      { "Ogrimmar1_", 1637, 34.46, 36.52, 25.82, 25.81 },
+    }
+    local spotbad = 0
+    for _, e in ipairs(spot) do
+      local s = submaps[e[1]]
+      if not s or s[1] ~= e[2] or math.abs(s[2] - e[3]) > 0.01 or math.abs(s[3] - e[4]) > 0.01
+        or math.abs(s[4] - e[5]) > 0.01 or math.abs(s[5] - e[6]) > 0.01 then
+        spotbad = spotbad + 1
+        fail("submaps: %s is %s, expected { %d, %.2f, %.2f, %.2f, %.2f }", e[1],
+             s and string.format("{ %d, %.2f, %.2f, %.2f, %.2f }", s[1], s[2], s[3], s[4], s[5]) or "missing",
+             e[2], e[3], e[4], e[5], e[6])
+      end
+    end
+    if spotbad == 0 then ok("submaps: the spot-checked rectangles still match WorldMapArea.dbc exactly") end
 
     -- ---- the conversion
     local sub = submaps["Northshire"]
