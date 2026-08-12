@@ -230,9 +230,12 @@ for zone, size in pairs(pfDB["minimap"]) do
 end
 for id, name in pairs(pfDB["objects"]["enUS"]) do print(string.format("NO\t%d\t%s", id, name)) end
 for id, name in pairs(pfDB["units"]["enUS"]) do print(string.format("NU\t%d\t%s", id, name)) end
--- existing tracking entries, so we never restate what pfQuest already answers
-for _, track in pairs({"herbs", "mines", "chests", "fish", "rares"}) do
-  for id, value in pairs(pfDB["meta"][track]) do
+-- existing tracking entries, so we never restate what pfQuest already answers.
+-- ALL tracks, not just the gathering ones: the banker rebuild has to measure the
+-- list it replaces, and it learns its A/H/AH values from the sibling lists
+-- (vendor, flight, innkeeper) that pfQuest gets right.
+for track, ids in pairs(pfDB["meta"]) do
+  for id, value in pairs(ids) do
     print(string.format("S\t%d\t%s\t%s", id, track, tostring(value)))
   end
 end
@@ -694,6 +697,51 @@ def assign_zone(by_map, models, amap, wx, wy):
 
 # --------------------------------------------------------------- node building
 
+def prune_rares(pf, ac, raw_spawned):
+    """Rares pfQuest tracks that draw a pin the server never spawns (issue #21).
+
+    Baron Bloodbane and Duke Ragereaver are the reported pair: they have creature
+    templates but no spawn row anywhere, so their pins send players to a mob that
+    cannot appear. Checked against the RAW creature table, not the event-filtered
+    one this tool otherwise uses -- Leprithus has no ordinary spawn either, but it
+    IS spawned during a game event, and dropping it would be wrong.
+    """
+    out = {}
+    for track, sid in pf.meta:
+        if track != "rares" or sid <= 0:
+            continue
+        if sid in raw_spawned:
+            continue
+        if any(c for c in pf.coords("U").get(sid, ())):
+            out[sid] = True
+    return out
+
+
+def rebuild_bankers(pf, ac, ct, side):
+    """pfQuest's banker list, rebuilt from the server's banker flag (issue #29).
+
+    The shipped list is not a banker list at all: 0 of its 420 entries carry
+    UNIT_NPC_FLAG_BANKER, not one of the server's 55 bankers is on it, and what
+    it does contain is barkeeps, innkeepers and general vendors, which is exactly
+    what the reporter saw. Rebuilt from the flag, keeping only the ones pfQuest
+    can already place.
+
+    The A/H/AH value is learned from pfQuest's OWN correct lists: for each
+    creature faction id, the side its vendor/flight/innkeeper entries agree on.
+    Those lists are 97-100% right against the same flags, so they are a sound
+    teacher. A faction with no clear majority falls back to "AH", which shows the
+    banker to everyone rather than hiding it from half the players.
+    """
+    out = {}
+    for eid, (_name, faction, npcflag) in ct.items():
+        if not (npcflag & 0x20000):
+            continue
+        if not any(c for c in pf.coords("U").get(eid, ())):
+            continue
+        out[eid] = side.get(faction, "AH")
+    return out
+
+
 def rebuild(entries, ac, models, by_map, dead, stats):
     """Every gathering coordinate for the rebuilt maps, straight from the server.
 
@@ -959,7 +1007,7 @@ def listable(entries, nodes, pf, emit_zones):
     return out
 
 
-def emit(path, nodes, entries, ac, pf, listable, rebuilt, ac_sha, stats_lines):
+def emit(path, nodes, entries, ac, pf, listable, rebuilt, stale, bankers, ac_sha, stats_lines):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(HEADER % {"sha": ac_sha, "minpairs": MIN_PAIRS,
                           "maxresid": MAX_MEDIAN_RESID, "dedup": DEDUP_DIST,
@@ -1023,6 +1071,19 @@ def emit(path, nodes, entries, ac, pf, listable, rebuilt, ac_sha, stats_lines):
                 f.write("      [%d] = %s, -- %s\n" % (sign * eid, shown, lua_escape(name)))
             f.write("    },\n")
         f.write("  },\n")
+
+        # issue #21: tracked rares with a pin but no spawn row anywhere
+        f.write('  ["stale_rares"] = {\n')
+        for eid in sorted(stale):
+            f.write("    [%d] = true, -- %s\n" % (eid, lua_escape(pf.names("U").get(eid, "?"))))
+        f.write("  },\n")
+
+        # issue #29: the banker list, rebuilt from the server's own flag
+        f.write('  ["bankers"] = {\n')
+        for eid in sorted(bankers):
+            f.write('    [%d] = "%s", -- %s\n'
+                    % (eid, bankers[eid], lua_escape(pf.names("U").get(eid, "?"))))
+        f.write("  },\n")
         f.write("}\n")
 
 
@@ -1058,8 +1119,33 @@ def main():
 
     print("loading AzerothCore dumps ...")
     ac = load_ac(args.ac_dir)
+    # the RAW spawn set, without the game-event exclusion load_ac applies: a rare
+    # that only appears during an event still appears, and must not be pruned
+    raw_spawned = set()
+    for r in sql_rows(os.path.join(args.ac_dir, "creature.sql"), "creature"):
+        raw_spawned.add(int(r[1]))
+    # creature_template again, this time keeping faction and npcflag
+    ctfull = {}
+    for r in sql_rows(os.path.join(args.ac_dir, "creature_template.sql"), "creature_template"):
+        ctfull[int(r[0])] = (r[6], int(r[13]), int(r[14]))
     print("  %d gameobject templates / %d spawned, %d creature templates / %d spawned"
           % (len(ac.gt), len(ac.gspawn), len(ac.ct), len(ac.cspawn)))
+
+    # Which side each creature faction id belongs to, learned from pfQuest's own
+    # lists that ARE correct (vendor/flight/innkeeper etc. score 97-100% against
+    # the server's flags), so the rebuilt banker list can carry the same A/H/AH
+    # values pfQuest uses everywhere else.
+    obs = {}
+    for (track, sid), value in pf.meta.items():
+        if track in ("vendor", "repair", "flight", "innkeeper", "stablemaster",
+                     "battlemaster", "auctioneer") and sid > 0 and sid in ctfull:
+            obs.setdefault(ctfull[sid][1], {}).setdefault(value, 0)
+            obs[ctfull[sid][1]][value] += 1
+    side = {}
+    for faction, counts in obs.items():
+        best = max(counts, key=counts.get)
+        if counts[best] >= 0.9 * sum(counts.values()):
+            side[faction] = best
 
     entries = build_entries(ac, roster)
     by_track = {}
@@ -1161,8 +1247,18 @@ def main():
     for line in stats_lines:
         print("  " + line)
 
+    stale = prune_rares(pf, ac, raw_spawned)
+    bankers = rebuild_bankers(pf, ac, ctfull, side)
+    print("  rares that draw a pin the server never spawns: %d (issue #21)" % len(stale))
+    print("  bankers rebuilt from the server's flag: %d placeable of %d flagged "
+          "(issue #29); the shipped list had %d entries and %d of them were bankers"
+          % (len(bankers), sum(1 for e, (n, f, fl) in ctfull.items() if fl & 0x20000),
+             sum(1 for (t, sid) in pf.meta if t == "banker" and sid > 0),
+             sum(1 for (t, sid) in pf.meta if t == "banker" and sid > 0
+                 and sid in ctfull and ctfull[sid][2] & 0x20000)))
+
     print("writing %s ..." % OUT)
-    emit(OUT, nodes, entries, ac, pf, listed, rebuilt, ac_sha, stats_lines)
+    emit(OUT, nodes, entries, ac, pf, listed, rebuilt, stale, bankers, ac_sha, stats_lines)
     print("done")
 
 

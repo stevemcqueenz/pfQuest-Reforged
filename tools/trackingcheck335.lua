@@ -362,10 +362,20 @@ do
         enUS = { [181555] = "Fel Iron Deposit" },
       },
       units = {
-        data = { [32517] = { coords = { { 11, 21, 3711, 600 } }, lvl = "76", rnk = "2" } },
+        data = {
+          [32517] = { coords = { { 11, 21, 3711, 600 } }, lvl = "76", rnk = "2" },
+          -- a rare the server never spawns: its LIST entry goes, its coords stay
+          [10819] = { coords = { { 60, 40, 139, 0 } } },
+        },
         enUS = { [32517] = "Loque'nahak" },
       },
-      meta = { herbs = {}, mines = { [-181555] = 300 }, chests = {}, fish = {}, rares = {} },
+      meta = {
+        herbs = {}, mines = { [-181555] = 300 }, chests = {}, fish = {},
+        -- 10819 is the stale one, 572 (Leprithus, event-spawned) must survive
+        rares = { [10819] = 55, [572] = 30 },
+        -- what pfQuest actually ships under "banker": barkeeps and vendors
+        banker = { [233] = "A", [274] = "A" },
+      },
       tracking335 = {
         objects = {
           coords = {
@@ -393,6 +403,8 @@ do
           zones = { [12] = true },
           objects = { [1731] = { { 40, 41, 12, 300 } } },
         },
+        stale_rares = { [10819] = true },
+        bankers = { [2455] = "A" },
       },
     }
     local okc, err = pcall(chunk)
@@ -454,6 +466,23 @@ do
       else
         fail("rebuild merge: a non-rebuilt object in a rebuilt zone lost its coordinates")
       end
+
+      -- issue #21: the rare that never spawns leaves the LIST, not the database
+      if pfDB.meta.rares[10819] == nil then ok("stale rares: the unspawnable rare is off the Rare Mobs track")
+      else fail("stale rares: 10819 is still on the rare track") end
+      if pfDB.meta.rares[572] == 30 then ok("stale rares: a rare that is not listed stale stays on the track")
+      else fail("stale rares: pruned a rare that was not listed") end
+      if pfDB.units.data[10819] and table.getn(pfDB.units.data[10819].coords) == 1 then
+        ok("stale rares: the unit keeps its coordinates, so search and quests still find it")
+      else fail("stale rares: the prune removed the unit's coordinates too") end
+
+      -- issue #29: the banker list is REPLACED, not added to. Merging would
+      -- leave all 420 wrong entries in place and fix nothing.
+      if pfDB.meta.banker[2455] == "A" then ok("bankers: the rebuilt list is installed")
+      else fail("bankers: rebuilt entry missing, got %s", tostring(pfDB.meta.banker[2455])) end
+      if pfDB.meta.banker[274] == nil and pfDB.meta.banker[233] == nil then
+        ok("bankers: the shipped barkeeps and vendors are gone, the list is replaced not merged")
+      else fail("bankers: a shipped non-banker survived the rebuild") end
 
       if pfDB.tracking335 == nil then ok("merge: frees the overlay when it is done")
       else fail("merge: left pfDB.tracking335 in memory") end
@@ -633,6 +662,118 @@ do
     ok("rebuild: %d quests have object pins in the rebuilt zones and not one is left with zero", touched)
   else
     fail("rebuild: %d quests would be left with NO object pins at all", zeroed)
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- The two list repairs: rares that cannot spawn (issue #21) and the banker
+-- track (issue #29). Both are checked against the SHIPPED lists, because both
+-- are only worth anything if they actually change what pfQuest ends up with --
+-- a stale-rare id that is not on the rare track prunes nothing, and a banker
+-- list that happens to match the shipped one fixes nothing.
+-- ---------------------------------------------------------------------------
+do
+  pfDB = {}
+  dofile("db/init.lua")
+  for _, f in ipairs({ "units", "units-tbc", "units-wotlk", "units-wotlk-sw335",
+                       "units-wotlk-icecrown335", "units-wotlk-acfill335",
+                       "meta", "meta-tbc" }) do
+    dofile("db/" .. f .. ".lua")
+  end
+  for _, d in ipairs({ "data-tbc", "data-wotlk" }) do
+    for k, v in pairs(pfDB["units"][d] or {}) do
+      if v == "_" then pfDB["units"]["data"][k] = nil else pfDB["units"]["data"][k] = v end
+    end
+  end
+  -- meta patches whole TRACKS, not entries: meta-tbc's banker table replaces
+  -- meta's outright, which is why the shipped banker list is meta-tbc's.
+  for track, ids in pairs(pfDB["meta-tbc"] or {}) do pfDB["meta"][track] = ids end
+  local units, meta = pfDB["units"]["data"], pfDB["meta"]
+
+  local function placeable(id)
+    local e = units[id]
+    return e and e["coords"] and next(e["coords"]) ~= nil
+  end
+
+  -- ------------------------------------------------------------- stale rares
+  local stale = g["stale_rares"]
+  if type(stale) ~= "table" then
+    fail("stale rares: db/tracking335.lua has no stale_rares section")
+  else
+    local n, notlisted, noncoord, badkey = 0, 0, 0, 0
+    for id, v in pairs(stale) do
+      n = n + 1
+      if type(id) ~= "number" or id <= 0 or v ~= true then badkey = badkey + 1 end
+      if meta["rares"][id] == nil then
+        notlisted = notlisted + 1
+        if notlisted <= 5 then fail("stale rares: %d is not on the shipped rare track, pruning it does nothing", id) end
+      end
+      if not placeable(id) then noncoord = noncoord + 1 end
+    end
+    if n == 0 then fail("stale rares: the section is empty, issue #21 would still show both mobs") end
+    if badkey == 0 and n > 0 then ok("stale rares: %d entries, all positive unit ids set to true", n) end
+    if notlisted == 0 and n > 0 then ok("stale rares: every one of them is on the shipped rare track today") end
+    if noncoord == 0 and n > 0 then ok("stale rares: every one of them draws a pin today, so removing it changes the map")
+    else if noncoord > 0 then fail("stale rares: %d have no coordinates and never drew a pin", noncoord) end end
+    -- the reported pair has to be in there
+    for _, id in ipairs({ 10819, 10820 }) do
+      if stale[id] then ok("stale rares: %d is pruned (issue #21)", id)
+      else fail("stale rares: %d is still advertised", id) end
+    end
+    -- and the event-only case must NOT be: Leprithus has no ordinary spawn row
+    -- but is spawned by a game event, so his pin is right.
+    if not stale[572] then ok("stale rares: Leprithus (event-spawned) is left alone")
+    else fail("stale rares: pruned Leprithus, who does spawn during a game event") end
+    -- a regeneration that lost the spawn table would prune the whole track
+    if n < 25 then ok("stale rares: %d pruned, far short of the whole track", n)
+    else fail("stale rares: %d pruned -- that is not a handful of ghosts", n) end
+  end
+
+  -- ----------------------------------------------------------------- bankers
+  local bankers = g["bankers"]
+  if type(bankers) ~= "table" then
+    fail("bankers: db/tracking335.lua has no bankers section")
+  else
+    local n, badkey, badval, noncoord, kept = 0, 0, 0, 0, 0
+    for id, v in pairs(bankers) do
+      n = n + 1
+      if type(id) ~= "number" or id <= 0 then badkey = badkey + 1 end
+      -- SearchMetaRelation matches this with string.find(value, faction), so it
+      -- has to be one of pfQuest's own faction strings and never a number
+      if v ~= "A" and v ~= "H" and v ~= "AH" then
+        badval = badval + 1
+        if badval <= 5 then fail("bankers: %d has value %s, expected \"A\", \"H\" or \"AH\"", id, tostring(v)) end
+      end
+      if not placeable(id) then
+        noncoord = noncoord + 1
+        if noncoord <= 5 then fail("bankers: %d has no coordinates, it would list a banker with no pin", id) end
+      end
+      if meta["banker"][id] then kept = kept + 1 end
+    end
+    if n < 30 then fail("bankers: only %d entries, every capital and neutral hub has one", n) end
+    if badkey == 0 then ok("bankers: %d entries, all positive unit ids", n) end
+    if badval == 0 then ok("bankers: every value is an A/H/AH string, the type SearchMetaRelation needs") end
+    if noncoord == 0 then ok("bankers: every one of them has a coordinate to draw") end
+    -- the point of the rebuild: the shipped list is not a banker list. If the
+    -- new one mostly agrees with it, something reverted.
+    if kept <= n * 0.1 then
+      ok("bankers: %d of %d overlap the shipped list -- it really is a different list", kept, n)
+    else
+      fail("bankers: %d of %d were already on the shipped list, the rebuild did nothing", kept, n)
+    end
+    -- spot checks in both directions: real bankers in, the reported false
+    -- positives out. 233 Farmer Saldean, 274 Barkeep Hann and 295 Innkeeper
+    -- Farley are all on pfQuest's shipped banker list and none is a banker.
+    local missing = 0
+    for _, id in ipairs({ 2455, 2625, 8123, 19246 }) do
+      if not bankers[id] then missing = missing + 1; fail("bankers: real banker %d is missing", id) end
+    end
+    if missing == 0 then ok("bankers: the capital, Dalaran, Booty Bay and Shattrath bankers are all there") end
+    local wrong = 0
+    for _, id in ipairs({ 233, 274, 295 }) do
+      if bankers[id] then wrong = wrong + 1; fail("bankers: %d is not a banker but is on the new list", id) end
+    end
+    if wrong == 0 then ok("bankers: the barkeeps, farmers and innkeepers pfQuest listed are gone") end
   end
 end
 
