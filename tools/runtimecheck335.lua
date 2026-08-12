@@ -272,5 +272,82 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- The indoor/outdoor probe (issue #15). It detects indoors by NUDGING the
+-- minimap zoom and reading it back. Two things have to hold: it must put the
+-- zoom back exactly, and the MINIMAP_UPDATE_ZOOM its own SetZoom fires must not
+-- dirty the cache it is filling, or it re-runs every frame and storms an event
+-- other minimap addons react to.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("map.lua"):read("*a")
+
+  -- a fake minimap that clamps SetZoom the way the client does, and a watcher
+  -- wired exactly like map.lua's
+  local zoom, events = 0, 0
+  local dirty, probing = false, nil
+  local drawlayer = {
+    GetZoom = function() return zoom end,
+    SetZoom = function(_, v)
+      if v < 0 then v = 0 elseif v > 5 then v = 5 end
+      zoom = v
+      events = events + 1
+      if not probing then dirty = true end   -- mirrors indoorwatch:OnEvent
+    end,
+  }
+
+  local block = string.match(src, "(local function minimap_indoor_probe.-\nend)")
+  local cvars = { minimapZoom = "3", minimapInsideZoom = "3" }
+  local env = {
+    pfMap = { drawlayer = drawlayer },
+    GetCVar = function(k) return cvars[k] end,
+    tonumber = tonumber, type = type,
+  }
+  local chunk = block and loadstring(
+    "local indoorprobing\n" ..
+    "local function setprobing(v) indoorprobing = v end\n" ..
+    block .. "\nreturn minimap_indoor_probe, function() return indoorprobing end")
+  if not chunk then
+    fail("indoor probe: could not lift minimap_indoor_probe out of map.lua")
+  else
+    setfenv(chunk, setmetatable(env, { __index = _G }))
+    local probe, getflag = chunk()
+    -- the lifted copy sets its OWN local flag, so mirror it into the fake watcher
+    local realprobe = probe
+    probe = function()
+      probing = true
+      local r = realprobe()
+      probing = nil
+      return r
+    end
+
+    for _, start in ipairs({ 0, 1, 3, 5 }) do
+      zoom = start
+      probe()
+      if zoom ~= start then
+        fail("indoor probe: zoom started at %d and ended at %d", start, zoom)
+      else
+        checks = checks + 1
+      end
+    end
+    ok("indoor probe: the zoom is restored exactly, including at both ends of the range")
+
+    -- and the source must actually carry the guard, in both places
+    if string.find(src, "indoorprobing") and string.find(src, "if indoorprobing then") then
+      ok("indoor probe: its own zoom events are ignored, so the cache holds")
+    else
+      fail("indoor probe: no guard against the MINIMAP_UPDATE_ZOOM it fires itself")
+    end
+
+    -- the old arithmetic restore is what broke at the range ends: prove the
+    -- shipped code no longer does GetZoom() + tempzoom
+    if string.find(src, "tempzoom") then
+      fail("indoor probe: still restoring the zoom by arithmetic, which clamping breaks")
+    else
+      ok("indoor probe: no arithmetic restore left in the source")
+    end
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

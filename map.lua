@@ -151,7 +151,15 @@ end
 -- while the world map is fine (issue #15). The state only changes when the
 -- player moves indoors/outdoors or the zoom actually changes, so compute it on
 -- those events instead and cache it. Also removes ~40 SetZoom calls a second.
-local indoorstate, indoordirty = 1, true
+-- ... except it did not, until the guard below. The probe detects indoor/outdoor
+-- by NUDGING the minimap zoom and reading it back, and Minimap:SetZoom fires
+-- MINIMAP_UPDATE_ZOOM, which is one of the events that dirties this cache. So
+-- the probe invalidated itself, re-ran on the very next call, and kept the ~40
+-- SetZoom calls a second it was written to remove. Worse than wasted work: every
+-- one of those is an event other minimap addons react to, and with ElvUI loaded
+-- the result was a minimap that only showed its pins for the split second after
+-- a zone change (issue #15). Ignore the events the probe causes itself.
+local indoorstate, indoordirty, indoorprobing = 1, true, nil
 local indoorwatch = CreateFrame("Frame")
 indoorwatch:RegisterEvent("PLAYER_ENTERING_WORLD")
 indoorwatch:RegisterEvent("ZONE_CHANGED")
@@ -159,6 +167,9 @@ indoorwatch:RegisterEvent("ZONE_CHANGED_INDOORS")
 indoorwatch:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 indoorwatch:RegisterEvent("MINIMAP_UPDATE_ZOOM")
 indoorwatch:SetScript("OnEvent", function()
+  if indoorprobing then
+    return
+  end
   indoordirty = true
 end)
 
@@ -173,23 +184,25 @@ local function squareminimap()
 end
 
 local function minimap_indoor_probe()
-  local tempzoom = 0
   local state = 1
+  -- remember the real zoom rather than trying to undo the nudge by arithmetic:
+  -- SetZoom clamps to 0..5, so stepping off either end and adding the step back
+  -- left the minimap one level away from where it started, every probe.
+  local zoom = pfMap.drawlayer:GetZoom()
+  indoorprobing = true
+
   if GetCVar("minimapZoom") == GetCVar("minimapInsideZoom") then
-    if GetCVar("minimapInsideZoom") + 0 >= 3 then
-      pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() - 1)
-      tempzoom = 1
-    else
-      pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() + 1)
-      tempzoom = -1
-    end
+    -- the two CVars are equal, so the zoom alone cannot say which one is in
+    -- effect: nudge one step, in whichever direction stays in range
+    pfMap.drawlayer:SetZoom(zoom > 0 and zoom - 1 or zoom + 1)
   end
 
   if GetCVar("minimapInsideZoom") + 0 == pfMap.drawlayer:GetZoom() then
     state = 0
   end
 
-  pfMap.drawlayer:SetZoom(pfMap.drawlayer:GetZoom() + tempzoom)
+  pfMap.drawlayer:SetZoom(zoom)
+  indoorprobing = nil
   return state
 end
 
