@@ -460,5 +460,90 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- World map dropdown position (issue #20). WDM puts two things in the corner
+-- our dropdown anchors to: WDM_WorldMapButton, a tracking button at strata
+-- TOOLTIP that draws straight over our right end, and Blizzard's floor
+-- dropdown, whose 64px artwork on a 32px frame overlaps ours by 20px. We step
+-- aside for either. What has to hold is that we step aside for exactly those
+-- two, only while they are actually shown, and back again when they are not --
+-- a dropdown that drifted 40px left on a stock client would be our bug, not a
+-- fix for anyone.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("quest.lua"):read("*a")
+  local block = string.match(src, "\n(  local BASE_X, BASE_Y = .-\n  end)\n")
+  if not block then
+    fail("map dropdown: could not lift the reposition block out of quest.lua")
+  else
+    local points, cleared = {}, 0
+    local mapButton = {
+      ClearAllPoints = function() cleared = cleared + 1 end,
+      SetPoint = function(_, _, _, _, x, y) table.insert(points, { x, y }) end,
+    }
+    local fakeG = {}
+    local env = { _G = fakeG, pfQuest = { mapButton = mapButton } }
+    local chunk = loadstring(block .. "\nreturn reposition")
+    setfenv(chunk, setmetatable(env, { __index = _G }))
+    local reposition = chunk()
+
+    local function shown(v) return { IsShown = function() return v end } end
+    local function run(wdm, level)
+      fakeG["WDM_WorldMapButton"] = wdm
+      env.WorldMapLevelDropDown = level
+      points = {}
+      reposition()
+      return points[1]
+    end
+
+    local cases = {
+      { nil,          nil,          0,   -10, "stock client, neither present" },
+      { shown(true),  nil,        -40,   -10, "WDM tracking button only" },
+      { nil,          shown(true),  0,   -36, "floor dropdown only" },
+      { shown(true),  shown(true),-40,   -36, "both" },
+      { shown(false), shown(false), 0,   -10, "both present but hidden" },
+    }
+    local bad = 0
+    for _, c in ipairs(cases) do
+      -- force a change every time, so each case really re-anchors
+      mapButton.offsetX, mapButton.offsetY = nil, nil
+      local got = run(c[1], c[2])
+      if not got or got[1] ~= c[3] or got[2] ~= c[4] then
+        bad = bad + 1
+        fail("map dropdown: %s -> (%s, %s), expected (%d, %d)",
+             c[5], tostring(got and got[1]), tostring(got and got[2]), c[3], c[4])
+      end
+    end
+    if bad == 0 then
+      ok("map dropdown: offsets correct for all %d WDM combinations, and unmoved without it",
+         table.getn(cases))
+    end
+
+    -- it runs on every map update, so re-anchoring when nothing changed would
+    -- be pure churn
+    mapButton.offsetX, mapButton.offsetY = nil, nil
+    run(shown(true), shown(true))
+    points = {}
+    reposition()
+    reposition()
+    if table.getn(points) == 0 then ok("map dropdown: no re-anchor when nothing changed")
+    else fail("map dropdown: re-anchored %d times with no change", table.getn(points)) end
+  end
+
+  -- and it has to actually be driven: once when the map opens, and again
+  -- whenever the floor dropdown appears or goes away underneath us
+  if string.find(src, "pfQuest%.mapButton:SetScript%(\"OnShow\".-reposition%(%)") then
+    ok("map dropdown: repositioned when the map is shown")
+  else
+    fail("map dropdown: OnShow never calls reposition, so it would never move")
+  end
+  if string.find(src, "WorldMapLevelDropDown:HookScript%(\"OnShow\", reposition%)")
+    and string.find(src, "WorldMapLevelDropDown:HookScript%(\"OnHide\", reposition%)") then
+    ok("map dropdown: follows the floor dropdown appearing and disappearing")
+  else
+    fail("map dropdown: not hooked to the floor dropdown's visibility")
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
