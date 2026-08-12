@@ -630,6 +630,77 @@ local customids = {
   ["AlteracValley"] = 2597,
 }
 
+-- Reforged: sub-maps -- a map area that is a PIECE of a zone pfQuest has data
+-- for, rather than a zone of its own (issue #20).
+--
+-- The Caverns and Mines client patch, which the WDM addon collection is built
+-- for, registers the eight starter zones as their own map areas. pfQuest has no
+-- data keyed to them (its coordinates are all on the parent zone's rectangle),
+-- so GetMapID found no match, UpdateNodes bailed on a nil map, and the whole
+-- starter experience showed nothing at all.
+--
+-- The entry is { parent zone id, left, top, width, height }, the sub-map's
+-- rectangle expressed in the PARENT map's percentages. A parent coordinate
+-- becomes a sub-map coordinate with (value - left) / size * 100, and anything
+-- landing outside 0..100 is simply not on this map and gets culled.
+--
+-- DERIVED, not guessed. The WDM collection ships continent offsets and extents
+-- for both the sub-maps and their parents in its bundled Astrolabe, so each
+-- rectangle is (child.xOffset - parent.xOffset) / parent.width and so on. Three
+-- checks before trusting them: WDM's GatherMate ships the same eight extents
+-- independently and agrees to four decimals on every one; every rectangle comes
+-- out square in percentage terms (width% within 0.1% of height%), which has to
+-- hold because parent and child are both 3:2; and each one lands where the zone
+-- actually is, with Camp Narache and Ammen Vale reaching ~1.5% past the parent
+-- edge exactly as they should, both sitting on the map border.
+--
+-- The KEYS are GetMapInfo() values. Confirmed from two independent tables in
+-- that collection that are documented in code to be GetMapInfo()-keyed
+-- (Astrolabe's zoneData, GatherMate's zone_data) plus WDM's own mdlevels, which
+-- carries Blizzard's "Ogrimmar" misspelling as a giveaway that these are raw
+-- map file names. Inert without the patch: these map areas do not exist, so
+-- GetMapInfo() never returns any of them.
+local submaps = {
+  -- Eastern Kingdoms
+  ["Northshire"]          = { 12,   38.84, 27.27, 27.91, 27.90 }, -- Elwynn Forest
+  ["ColdridgeValley"]     = { 1,    16.71, 63.51, 19.59, 19.61 }, -- Dun Morogh
+  ["DeathknellStart"]     = { 85,   19.59, 52.00, 24.11, 24.14 }, -- Tirisfal Glades
+  ["SunstriderIsleStart"] = { 3430, 18.19,  6.34, 32.49, 32.49 }, -- Eversong Woods
+  -- Kalimdor
+  ["ShadowglenStart"]     = { 141,  45.62, 23.51, 28.48, 28.48 }, -- Teldrassil
+  ["ValleyofTrialsStart"] = { 14,   31.75, 51.30, 25.53, 25.53 }, -- Durotar
+  ["CampNaracheStart"]    = { 215,  35.32, 67.28, 34.39, 34.37 }, -- Mulgore
+  ["AmmenValeStart"]      = { 3524, 56.85, 29.86, 44.68, 44.67 }, -- Azuremyst Isle
+}
+
+-- The sub-map currently being VIEWED, or nil. Keyed on GetMapInfo() on purpose:
+-- that is the same frame of reference GetPlayerMapPosition answers in, so the
+-- world map and the minimap stay in step even while the player browses a map
+-- they are not standing in.
+function pfMap:GetSubmap()
+  return submaps[GetMapInfo() or ""]
+end
+
+-- Parent percentage -> sub-map percentage. Second return is false when the
+-- point is not inside this sub-map at all.
+function pfMap:ToSubmap(sub, x, y)
+  x = (x - sub[2]) / sub[4] * 100
+  y = (y - sub[3]) / sub[5] * 100
+  -- the epsilon is for float equality only, not a margin: a node sitting
+  -- exactly on the sub-map's edge divides out to 100.00000000000001 and would
+  -- otherwise be culled from the map it is actually on
+  local e = 0.000001
+  return x, y, (x >= -e and x <= 100 + e and y >= -e and y <= 100 + e)
+end
+
+-- Sub-map percentage -> parent percentage. The minimap converts this way round
+-- instead: the player position is the ONE value it reads in sub-map space, and
+-- lifting it into the parent leaves node coordinates, zone sizes and the yard
+-- scale all in the space they were already in.
+function pfMap:FromSubmap(sub, x, y)
+  return sub[2] + x / 100 * sub[4], sub[3] + y / 100 * sub[5]
+end
+
 local map_zone_cache = {}
 function pfMap:GetMapID(cid, mid)
   cid = cid or GetCurrentMapContinent()
@@ -645,7 +716,13 @@ function pfMap:GetMapID(cid, mid)
   local list = map_zone_cache[cid]
   local name = list[mid]
   local id = pfMap:GetMapIDByName(name)
-  id = id or customids[GetMapInfo()]
+  -- A sub-map answers with its PARENT: that is the zone the coordinates in the
+  -- database belong to. Works whether the patch put these map areas into
+  -- GetMapZones (list[mid] is a name pfQuest has never heard of) or left them
+  -- reachable only by SetMapByID (mid is 0, so list[mid] is nil) -- both land
+  -- here with id still nil.
+  local sub = submaps[GetMapInfo() or ""]
+  id = id or (sub and sub[1]) or customids[GetMapInfo()]
 
   return id
 end
@@ -1310,6 +1387,8 @@ function pfMap:UpdateNodes()
   -- is resized between calls the new values will invalidate cached px/py.
   local mapW = WorldMapButton:GetWidth()
   local mapH = WorldMapButton:GetHeight()
+  -- nil on every ordinary map, so this costs one table lookup per call there
+  local submap = pfMap:GetSubmap()
   for addon, _ in pairs(pfMap.nodes) do
     if pfMap.nodes[addon][map] then
       for coords, node in pairs(pfMap.nodes[addon][map]) do
@@ -1338,13 +1417,24 @@ function pfMap:UpdateNodes()
           coord_cache[coords] = { x, y }
         end
 
+        -- Reforged: on a sub-map, lift the parent zone's percentages into this
+        -- map's own before anything reads them (issue #20). Done here rather
+        -- than at the SetPoint below so the route planner gets the converted
+        -- values too. Only the LOCALS are rewritten; coord_cache stays in
+        -- parent space, which is what every other map expects.
+        local onmap = true
+        if submap then
+          x, y, onmap = pfMap:ToSubmap(submap, x, y)
+        end
+
         -- write points to the route plan
         if
+          onmap and (
           (pfQuest_config["routecluster"] == "1" and pfMap.pins[i].layer >= 9)
           or (pfQuest_config["routeender"] == "1" and pfMap.pins[i].layer == 4)
           or (pfQuest_config["routestarter"] == "1" and pfMap.pins[i].layer == 1 and pfMap.pins[i].texture)
           or (pfQuest_config["routestarter"] == "1" and pfMap.pins[i].layer == 2)
-          or pfMap.pins[i].arrow == true
+          or pfMap.pins[i].arrow == true)
         then
           local watched = nil
           local questid = pfMap.pins[i].questid
@@ -1357,8 +1447,11 @@ function pfMap:UpdateNodes()
           pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid })
         end
 
+        -- a node belonging to the parent zone but lying outside this sub-map
+        if not onmap then
+          pfMap.pins[i]:Hide()
         -- hide cluster nodes if set
-        if pfQuest_config["showcluster"] == "0" and pfMap.pins[i].cluster then
+        elseif pfQuest_config["showcluster"] == "0" and pfMap.pins[i].cluster then
           pfMap.pins[i]:Hide()
         -- hide individual quest spawns
         elseif pfQuest_config["showspawn"] == "0" and addon == "PFQUEST" and not pfMap.pins[i].texture then
@@ -1464,6 +1557,23 @@ function pfMap:UpdateMinimap()
     mm_zonename, mm_zoneid = rz, pfMap:GetMapIDByName(rz)
   end
   local mapID = mm_zoneid
+
+  -- Reforged: while a sub-map is the one being viewed, GetPlayerMapPosition
+  -- answers in ITS percentages, but the nodes, the pfDB.minimap rectangle and
+  -- the yard scale below are all the parent zone's (issue #20). Lift the player
+  -- into the parent, which is the single value that is in the wrong space, and
+  -- everything downstream stays as it was.
+  --
+  -- mapID is corrected too, for the case where the patch also renames the zone
+  -- text: normally GetRealZoneText still says "Elwynn Forest" inside Northshire
+  -- and the lookup above already answers, but if it ever says "Northshire
+  -- Valley" that lookup returns nil and the minimap goes quiet, which is
+  -- exactly the failure this issue is about.
+  local msub = pfMap:GetSubmap()
+  if msub then
+    xPlayer, yPlayer = pfMap:FromSubmap(msub, xPlayer, yPlayer)
+    mapID = mapID or msub[1]
+  end
   -- an addon-driven zoom outside the known levels must not nil-index here: that
   -- would throw out of the loop and leave the minimap blank until a reload
   local zoomrow = minimap_zoom[minimap_indoor()] or minimap_zoom[1]

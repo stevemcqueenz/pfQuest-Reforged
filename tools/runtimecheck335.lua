@@ -545,5 +545,144 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Sub-maps (issue #20). The Caverns and Mines client patch registers the eight
+-- starter zones as their own map areas, which pfQuest has no data for, so every
+-- starter zone drew nothing. They are now resolved to their parent zone and the
+-- coordinates converted. Three things to hold: the rectangles are sane, the
+-- conversion is exact and culls what is off the sub-map, and an ordinary map is
+-- completely unaffected.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("map.lua"):read("*a")
+  -- anchored on the LAST of the three helpers: a plain ".-\nend" stops at the
+  -- first one and silently lifts a third of the block
+  local block = string.match(src, "\n(local submaps = %{.-function pfMap:FromSubmap.-\nend)\n")
+  -- the signature is matched in full on purpose: "function pfMap:GetMapID.-"
+  -- also matches GetMapIDByName, which is defined earlier in the file
+  local getid = string.match(src, "\n(function pfMap:GetMapID%(cid, mid%).-\nend)\n")
+  if not block or not getid then
+    fail("submaps: could not lift the sub-map block out of map.lua")
+  else
+    local mapinfo = nil
+    local env = {
+      pfMap = {},
+      GetMapInfo = function() return mapinfo end,
+      GetMapContinents = function() return "Kalimdor" end,
+      GetMapZones = function() return "Durotar" end,
+      GetCurrentMapContinent = function() return 1 end,
+      GetCurrentMapZone = function() return 1 end,
+      customids = {},
+      map_zone_cache = {},
+    }
+    local chunk = loadstring(block .. "\n" .. getid .. "\nreturn submaps")
+    setfenv(chunk, setmetatable(env, { __index = _G }))
+    local submaps = chunk()
+    local pfMap = env.pfMap
+    pfMap.GetMapIDByName = function(_, n) return n == "Durotar" and 14 or nil end
+
+    -- ---- the data itself
+    local expected = {
+      Northshire = 12, ColdridgeValley = 1, DeathknellStart = 85,
+      SunstriderIsleStart = 3430, ShadowglenStart = 141,
+      ValleyofTrialsStart = 14, CampNaracheStart = 215, AmmenValeStart = 3524,
+    }
+    local missing, badshape, badratio = 0, 0, 0
+    local n = 0
+    for name, parent in pairs(expected) do
+      local s = submaps[name]
+      if not s or s[1] ~= parent then
+        missing = missing + 1
+        fail("submaps: %s should map to zone %d, got %s", name, parent, tostring(s and s[1]))
+      end
+    end
+    for name, s in pairs(submaps) do
+      n = n + 1
+      -- a sub-map is a piece of its parent, so it has to sit on the parent map;
+      -- the two that touch the border reach ~1.5% past it, nothing may go far
+      if s[2] < 0 or s[3] < 0 or s[4] <= 0 or s[5] <= 0
+        or s[2] + s[4] > 102 or s[3] + s[5] > 102 then
+        badshape = badshape + 1
+        fail("submaps: %s rectangle %.2f,%.2f %.2fx%.2f is not on the parent map",
+             name, s[2], s[3], s[4], s[5])
+      end
+      -- parent and child are both 3:2, so the child's width and height as
+      -- PERCENTAGES of the parent must come out equal. This is the check that
+      -- catches a transposed or mistyped offset.
+      if math.abs(s[4] - s[5]) > 0.1 then
+        badratio = badratio + 1
+        fail("submaps: %s is %.2f%% wide but %.2f%% tall; on a 3:2 parent those must match",
+             name, s[4], s[5])
+      end
+    end
+    if n ~= 8 then fail("submaps: %d entries, expected the 8 starter zones", n) end
+    if missing == 0 and n == 8 then ok("submaps: all 8 starter zones map to the right parent zone") end
+    if badshape == 0 then ok("submaps: every rectangle sits on its parent map") end
+    if badratio == 0 then ok("submaps: every rectangle is square in percentage terms, as a 3:2 parent requires") end
+
+    -- ---- the conversion
+    local sub = submaps["Northshire"]
+    local cases = {
+      { sub[2],                sub[3],                  0,   0,   true,  "top-left corner" },
+      { sub[2] + sub[4],       sub[3] + sub[5],         100, 100, true,  "bottom-right corner" },
+      { sub[2] + sub[4] / 2,   sub[3] + sub[5] / 2,     50,  50,  true,  "centre" },
+      { sub[2] - 1,            sub[3] + sub[5] / 2,     nil, nil, false, "just off the left edge" },
+      { sub[2] + sub[4] / 2,   sub[3] + sub[5] + 1,     nil, nil, false, "just below the bottom edge" },
+      { 0,                     0,                       nil, nil, false, "parent origin" },
+    }
+    local bad = 0
+    for _, c in ipairs(cases) do
+      local x, y, on = pfMap:ToSubmap(sub, c[1], c[2])
+      if on ~= c[5] or (c[3] and (math.abs(x - c[3]) > 0.01 or math.abs(y - c[4]) > 0.01)) then
+        bad = bad + 1
+        fail("submaps: %s -> (%.2f, %.2f) on=%s, expected on=%s", c[6], x, y, tostring(on), tostring(c[5]))
+      end
+    end
+    if bad == 0 then ok("submaps: corners, centre and every off-map case convert correctly") end
+
+    -- the minimap converts the other way, so the pair has to be exact
+    local roundtrip = 0
+    for name, s in pairs(submaps) do
+      for _, p in ipairs({ { 10, 90 }, { 50, 50 }, { 63.7, 21.4 } }) do
+        local sx, sy = pfMap:ToSubmap(s, pfMap:FromSubmap(s, p[1], p[2]))
+        if math.abs(sx - p[1]) > 0.001 or math.abs(sy - p[2]) > 0.001 then
+          roundtrip = roundtrip + 1
+          fail("submaps: %s round trip %.1f,%.1f came back %.3f,%.3f", name, p[1], p[2], sx, sy)
+        end
+      end
+    end
+    if roundtrip == 0 then ok("submaps: the world map and minimap conversions are exact inverses") end
+
+    -- ---- resolution, including the case that must NOT change
+    mapinfo = "Northshire"
+    if pfMap:GetMapID(1, 99) == 12 then ok("submaps: a sub-map resolves to its parent zone")
+    else fail("submaps: Northshire resolved to %s, expected 12", tostring(pfMap:GetMapID(1, 99))) end
+    mapinfo = "Durotar"
+    if pfMap:GetMapID(1, 1) == 14 then ok("submaps: an ordinary zone still resolves by name")
+    else fail("submaps: Durotar resolved to %s, expected 14", tostring(pfMap:GetMapID(1, 1))) end
+    mapinfo = "SomeUnknownMap"
+    if pfMap:GetMapID(1, 99) == nil then ok("submaps: an unknown map still resolves to nothing")
+    else fail("submaps: an unknown map resolved to %s", tostring(pfMap:GetMapID(1, 99))) end
+    mapinfo = nil
+    if pfMap:GetSubmap() == nil then ok("submaps: no sub-map when GetMapInfo returns nothing")
+    else fail("submaps: GetSubmap answered for a nil GetMapInfo") end
+  end
+
+  -- and it has to be wired into both draw paths, or the coordinates stay in the
+  -- parent's space and every pin lands somewhere else on the sub-map
+  if string.find(src, "local submap = pfMap:GetSubmap%(%)")
+    and string.find(src, "x, y, onmap = pfMap:ToSubmap%(submap, x, y%)")
+    and string.find(src, "if not onmap then") then
+    ok("submaps: the world map converts its pins and culls the off-map ones")
+  else
+    fail("submaps: UpdateNodes does not convert sub-map coordinates")
+  end
+  if string.find(src, "xPlayer, yPlayer = pfMap:FromSubmap%(msub, xPlayer, yPlayer%)") then
+    ok("submaps: the minimap lifts the player position into the parent zone")
+  else
+    fail("submaps: the minimap still reads the player position in sub-map space")
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
