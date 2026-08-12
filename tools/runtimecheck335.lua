@@ -682,6 +682,22 @@ do
   else
     fail("submaps: the minimap still reads the player position in sub-map space")
   end
+
+  -- A sub-map answers with its PARENT's zone id, so the "did the zone change"
+  -- memo can no longer tell Elwynn Forest from Northshire. Left on the id
+  -- alone, moving between the two reads as no change and the redraw that
+  -- converts the coordinates never runs.
+  if string.find(src, "pfMap%.lastUpdateMap = GetMapInfo%(%)")
+    and string.find(src, "newzone ~= pfMap%.lastUpdateZone or GetMapInfo%(%) ~= pfMap%.lastUpdateMap") then
+    ok("submaps: moving between a sub-map and its parent counts as a zone change")
+  else
+    fail("submaps: the zone-change memo is on the id alone, so a sub-map switch draws nothing new")
+  end
+  if string.find(src, "pfMap%.lastUpdateZone = nil\n      pfMap%.lastUpdateMap = nil") then
+    ok("submaps: the continent view clears both halves of the memo")
+  else
+    fail("submaps: the continent view leaves a stale map file in the memo")
+  end
 end
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))

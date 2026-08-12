@@ -1498,8 +1498,12 @@ function pfMap:UpdateNodes()
     pfQuest.tracker.DoLayout()
   end
 
-  -- record which zone was rendered so WORLD_MAP_UPDATE can skip no-op opens
+  -- record which zone was rendered so WORLD_MAP_UPDATE can skip no-op opens.
+  -- The map FILE is recorded too, because a sub-map reports its parent's zone
+  -- id: without this, switching between Elwynn Forest and Northshire looks like
+  -- "same zone" and the redraw that converts the coordinates never runs.
   pfMap.lastUpdateZone = map
+  pfMap.lastUpdateMap = GetMapInfo()
   pfMap.dirtyMaps[map] = nil
   -- map has fully rendered; subsequent zone changes are deliberate user actions
   pfMap.mapJustOpened = nil
@@ -1746,14 +1750,17 @@ pfMap:SetScript("OnEvent", function()
         pfQuest.route.drawlayer:Hide()
       end
       pfMap.lastUpdateZone = nil
+      pfMap.lastUpdateMap = nil
     elseif pfMap.mapJustOpened then
       -- map just opened on a zone: ensure route layer is visible and debounce
       if pfQuest and pfQuest.route and pfQuest.route.drawlayer then
         pfQuest.route.drawlayer:Show()
       end
       pfMap.queue_update = GetTime()
-    elseif newzone ~= pfMap.lastUpdateZone then
-      -- deliberate zone change: update immediately, no debounce
+    elseif newzone ~= pfMap.lastUpdateZone or GetMapInfo() ~= pfMap.lastUpdateMap then
+      -- deliberate zone change: update immediately, no debounce. The map file is
+      -- compared as well as the zone id, so moving between a sub-map and its
+      -- parent counts as a change even though both answer with the same id.
       if pfQuest and pfQuest.route and pfQuest.route.drawlayer then
         pfQuest.route.drawlayer:Show()
       end
