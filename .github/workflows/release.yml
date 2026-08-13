@@ -104,15 +104,27 @@ jobs:
               # keeps commit subjects free to stay technical while the release
               # notes stay written for players.
               git log --no-merges --format='%H' "$PREV"..HEAD > /tmp/_shas
+              : > /tmp/_bullets
               while read -r sha; do
+                # A trailer wrapped over several lines is folded back into one
+                # bullet: git emits its continuation lines separately, and each
+                # would otherwise become a bullet of its own.
                 git show -s --format='%(trailers:key=Changelog,valueonly)' "$sha" \
+                  | awk '{ if ($0 ~ /^[[:space:]]/) { sub(/^[[:space:]]+/, ""); buf = buf " " $0 } else { if (buf != "") print buf; buf = $0 } } END { if (buf != "") print buf }' \
                   | sed '/^[[:space:]]*$/d' > /tmp/_tr
                 if [ -s /tmp/_tr ]; then
-                  grep -v '^skip$' /tmp/_tr | sed 's/^/- /' || true
+                  grep -v '^skip$' /tmp/_tr | sed 's/^/- /' >> /tmp/_bullets || true
                 else
-                  git show -s --format='- %s' "$sha"
+                  git show -s --format='- %s' "$sha" >> /tmp/_bullets
                 fi
               done < /tmp/_shas
+              if [ -s /tmp/_bullets ]; then
+                cat /tmp/_bullets
+              else
+                # Every commit in the range was skipped, so there is nothing a
+                # player would notice. Say that rather than ship a blank body.
+                echo "- Maintenance only. No player-facing changes."
+              fi
             else
               echo "See CHANGES-REFORGED.md for the full history."
             fi
