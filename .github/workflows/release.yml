@@ -98,19 +98,41 @@ jobs:
               echo "## Changes since $PREV"
               echo
               # One bullet per commit. A commit may carry one or more
-              # "Changelog: ..." trailers, which are what users actually read
+              # "Changelog: ..." lines, which are what users actually read
               # in the release; a commit with none falls back to its subject,
               # and "Changelog: skip" leaves the commit out entirely. This
               # keeps commit subjects free to stay technical while the release
               # notes stay written for players.
+              #
+              # The whole commit body is scanned rather than git's trailer
+              # parser: git only reads the LAST paragraph as trailers, so a
+              # Changelog line sitting above a Co-Authored-By block was
+              # silently ignored (that is how v1.0.52 shipped its subject
+              # despite carrying "Changelog: skip"). An indented continuation
+              # line is folded onto the bullet it belongs to.
+              AWKPROG='
+                /^Changelog:[[:space:]]*/ {
+                  line = $0
+                  sub(/^Changelog:[[:space:]]*/, "", line)
+                  if (buf != "") print buf
+                  buf = line
+                  inb = 1
+                  next
+                }
+                inb && /^[[:space:]]+[^[:space:]]/ {
+                  cont = $0
+                  sub(/^[[:space:]]+/, "", cont)
+                  buf = buf " " cont
+                  next
+                }
+                { if (buf != "") { print buf; buf = "" } inb = 0 }
+                END { if (buf != "") print buf }
+              '
               git log --no-merges --format='%H' "$PREV"..HEAD > /tmp/_shas
               : > /tmp/_bullets
               while read -r sha; do
-                # A trailer wrapped over several lines is folded back into one
-                # bullet: git emits its continuation lines separately, and each
-                # would otherwise become a bullet of its own.
-                git show -s --format='%(trailers:key=Changelog,valueonly)' "$sha" \
-                  | awk '{ if ($0 ~ /^[[:space:]]/) { sub(/^[[:space:]]+/, ""); buf = buf " " $0 } else { if (buf != "") print buf; buf = $0 } } END { if (buf != "") print buf }' \
+                git show -s --format='%B' "$sha" \
+                  | awk "$AWKPROG" \
                   | sed '/^[[:space:]]*$/d' > /tmp/_tr
                 if [ -s /tmp/_tr ]; then
                   grep -v '^skip$' /tmp/_tr | sed 's/^/- /' >> /tmp/_bullets || true

@@ -120,9 +120,16 @@ the line players read, so write it for them:
 the quest, zone or feature. Never the mechanism: "sub-map beats the zone name"
 means nothing to someone reading a release page.
 
-A commit may carry several trailers when it fixes several visible things. Use
-`Changelog: skip` for anything with no player-facing effect (CI, docs,
-refactors, test harnesses) so it stays out of the notes.
+A commit may carry several `Changelog:` lines when it fixes several visible
+things; each becomes its own bullet. Use `Changelog: skip` for anything with no
+player-facing effect (CI, docs, refactors, test harnesses) so it stays out of
+the notes. A release whose commits are all skipped says "Maintenance only"
+rather than shipping an empty body.
+
+The line may sit anywhere in the commit body, including above a
+`Co-Authored-By:` block, because the workflow scans the whole message rather
+than using git's trailer parser (which reads only the last paragraph). Wrap a
+long one by indenting the continuation lines, as above.
 
 This applies to release notes ONLY. Commit subjects, PR bodies and issue
 replies keep the style above.
