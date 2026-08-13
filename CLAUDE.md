@@ -105,3 +105,24 @@ after opening.
 
 Do not close an issue on the strength of a fix. Ask the reporter to verify and
 close only after they confirm.
+
+### Release changelog
+
+`.github/workflows/release.yml` builds the release notes from the commits since
+the last tag. Each bullet is a `Changelog:` trailer if the commit has one, and
+the commit subject otherwise. Commit subjects stay technical; the trailer is
+the line players read, so write it for them:
+
+    Changelog: Fixed: Alliance quest - Wolves Across the Border. Adjusted the
+    quest from Vanilla to WotLK.
+
+`Fixed:` / `Added:` / `Changed:`, then the area, then what the player sees. Name
+the quest, zone or feature. Never the mechanism: "sub-map beats the zone name"
+means nothing to someone reading a release page.
+
+A commit may carry several trailers when it fixes several visible things. Use
+`Changelog: skip` for anything with no player-facing effect (CI, docs,
+refactors, test harnesses) so it stays out of the notes.
+
+This applies to release notes ONLY. Commit subjects, PR bodies and issue
+replies keep the style above.
