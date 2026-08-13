@@ -13,6 +13,11 @@
   <Include file="..\db\quests-serverlevels335.lua" />
   <Include file="..\db\quests-eventtags335.lua" />
   <Include file="..\db\quests-relations335.lua" />
+
+  <!-- Vanilla quests Blizzard reworked for Wrath, where pfQuest still carries
+       the 1.12 content. Merged field-wise by database.lua (see the rework335
+       block there), never through patchtable. -->
+  <Include file="..\db\wotlkrework335.lua" />
   <!-- Northrend map rectangles. Without these the minimap loop skips the zone
        entirely, so Northrend had world map nodes but never minimap dots. -->
   <Include file="..\db\minimap-wotlk335.lua" />

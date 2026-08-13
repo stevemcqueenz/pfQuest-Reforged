@@ -250,6 +250,61 @@ if pfDB["quests"]["eventtags"] then
   pfDB["quests"]["eventtags"] = nil
 end
 
+-- Reforged: vanilla quests Blizzard REWORKED for Wrath (see db/wotlkrework335.lua).
+-- pfQuest's vanilla quest data was never refreshed against 3.3.5a -- only 5 of
+-- the 4435 quests in db/quests.lua are overridden by the -wotlk overlay -- so a
+-- quest changed during Wrath still describes the vanilla version (issue #43).
+--
+-- Applied FIELD-WISE, never through patchtable: replacing a whole quest entry
+-- would drop the Questie-sourced relations, race masks and prerequisites that
+-- the overlays above just merged in. Runs before PackCoords/PackDropData so the
+-- item drop maps written here are compacted with everything else.
+if pfDB["rework335"] then
+  local rw = pfDB["rework335"]
+
+  for id, fix in pairs(rw["quests"] or {}) do
+    local q = pfDB["quests"]["data"][id]
+    if q then
+      -- only the named sub-fields; obj.U/obj.O and every other key survive
+      if fix["obj"] then
+        q["obj"] = q["obj"] or {}
+        for k, v in pairs(fix["obj"]) do q["obj"][k] = v end
+      end
+    end
+  end
+
+  -- The drop map is REPLACED, not merged: these corrections remove sources as
+  -- well as add them. Tough Wolf Meat no longer drops from the diseased wolves,
+  -- and a merge would leave them on the list.
+  for id, fix in pairs(rw["items"] or {}) do
+    local it = pfDB["items"]["data"][id]
+    if not it then
+      it = {}
+      pfDB["items"]["data"][id] = it
+    end
+    for k, v in pairs(fix) do it[k] = v end
+  end
+
+  -- Names: correct enUS outright, and fill any other installed locale that has
+  -- no name for the id at all (a brand new item). A locale that DOES carry the
+  -- old name is left alone -- we have no translation for the new one, and
+  -- inventing an English string for a German client would be worse.
+  local function applynames(db, names)
+    for id, name in pairs(names or {}) do
+      if pfDB[db]["enUS"] then pfDB[db]["enUS"][id] = name end
+      for locale in pairs(pfDB.locales) do
+        if pfDB[db][locale] and not pfDB[db][locale][id] then
+          pfDB[db][locale][id] = name
+        end
+      end
+    end
+  end
+  applynames("items", rw["itemnames"])
+  applynames("units", rw["unitnames"])
+
+  pfDB["rework335"] = nil
+end
+
 -- Reforged: Eastern Plaguelands (zone 139) coordinate correction.
 --
 -- Blizzard rescaled the Eastern Plaguelands world map during Wrath, and

@@ -119,7 +119,56 @@ jobs:
             if [ -n "$PREV" ]; then
               echo "## Changes since $PREV"
               echo
-              git log --no-merges --pretty='- %s' "$PREV"..HEAD
+              # One bullet per commit. A commit may carry one or more
+              # "Changelog: ..." lines, which are what users actually read
+              # in the release; a commit with none falls back to its subject,
+              # and "Changelog: skip" leaves the commit out entirely. This
+              # keeps commit subjects free to stay technical while the release
+              # notes stay written for players.
+              #
+              # The whole commit body is scanned rather than git's trailer
+              # parser: git only reads the LAST paragraph as trailers, so a
+              # Changelog line sitting above a Co-Authored-By block was
+              # silently ignored (that is how v1.0.52 shipped its subject
+              # despite carrying "Changelog: skip"). An indented continuation
+              # line is folded onto the bullet it belongs to.
+              AWKPROG='
+                /^Changelog:[[:space:]]*/ {
+                  line = $0
+                  sub(/^Changelog:[[:space:]]*/, "", line)
+                  if (buf != "") print buf
+                  buf = line
+                  inb = 1
+                  next
+                }
+                inb && /^[[:space:]]+[^[:space:]]/ {
+                  cont = $0
+                  sub(/^[[:space:]]+/, "", cont)
+                  buf = buf " " cont
+                  next
+                }
+                { if (buf != "") { print buf; buf = "" } inb = 0 }
+                END { if (buf != "") print buf }
+              '
+              git log --no-merges --format='%H' "$PREV"..HEAD > /tmp/_shas
+              : > /tmp/_bullets
+              while read -r sha; do
+                git show -s --format='%B' "$sha" \
+                  | awk "$AWKPROG" \
+                  | sed '/^[[:space:]]*$/d' > /tmp/_tr
+                if [ -s /tmp/_tr ]; then
+                  grep -v '^skip$' /tmp/_tr | sed 's/^/- /' >> /tmp/_bullets || true
+                else
+                  git show -s --format='- %s' "$sha" >> /tmp/_bullets
+                fi
+              done < /tmp/_shas
+              if [ -s /tmp/_bullets ]; then
+                cat /tmp/_bullets
+              else
+                # Every commit in the range was skipped, so there is nothing a
+                # player would notice. Say that rather than ship a blank body.
+                echo "- Maintenance only. No player-facing changes."
+              fi
             else
               echo "See CHANGES-REFORGED.md for the full history."
             fi
