@@ -97,7 +97,22 @@ jobs:
             if [ -n "$PREV" ]; then
               echo "## Changes since $PREV"
               echo
-              git log --no-merges --pretty='- %s' "$PREV"..HEAD
+              # One bullet per commit. A commit may carry one or more
+              # "Changelog: ..." trailers, which are what users actually read
+              # in the release; a commit with none falls back to its subject,
+              # and "Changelog: skip" leaves the commit out entirely. This
+              # keeps commit subjects free to stay technical while the release
+              # notes stay written for players.
+              git log --no-merges --format='%H' "$PREV"..HEAD > /tmp/_shas
+              while read -r sha; do
+                git show -s --format='%(trailers:key=Changelog,valueonly)' "$sha" \
+                  | sed '/^[[:space:]]*$/d' > /tmp/_tr
+                if [ -s /tmp/_tr ]; then
+                  grep -v '^skip$' /tmp/_tr | sed 's/^/- /' || true
+                else
+                  git show -s --format='- %s' "$sha"
+                fi
+              done < /tmp/_shas
             else
               echo "See CHANGES-REFORGED.md for the full history."
             fi
