@@ -182,7 +182,12 @@ pfQuest.route.SetTarget = function(node, default)
       or node.texture ~= targetTexture
     )
   then
-    pfMap.queue_update = true
+    -- a TIMESTAMP, never a boolean: map.lua's node-update debounce does
+    -- "queue_update + 0.25 < GetTime()", so a true here throws every frame
+    -- ("attempt to perform arithmetic on field 'queue_update'") and, because
+    -- the throw lands BEFORE the line that clears the field, the flag stays
+    -- true and map node updates stall for the rest of the session.
+    pfMap.queue_update = GetTime()
   end
 
   targetTitle = node and node.title or nil
