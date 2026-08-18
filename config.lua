@@ -553,6 +553,27 @@ function pfQuestConfig:ApplySearch(text)
   end
 end
 
+-- Emulated backdrops (standalone, no real pfUI installed) draw a Blizzard
+-- edge that renders too heavy at native size, so pfQuest inflates every input
+-- and scales it back down to thin the border out. The SEARCH box was built
+-- outside the row loop and never got that treatment, so it wore a visibly
+-- thicker border than every value box in the pane -- the one control that
+-- escaped the restyle.
+--
+-- Sized from the DESIRED visual box rather than the row loop's /0.6, which
+-- ends up 1.33x its nominal width; the search has to fit the sidebar exactly.
+local function ScaleInput(input, w, h)
+  if pfUI.api.emulated then
+    input:SetScale(0.8)
+    input:SetWidth(w / 0.8)
+    input:SetHeight(h / 0.8)
+    if input.SetTextInsets then input:SetTextInsets(8, 8, 8, 8) end
+  else
+    input:SetWidth(w)
+    input:SetHeight(h)
+  end
+end
+
 -- one navigation entry plus its scrolling pane, pfUI's CreateTabFrame +
 -- CreateArea collapsed into a single call because pfQuest has one nav level,
 -- not two
@@ -941,8 +962,7 @@ function pfQuestConfig:CreateConfigEntries(config)
   -- table -- each row already carries its own haystack
   pfQuestConfig.search = CreateFrame("EditBox", nil, pfQuestConfig)
   pfQuestConfig.search:SetPoint("TOPLEFT", 10, -32)
-  pfQuestConfig.search:SetWidth(sidebarwidth - 14)
-  pfQuestConfig.search:SetHeight(18)
+  ScaleInput(pfQuestConfig.search, sidebarwidth - 14, 18)
   pfQuestConfig.search:SetTextInsets(5, 5, 5, 5)
   pfQuestConfig.search:SetFontObject(GameFontNormal)
   pfQuestConfig.search:SetTextColor(1, 1, 1, 1)
@@ -990,7 +1010,7 @@ function pfQuestConfig:CreateConfigEntries(config)
   -- number of rows before it has to scroll
   pfQuestConfig:SetHeight(max(topoffset + footer + 30 + getn(sections) * tabheight, 560))
 
-  pfQuestConfig.search:SetWidth(sidebarwidth - 14)
+  ScaleInput(pfQuestConfig.search, sidebarwidth - 14, 18)
   pfQuestConfig.separator:ClearAllPoints()
   pfQuestConfig.separator:SetPoint("TOPLEFT", sidebarwidth, -topoffset + 8)
   pfQuestConfig.separator:SetPoint("BOTTOMLEFT", sidebarwidth, footer + 6)

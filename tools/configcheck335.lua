@@ -24,6 +24,9 @@ _G.pfUI = { font_default = "Fonts\\FRIZQT__.TTF", api = {} }
 -- a LARGER font than the default: the overlap bug only appears above the size
 -- the layout was originally tuned for, so testing at 12 tested nothing
 _G.pfUI_config = { global = { font_size = 16 } }
+-- the standalone case: compat/pfUI.lua sets this when no real pfUI is present,
+-- which is what most users run. The emulated backdrop is why inputs are scaled.
+_G.pfUI.api.emulated = true
 _G.pfUI.api.CreateBackdrop = function(f) if f then f.backdrop = true end end
 _G.pfUI.api.SkinButton = function(f) if f then f.skinned = true end end
 _G.pfUI.api.CreateScrollFrame = function(_, parent)
@@ -254,6 +257,24 @@ do
   check(shown == nil, "a row without a tooltip opens nothing")
   plainrow2:Fire("OnLeave")
   _G.this = nil
+end
+
+-- the search box must get the SAME skinning as the value boxes in the pane.
+-- It is built outside the row loop, so it silently missed the emulated-backdrop
+-- scaling and wore a visibly heavier border than everything around it.
+do
+  local rowinput = input("Harness Size")
+  check(pfQuestConfig.search.backdrop == true, "the search box has the panel backdrop")
+  check(pfQuestConfig.search:GetScale() == rowinput:GetScale(),
+        "the search box is scaled like the row inputs (search %s, row %s)",
+        tostring(pfQuestConfig.search:GetScale()), tostring(rowinput:GetScale()))
+  -- and it still occupies the sidebar it is anchored in: scaled widgets report
+  -- their UNSCALED width, so the visual width is width * scale
+  local visual = pfQuestConfig.search:GetWidth() * pfQuestConfig.search:GetScale()
+  local tabwidth = _G.pfQuestConfigTab1:GetWidth()
+  check(visual > 0 and math.abs(visual - (tabwidth + 12 - 14)) < 2,
+        "the search box spans the sidebar (visual %s, sidebar %s)",
+        tostring(visual), tostring(tabwidth + 12 - 14))
 end
 
 -- ---------------------------------------------------------------------------
