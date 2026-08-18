@@ -302,6 +302,9 @@ _G.pfDB = {
     ["data"] = { [179597] = { ["coords"] = { { 30, 40, 113, 10 }, { 50, 50, 999, 10 } } } },
     ["loc"] = { [179597] = "Meeting Stone RFC" },
   },
+  -- the stone -> dungeon map, and the zone names it resolves through
+  ["meetingstone335"] = { [179597] = 2437 },
+  ["zones"] = { ["loc"] = { [2437] = "Ragefire Chasm" } },
 }
 -- rename the PFQUEST node title to match the daily fake's log slot
 pfMap.nodes.PFQUEST[113]["40|61"] = { ["Daily Test"] = node("Daily Test", "cluster_mob", { qlogid = 7 }) }
@@ -371,7 +374,34 @@ check(avail and avail.badge == true, "provider: event quest id (eventtags overla
 pfQuest_config["compassdungeon"] = "1"
 compass.BuildMarkers(0.4, 0.6, target, false)
 local dun = findclass(C.DUNGEON)
-check(dun ~= nil and dun.title == "Meeting Stone RFC" and near(dun.x, 30) and near(dun.y, 40),
+-- the marker names the DUNGEON: every stone in the game is called "Meeting
+-- Stone", so the object name alone told the player nothing
+-- the degrade path: a stone with NO mapping keeps the plain label rather than
+-- gaining a dangling separator. Driven through the exported walk, which owns
+-- the per-zone memo -- asking for another zone first is what forces a rebuild.
+do
+  local seen = {}
+  local function grab(x, y, class, tab) seen[table.getn(seen) + 1] = tab end
+  local saved = pfDB["meetingstone335"][179597]
+  pfDB["meetingstone335"][179597] = nil
+  compass.EachZoneDungeon(999, grab)
+  seen = {}
+  compass.EachZoneDungeon(113, grab)
+  check(seen[1] and seen[1].title == "Meeting Stone RFC",
+        "dungeon: an unmapped stone keeps the plain label (got %s)",
+        tostring(seen[1] and seen[1].title))
+
+  pfDB["meetingstone335"][179597] = saved
+  compass.EachZoneDungeon(999, grab)
+  seen = {}
+  compass.EachZoneDungeon(113, grab)
+  check(seen[1] and seen[1].title == "Meeting Stone RFC: Ragefire Chasm",
+        "dungeon: a mapped stone names its dungeon (got %s)",
+        tostring(seen[1] and seen[1].title))
+end
+
+check(dun ~= nil and dun.title == "Meeting Stone RFC: Ragefire Chasm"
+      and near(dun.x, 30) and near(dun.y, 40),
       "provider: meta DB meeting stone in this zone maps to DUNGEON")
 check(classcount(C.DUNGEON) == 1, "provider: other-zone stone coords excluded")
 pfQuest_config["compassdungeon"] = "0"

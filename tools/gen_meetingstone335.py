@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Generate db/meetingstone335.lua -- which DUNGEON each meeting stone belongs
+to, from an AzerothCore world DB.
+
+Why this exists
+---------------
+Every meeting stone in the game is named "Meeting Stone", so the compass and
+the in-world pins could only ever label them that (QA: "for the meeting stone
+can we write also for which dungeon it is"). pfQuest's own meta table carries
+only the faction.
+
+AzerothCore has the answer in gameobject_template: a meeting stone is type 23
+(GAMEOBJECT_TYPE_MEETINGSTONE) and its Data2 column is the dungeon's areaID --
+which IS pfQuest's zone id space, so the name comes straight out of
+pfDB["zones"]["loc"] with no extra table to ship or translate.
+
+Source data
+-----------
+    SHA=$(git ls-remote https://github.com/azerothcore/azerothcore-wotlk.git refs/heads/master | cut -f1)
+    mkdir -p ~/refs/ac-world && cd ~/refs/ac-world && echo "$SHA" > sha.txt
+    curl -sSL -O "https://raw.githubusercontent.com/azerothcore/azerothcore-wotlk/$SHA/data/sql/base/db_world/gameobject_template.sql"
+
+Then run from the addon root:
+
+    python3 tools/gen_meetingstone335.py --ac-dir ~/refs/ac-world
+
+Only stones pfQuest actually tracks are emitted, and only where the areaID
+resolves to a zone name pfQuest can print -- a stone we cannot name keeps the
+plain "Meeting Stone" label rather than gaining a blank suffix.
+"""
+
+import argparse
+import os
+import re
+import sys
+
+GO_TYPE_MEETINGSTONE = 23
+COL_ENTRY, COL_TYPE, COL_NAME, COL_DATA2 = 0, 1, 3, 10
+
+
+def split_tuples(text):
+    out, depth, cur, inq, esc = [], 0, "", False, False
+    for ch in text:
+        if esc:
+            cur += ch; esc = False; continue
+        if ch == "\\":
+            cur += ch; esc = True; continue
+        if ch == "'":
+            inq = not inq; cur += ch; continue
+        if not inq:
+            if ch == "(":
+                depth += 1
+                if depth == 1:
+                    cur = ""; continue
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    out.append(cur); continue
+        cur += ch
+    return out
+
+
+def split_fields(tup):
+    out, cur, inq, esc = [], "", False, False
+    for ch in tup:
+        if esc:
+            cur += ch; esc = False; continue
+        if ch == "\\":
+            cur += ch; esc = True; continue
+        if ch == "'":
+            inq = not inq; cur += ch; continue
+        if ch == "," and not inq:
+            out.append(cur); cur = ""; continue
+        cur += ch
+    out.append(cur)
+    return out
+
+
+def tracked_stones(root):
+    """object ids pfQuest lists in meta["meetingstone"] (stored negative)."""
+    with open(os.path.join(root, "db/meta.lua"), encoding="utf8") as fh:
+        text = fh.read()
+    block = re.search(r'\["meetingstone"\] = \{(.*?)\n  \},', text, re.S)
+    if not block:
+        sys.exit("no meetingstone block in db/meta.lua")
+    return set(abs(int(x)) for x in re.findall(r"\[(-?\d+)\]", block.group(1)))
+
+
+def zone_names(root):
+    names = {}
+    for name in ("db/enUS/zones.lua", "db/enUS/zones-tbc.lua", "db/enUS/zones-wotlk.lua"):
+        path = os.path.join(root, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf8") as fh:
+            for zid, zname in re.findall(r'\[(\d+)\] = "([^"]*)"', fh.read()):
+                names[int(zid)] = zname
+    return names
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ac-dir", default=os.path.expanduser("~/refs/ac-world"))
+    ap.add_argument("--out", default="db/meetingstone335.lua")
+    args = ap.parse_args()
+
+    root = os.getcwd()
+    tracked = tracked_stones(root)
+    names = zone_names(root)
+
+    path = os.path.join(args.ac_dir, "gameobject_template.sql")
+    with open(path, encoding="utf8", errors="replace") as fh:
+        text = fh.read()
+    marker = "INSERT INTO `gameobject_template` VALUES"
+    if marker not in text:
+        sys.exit("no gameobject_template INSERT in %s" % path)
+
+    sha = ""
+    shafile = os.path.join(args.ac_dir, "sha.txt")
+    if os.path.exists(shafile):
+        sha = open(shafile).read().strip()
+
+    emitted, unnamed, untracked = {}, 0, 0
+    for tup in split_tuples(text[text.index(marker) + len(marker):]):
+        fields = split_fields(tup)
+        if len(fields) <= COL_DATA2:
+            continue
+        try:
+            entry, gtype, area = int(fields[COL_ENTRY]), int(fields[COL_TYPE]), int(fields[COL_DATA2])
+        except ValueError:
+            continue
+        if gtype != GO_TYPE_MEETINGSTONE:
+            continue
+        if entry not in tracked:
+            untracked += 1
+            continue
+        if not area or area not in names:
+            unnamed += 1
+            continue
+        emitted[entry] = (area, names[area])
+
+    lines = [
+        "-- Meeting stone -> the DUNGEON it summons to, for pfQuest Reforged.",
+        "-- GENERATED by tools/gen_meetingstone335.py, do not hand-edit.",
+        "--",
+        "-- Source: AzerothCore world database, gameobject_template, type 23",
+        "-- (GAMEOBJECT_TYPE_MEETINGSTONE) Data2 = the dungeon's areaID, from",
+        "-- github.com/azerothcore/azerothcore-wotlk, data/sql/base/db_world,",
+        "-- commit %s." % (sha or "(unpinned)"),
+        "--",
+        "-- Every meeting stone in the game is named \"Meeting Stone\", so a marker",
+        "-- could only ever say that. The areaID here IS pfQuest's zone id space, so",
+        "-- consumers resolve the name through pfDB[\"zones\"][\"loc\"] and nothing",
+        "-- extra ships or needs translating.",
+        "--",
+        "-- Shape: pfDB[\"meetingstone335\"][objectId] = zoneId. Only stones pfQuest",
+        "-- tracks in meta[\"meetingstone\"] are emitted (%d skipped as untracked)," % untracked,
+        "-- and only where the areaID resolves to a name (%d skipped as unnamed);" % unnamed,
+        "-- a stone we cannot name keeps the plain \"Meeting Stone\" label.",
+        'pfDB["meetingstone335"] = {',
+    ]
+    for entry in sorted(emitted):
+        area, zname = emitted[entry]
+        lines.append("  [%d] = %d, -- %s" % (entry, area, zname))
+    lines.append("}")
+    lines.append("")
+
+    with open(os.path.join(root, args.out), "w", encoding="utf8") as fh:
+        fh.write("\n".join(lines))
+    print("%s: %d stones named, %d unnamed, %d untracked"
+          % (args.out, len(emitted), unnamed, untracked))
+
+
+if __name__ == "__main__":
+    main()

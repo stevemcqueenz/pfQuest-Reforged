@@ -602,6 +602,8 @@ local function BuildDungeonList(zone)
   dungeonZone = zone
   local n = 0
   local stones = pfDB and pfDB["meta"] and pfDB["meta"]["meetingstone"]
+  local stonezones = pfDB and pfDB["meetingstone335"]
+  local zonenames = pfDB and pfDB["zones"] and pfDB["zones"]["loc"]
   local objects = pfDB and pfDB["objects"] and pfDB["objects"]["data"]
   local loc = pfDB and pfDB["objects"] and pfDB["objects"]["loc"]
   if stones and objects then
@@ -615,7 +617,16 @@ local function BuildDungeonList(zone)
             local d = dungeons[n] or {}
             dungeons[n] = d
             d.x, d.y = c[1], c[2]
-            d.title = (loc and loc[id]) or L["Meeting Stone"]
+            -- name the DUNGEON, not the rock: every meeting stone in the
+            -- game is called "Meeting Stone", so the plain object name told
+            -- the player nothing (QA). db/meetingstone335.lua maps the stone
+            -- to its dungeon's zone id, which resolves through the zone names
+            -- pfQuest already ships -- so this stays localised for free. A
+            -- stone we have no mapping for keeps the plain label.
+            local base = (loc and loc[id]) or L["Meeting Stone"]
+            local area = stonezones and stonezones[id]
+            local dungeon = area and zonenames and zonenames[area]
+            d.title = dungeon and (base .. ": " .. dungeon) or base
             -- node-shaped so the pins extras can BindIcon the entry directly
             d.texture = PATH .. "\\img\\tracking\\meetingstone"
           end

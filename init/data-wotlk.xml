@@ -34,6 +34,10 @@
        early and the parser drops the rest of the file, which is exactly how
        this include and the tracking one below stopped loading. -->
   <Include file="..\db\poi-wotlk335.lua" />
+  <!-- Which dungeon each meeting stone summons to (AzerothCore
+       gameobject_template type 23, Data2 = the dungeon areaID). Every stone
+       is named "Meeting Stone", so the marker had nothing else to say. -->
+  <Include file="..\db\meetingstone335.lua" />
   <!-- Outland/Northrend tracking data: herbs, ores, chests, fishing pools and
        rare mobs. Merged ADDITIVELY by database.lua (see the tracking335 block
        there), not by patchtable. -->
