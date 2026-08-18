@@ -13,6 +13,11 @@
   <Include file="..\db\quests-serverlevels335.lua" />
   <Include file="..\db\quests-eventtags335.lua" />
   <Include file="..\db\quests-relations335.lua" />
+  <!-- Profession skill RANK a quest requires (AzerothCore quest_template_addon).
+       pfQuest only models "do you have this skill"; without the rank a level-35
+       First Aid 150 player was shown quests needing 225. Merged field-wise by
+       database.lua (see the skillrank block there), never through patchtable. -->
+  <Include file="..\db\quests-skillrank335.lua" />
 
   <!-- Vanilla quests Blizzard reworked for Wrath, where pfQuest still carries
        the 1.12 content. Merged field-wise by database.lua (see the rework335
@@ -24,7 +29,10 @@
   <!-- Utility POIs (flight masters, mailboxes, innkeepers, repair vendors)
        from the AzerothCore world DB. Consumed by compass.lua (tracking
        mirror + ambient markers), pins.lua (extras) and waypoint.lua
-       (/way flight|mail|inn|repair) -- see docs/POI-DESIGN.md. -->
+       (/way flight|mail|inn|repair). See docs/POI-DESIGN.md.
+       NOTE: no double hyphen inside an XML comment. It ends the comment
+       early and the parser drops the rest of the file, which is exactly how
+       this include and the tracking one below stopped loading. -->
   <Include file="..\db\poi-wotlk335.lua" />
   <!-- Outland/Northrend tracking data: herbs, ores, chests, fishing pools and
        rare mobs. Merged ADDITIVELY by database.lua (see the tracking335 block

@@ -237,6 +237,24 @@ if pfDB["quests"]["serverlevels"] then
   pfDB["quests"]["serverlevels"] = nil
 end
 
+-- Reforged: profession skill RANK requirements (see db/quests-skillrank335.lua)
+-- applied field-wise onto the merged quest data. pfQuest models a profession
+-- requirement as PRESENCE only, so a First Aid 150 player was shown quests that
+-- need 225 (in-game QA). The overlay also carries the skill id itself for the
+-- 59 quests pfQuest had none for -- those were not mis-ranked, they were
+-- ungated entirely. Never overwrites a skill id pfQuest already has: where both
+-- sources name one they agree, and the generator refuses to emit a conflict.
+if pfDB["quests"]["skillrank"] then
+  for id, sk in pairs(pfDB["quests"]["skillrank"]) do
+    local q = pfDB["quests"]["data"][id]
+    if q then
+      if sk.rank then q.skillrank = sk.rank end
+      if sk.skill and not q.skill then q.skill = sk.skill end
+    end
+  end
+  pfDB["quests"]["skillrank"] = nil
+end
+
 -- Reforged: restore the holiday/event flag on WotLK quests (see
 -- db/quests-eventtags335.lua). The WotLK data was generated from Questie and the
 -- conversion dropped pfQuest's ["event"] field, so holiday quests were never
@@ -2307,6 +2325,18 @@ function pfDatabase:QuestFilter(id, plevel, pclass, prace)
   -- hide non-available quests for your profession (uses cache when inside SearchQuests)
   if quests[id]["skill"] and not pfDatabase:GetPlayerSkillCached(quests[id]["skill"]) then
     return
+  end
+
+  -- Reforged: and hide the ones your RANK cannot take yet. GetPlayerSkillCached
+  -- already returns the rank (false when the skill is missing), so this is the
+  -- same lookup the presence check above just made, compared instead of tested.
+  -- A rank with no resolvable skill id cannot be evaluated: leave it visible
+  -- rather than hide a quest on a guess.
+  if quests[id]["skillrank"] and quests[id]["skill"] then
+    local rank = pfDatabase:GetPlayerSkillCached(quests[id]["skill"])
+    if not rank or rank < quests[id]["skillrank"] then
+      return
+    end
   end
 
   -- hide lowlevel quests
