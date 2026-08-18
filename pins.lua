@@ -644,7 +644,7 @@ local function BuildMultiPool()
     f.beam = f:CreateTexture(nil, "BORDER")
     f.beam:SetTexture(PATH .. "\\img\\beam_soft")
     f.beam:SetBlendMode("ADD")
-    f.beam:SetWidth(MULTI_BEAM_W)
+    f.beam:SetWidth(floor(MULTI_BEAM_W * (ms.beamMul or 1) + 0.5))
     f.beam:SetHeight(MULTI_BEAM_MIN)
     f.beam:SetPoint("BOTTOM", f, "CENTER", 0, 0)
     f.beam:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], MULTI_BEAM_ALPHA,
@@ -721,6 +721,10 @@ end
 local partyNodes = {}
 local CLASS_PARTY = (pfQuest.compass and pfQuest.compass.CLASS and pfQuest.compass.CLASS.PARTY) or 9
 local CLASS_PARTY_DEAD = 6.5
+-- QA: a plate on a party member standing next to you is pure clutter -- you
+-- can already see them. Only ALIVE members are held back; a DEAD one is the
+-- whole point of the layer (find the body) and always shows, at any range.
+local PARTY_MIN_DEFAULT = 30 -- yd
 local SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local function AddPartyEntries(wx, wy)
   if GetNumRaidMembers() > 0 then return end
@@ -749,7 +753,8 @@ local function AddPartyEntries(wx, wy)
       end
       local dx, dy = mx - wx, my - wy
       local d2 = dx * dx + dy * dy
-      if d2 <= MULTI_RADIUS2 then
+      local pmin2 = ms.partyMin2 or (PARTY_MIN_DEFAULT * PARTY_MIN_DEFAULT)
+      if d2 <= MULTI_RADIUS2 and (pdead or d2 >= pmin2) then
         local e = GetMEntry()
         e.class = pdead and CLASS_PARTY_DEAD or CLASS_PARTY
         e.key = node
@@ -842,6 +847,27 @@ function pins.ApplyTint()
       f.beam:SetGradientAlpha("VERTICAL", a[1], a[2], a[3], MULTI_BEAM_ALPHA,
                               a[1], a[2], a[3], 0)
     end
+  end
+end
+
+-- beam thickness (pinsbeamwidth, percent): QA read the default beam as too
+-- thin. One multiplier over all three widths so the main beam's halo/core
+-- pair and the extras' strip keep their relative weighting. A pins FIELD for
+-- the same reason as ApplyTint: the driver sits at the 60-upvalue ceiling.
+function pins.ApplyBeamWidth(mul)
+  local wide = floor(BEAM_WIDE_W * mul + 0.5)
+  local core = floor(BEAM_CORE_W * mul + 0.5)
+  local multi = floor(MULTI_BEAM_W * mul + 0.5)
+  -- a sub-pixel width renders as nothing at all, so never let the multiplier
+  -- erase a beam the player still has switched on
+  if wide < 1 then wide = 1 end
+  if core < 1 then core = 1 end
+  if multi < 1 then multi = 1 end
+  waypoint.beam:SetWidth(wide)
+  waypoint.beam2:SetWidth(core)
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    if f then f.beam:SetWidth(multi) end
   end
 end
 
@@ -1078,13 +1104,16 @@ driver:SetScript("OnUpdate", function()
   local cfgParty = pfQuest_config["pinsparty"]
   local cfgDungeon = pfQuest_config["pinsdungeon"]
   local cfgColor = pfQuest_config["pinscolor"]
+  local cfgBeamW = pfQuest_config["pinsbeamwidth"]
+  local cfgPartyMin = pfQuest_config["pinspartymin"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
      or cfgMulti ~= ms.cfgOn or cfgMultiCap ~= ms.cfgCap
      or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares
      or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon
-     or cfgColor ~= ms.cfgColor then
+     or cfgColor ~= ms.cfgColor or cfgBeamW ~= ms.cfgBeamW
+     or cfgPartyMin ~= ms.cfgPartyMin then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
@@ -1096,6 +1125,12 @@ driver:SetScript("OnUpdate", function()
     ms.cfgColor = cfgColor
     pins.tintOverride = pins.ParseColor(cfgColor)
     pins.ApplyTint()
+    ms.cfgBeamW = cfgBeamW
+    ms.beamMul = Clamp(cfgBeamW, 25, 400, 100) / 100
+    pins.ApplyBeamWidth(ms.beamMul)
+    ms.cfgPartyMin = cfgPartyMin
+    local pmin = Clamp(cfgPartyMin, 0, 300, PARTY_MIN_DEFAULT)
+    ms.partyMin2 = pmin * pmin
     sizeMul = Clamp(cfgSize, 25, 300, 100) / 100
     scaleMin = Clamp(cfgMin, 10, 300, 50) / 100
     scaleMax = Clamp(cfgMax, 10, 300, 150) / 100

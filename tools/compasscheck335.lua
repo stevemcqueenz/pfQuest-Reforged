@@ -100,8 +100,6 @@ _G.pfMap = setmetatable({
 }, { __index = function() return function() end end })
 
 -- pfQuestTheme: chrome seams (contract: SkinPanel for panel chrome, accent color).
--- CreateProgressBar mirrors theme.lua's return shape (track/fill textures +
--- SetProgress/SetPoint) in case the strip reuses it.
 _G.pfQuestTheme = {
   accent = { 0.2, 1.0, 0.8 },
   bg = { 0.08, 0.08, 0.08 },
@@ -109,12 +107,6 @@ _G.pfQuestTheme = {
   panelAlpha = 0.85,
   SkinPanel = function() end,
   HeaderStrip = function(frame, _) return frame:CreateTexture() end,
-  CreateProgressBar = function(parent, height)
-    local bar = { height = height or 3, track = parent:CreateTexture(), fill = parent:CreateTexture() }
-    function bar.SetPoint() end
-    function bar.SetProgress() end
-    return bar
-  end,
 }
 _G.pfUI = { font_default = "Fonts\\FRIZQT__.TTF" }
 _G.pfUI_config = { global = { font_size = 12 } }

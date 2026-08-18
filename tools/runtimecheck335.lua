@@ -58,49 +58,25 @@ _G.UIParent = _G.CreateFrame()
 print("== pfQuest runtime check (3.3.5a stub) ==")
 
 -- ---------------------------------------------------------------------------
--- theme.lua :: progress bar  (the object that broke in v1.0.30)
+-- theme.lua loads and exposes its API
+--
+-- Was the progress-bar block (the object that broke in v1.0.30). The tracker
+-- progress bars were removed after QA -- they never rendered correctly -- so
+-- what is left to protect is that theme.lua still loads under the stub and
+-- still hands back the table the rest of the addon indexes.
 -- ---------------------------------------------------------------------------
 dofile("theme.lua")
 local T = _G.pfQuestTheme
-if not T or not T.CreateProgressBar then
-  fail("pfQuestTheme.CreateProgressBar missing")
+if type(T) ~= "table" then
+  fail("pfQuestTheme is %s, expected a table", type(T))
 else
-  local bar = T.CreateProgressBar(parent, 3)
-  -- every method tracker.lua calls on a bar
-  requireMethods(bar, "progress bar", { "SetPoint", "SetProgress", "Refresh", "SetEnabled", "Hide" })
-
-  -- ButtonAdd / Reset path: enable, then clear
-  drive("bar: reset path (SetEnabled + SetProgress(nil))", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(nil)
-  end)
-
-  -- percentage path, then the post-layout refresh the tracker performs
-  drive("bar: percentage path + post-layout Refresh", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(1.0, 1, 1, 1)
-    bar.track.w = 180
-    bar:Refresh()
-  end)
-  if bar.fill.w == 180 then ok("bar: 100%% fills the full track (180px)")
-  else fail("bar: 100%% filled %s px, expected 180 (the v1.0.30 sliver bug)", tostring(bar.fill.w)) end
-
-  drive("bar: 25%% fills a quarter", function()
-    bar:SetProgress(0.25); bar:Refresh()
-  end)
-  if bar.fill.w == 45 then ok("bar: 25%% fills 45px")
-  else fail("bar: 25%% filled %s px, expected 45", tostring(bar.fill.w)) end
-
-  -- bars turned off
-  pfQuest_config["trackerbars"] = "0"
-  drive("bar: disabled path", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(1.0, 1, 1, 1)
-    bar:Refresh()
-  end)
-  if bar.track.shown == false and bar.fill.shown == false then ok("bar: disabled hides both textures")
-  else fail("bar: disabled left track=%s fill=%s shown", tostring(bar.track.shown), tostring(bar.fill.shown)) end
-  pfQuest_config["trackerbars"] = nil
+  ok("theme.lua loads and exposes pfQuestTheme")
+  -- the removal must be complete: a leftover factory means a leftover consumer
+  if T.CreateProgressBar then
+    fail("theme.lua still defines CreateProgressBar -- the tracker bars were removed")
+  else
+    ok("theme.lua no longer defines the removed CreateProgressBar")
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -767,6 +743,45 @@ do
     ok("submaps: the continent view clears both halves of the memo")
   else
     fail("submaps: the continent view leaves a stale map file in the memo")
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- pfMap.queue_update is a TIMESTAMP, everywhere
+--
+-- map.lua debounces node rebuilds with "queue_update + 0.25 < GetTime()".
+-- route.lua once stored a boolean there, so right-clicking a map node to set
+-- the route target threw on every frame -- and since the throw lands before
+-- the line that clears the field, the flag never cleared and map node updates
+-- stalled for the rest of the session (249 errors in one QA session).
+-- One writer with the wrong TYPE breaks every reader, so check the type at
+-- every write site rather than trusting the one that broke.
+-- ---------------------------------------------------------------------------
+do
+  local sources = {
+    "browser.lua", "compass.lua", "map.lua", "nameplates.lua", "pins.lua",
+    "quest.lua", "route.lua", "slashcmd.lua", "tracker.lua", "waypoint.lua",
+  }
+  local writes, bad = 0, 0
+  for _, name in ipairs(sources) do
+    local fh = io.open(name)
+    if fh then
+      local src = fh:read("*a")
+      fh:close()
+      for rhs in string.gmatch(src, "pfMap%\.queue_update%s*=%s*([^\r\n]+)") do
+        writes = writes + 1
+        -- the only legal values: a fresh timestamp, or nil to clear the flag
+        if not (string.find(rhs, "^GetTime%\(%\)") or string.find(rhs, "^nil")) then
+          bad = bad + 1
+          fail("queue_update: %s writes a non-timestamp (%s)", name, rhs)
+        end
+      end
+    end
+  end
+  if writes < 15 then
+    fail("queue_update: only %d write sites found -- the scan pattern has drifted", writes)
+  elseif bad == 0 then
+    ok("queue_update: all %d write sites store GetTime() or nil", writes)
   end
 end
 
