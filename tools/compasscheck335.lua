@@ -669,8 +669,17 @@ fireTracking()
 compass.BuildMarkers(0.4, 0.6, target, false)
 check(classcount(C.POI) == 0, "poi mirror: nothing tracked, ambient off -> zero POI markers")
 
--- selecting flight tracking mirrors ONLY the flight class
+-- the mirror is OPT-IN (poimirror): tracking alone must not put a pin in the
+-- world, which is the bug QA hit -- a repair anvil appeared with no pfQuest
+-- setting on, purely from the player's MINIMAP tracking choice
 tracking[1].active = 1
+fireTracking()
+compass.BuildMarkers(0.4, 0.6, target, false)
+check(classcount(C.POI) == 0,
+      "poi mirror: tracking alone shows nothing while poimirror is off")
+
+-- with the setting on, selecting flight tracking mirrors ONLY the flight class
+pfQuest_config["poimirror"] = "1"
 fireTracking()
 compass.BuildMarkers(0.4, 0.6, target, false)
 local fm = findpoi("Testzone Flight")
@@ -724,14 +733,16 @@ check(classcount(C.POI) == 2,
       "poi city gate off: ambient shows outside cities (both data classes, got %d)", classcount(C.POI))
 pfQuest_config["poicityonly"] = "1"
 pfQuest_config["compasspoi"] = "0"
--- the mirror is never gated: mailbox tracking mirrors in the sticks with the
--- city gate on and ambient off
+-- the mirror ignores the CITY gate (it is not ambience, it is an echo of a
+-- choice the player just made) -- but it still needs its own opt-in
 tracking[4].active = 1
+pfQuest_config["poimirror"] = "1"
 fireTracking()
 compass.BuildMarkers(0.4, 0.6, target, false)
 check(findpoi("Testzone Mailbox") ~= nil and classcount(C.POI) == 1,
       "poi mirror: tracking mirrors outside cities, untouched by the city gate")
 tracking[4].active = nil
+pfQuest_config["poimirror"] = "0"
 fireTracking()
 compass.BuildMarkers(0.4, 0.6, target, false)
 check(classcount(C.POI) == 0, "poi: all layers off again -> zero POI markers")

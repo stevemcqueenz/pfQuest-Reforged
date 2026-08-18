@@ -1309,9 +1309,21 @@ end
 check(distOf(44.7, 60) > T.POI_RADIUS and distOf(44.7, 60) < T.MULTI_RADIUS,
       "harness scene: Flight Far sits between POI_RADIUS and MULTI_RADIUS (%.0f yd)", distOf(44.7, 60))
 
+-- the mirror is opt-in now (poimirror): tracking alone must not put a POI
+-- plate in the world -- that was the QA bug, a repair anvil appearing with no
+-- pfQuest setting on
 tracking[1].active = 1
 fireTracking()
 for i = 1, 6 do fire() end
+check(countTitle("Flight Near") == 0,
+      "poi extras: tracking alone shows nothing while poimirror is off")
+
+pfQuest_config["poimirror"] = "1"
+fireTracking()
+-- poimirror is not in the pins driver's config dirty-check (it belongs to the
+-- compass provider), so the extras only pick it up on their 1s heartbeat --
+-- and the stub clock advances 0.05 per GetTime call
+for i = 1, 60 do fire() end
 local pn, pidx = countTitle("Flight Near")
 check(pn == 1 and ml[pidx].class == CLS.POI,
       "poi extras: flight tracking selected -> flight POI joins as CLASS_POI (found %d)", pn)
