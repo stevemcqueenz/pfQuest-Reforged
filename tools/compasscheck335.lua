@@ -618,7 +618,11 @@ check(shown == list.n - mergedN and shown >= 1,
 local anyclamped = nil
 for i = 1, list.n do if list[i].clamped then anyclamped = true end end
 check(anyclamped and true or false, "behind-the-player markers report clamped=true after a fire")
--- indoors: 0,0 position hides every marker but keeps the strip
+-- Indoors (a dungeon): the player's map position reads 0,0, so every bearing
+-- would lie and the markers hide. The whole STRIP now goes with them -- a bar
+-- of cardinal letters with nothing on it is clutter, which is what QA said.
+-- The old behaviour (keep the compass as a plain heading strip) survives
+-- behind compassautohide for anyone who wants it.
 posx, posy = 0, 0
 facing = facing + 0.01
 okE, errE = fireOnUpdate()
@@ -626,7 +630,24 @@ check(okE, "OnUpdate indoors (0,0)%s", okE and "" or " -> " .. tostring(errE))
 shown = 0
 for i = 1, 12 do if compass.markers[i]:IsShown() then shown = shown + 1 end end
 check(shown == 0, "indoors: every marker hidden (position unknown, bearings would lie)")
-check(compass:IsShown() == true, "indoors: the strip itself stays up (facing still valid)")
+check(compass:IsShown() == false, "indoors: the strip hides too, having nothing to say")
+
+-- opt out and it behaves as before
+pfQuest_config["compassautohide"] = "0"
+facing = facing + 0.01
+fireOnUpdate()
+check(compass:IsShown() == true,
+      "indoors with autohide off: the strip stays up as a plain compass")
+shown = 0
+for i = 1, 12 do if compass.markers[i]:IsShown() then shown = shown + 1 end end
+check(shown == 0, "indoors with autohide off: still no markers, only the heading")
+pfQuest_config["compassautohide"] = "1"
+
+-- back outdoors with markers, the strip returns
+posx, posy = 0.4, 0.6
+facing = facing + 0.01
+fireOnUpdate()
+check(compass:IsShown() == true, "outdoors again: the strip comes back")
 posx, posy = 0.4, 0.6
 
 -- ---------------------------------------------------------------------------
