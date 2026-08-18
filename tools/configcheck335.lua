@@ -82,7 +82,9 @@ ok("config.lua loads under the 3.3.5a stub")
 local cfg = {
   { text = "General", type = "header" },
   { text = "Harness Toggle", default = "1", type = "checkbox", config = "thing" },
-  { text = "Harness Size", desc = "Percent, 100 is the default", default = "100", type = "text", config = "thingsize" },
+  { text = "Harness Size", desc = "Percent, 100 is the default", tip = "A longer explanation of what this setting is actually for.", default = "100", type = "text", config = "thingsize" },
+  { text = "Harness Wrap", desc = "A deliberately long hint line that has to wrap onto a second row because it does not fit beside the value box on the right", default = "1", type = "text", config = "thingwrap" },
+  { text = "Harness Row With A Very Long Label Indeed", default = "1", type = "text", config = "thinglong" },
   { text = "Second Section", type = "header" },
   { text = "Harness Color", default = "", type = "color", config = "thingcolor" },
   { text = "Harness Scale", default = "1", type = "slider", config = "thingscale",
@@ -203,6 +205,55 @@ do
     prev, prevy = r, y
   end
   if stacked then ok("rows stack with no overlap and no gap") end
+end
+
+-- a hint too long for the space beside its control WRAPS, and the row has to
+-- grow to hold the wrap or the next row lands on top of it -- the overlap the
+-- maintainer hit twice, in its remaining form
+do
+  local wraprow = pfQuestConfig:GetRow("Harness Wrap")
+  local shortrow = pfQuestConfig:GetRow("Harness Size")
+  check(wraprow and shortrow and wraprow:GetHeight() > shortrow:GetHeight(),
+        "a wrapping hint makes its row taller (wrap %s, short %s)",
+        tostring(wraprow and wraprow:GetHeight()), tostring(shortrow and shortrow:GetHeight()))
+  -- and the text never reaches into the control gutter on the right
+  if wraprow and wraprow.desc then
+    check(wraprow.desc:GetWidth() > 0 and wraprow.desc:GetWidth() < wraprow:GetWidth(),
+          "the hint is narrower than the row, leaving the control gutter clear (%s of %s)",
+          tostring(wraprow.desc:GetWidth()), tostring(wraprow:GetWidth()))
+  end
+  local longrow = pfQuestConfig:GetRow("Harness Row With A Very Long Label Indeed")
+  check(shortrow and longrow
+        and shortrow.caption:GetWidth() == longrow.caption:GetWidth()
+        and longrow.caption:GetWidth() < longrow:GetWidth(),
+        "labels are constrained to the text column, short and long alike (%s vs %s, row %s)",
+        tostring(shortrow and shortrow.caption:GetWidth()),
+        tostring(longrow and longrow.caption:GetWidth()),
+        tostring(longrow and longrow:GetWidth()))
+end
+
+-- tooltip: rows that carry one show it, rows that do not stay silent
+do
+  local shown = nil
+  _G.GameTooltip = {
+    SetOwner = function() end,
+    SetText = function(_, t) shown = t end,
+    AddLine = function() end,
+    Show = function() end,
+    Hide = function() shown = nil end,
+  }
+  local tiprow = pfQuestConfig:GetRow("Harness Size")
+  local plainrow2 = pfQuestConfig:GetRow("Harness Toggle")
+  _G.this = tiprow
+  tiprow:Fire("OnEnter")
+  check(shown == "Harness Size", "a row with a tooltip opens it on hover (got %s)", tostring(shown))
+  tiprow:Fire("OnLeave")
+  check(shown == nil, "the tooltip closes on leave")
+  _G.this = plainrow2
+  plainrow2:Fire("OnEnter")
+  check(shown == nil, "a row without a tooltip opens nothing")
+  plainrow2:Fire("OnLeave")
+  _G.this = nil
 end
 
 -- ---------------------------------------------------------------------------

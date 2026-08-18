@@ -1644,5 +1644,44 @@ do
   for i = 1, 20 do fire() end
 end
 
+-- ---------------------------------------------------------------------------
+-- pinsnav: the off-screen chevron is optional. It is the one element that
+-- moves when the player is NOT looking at the target, so some want it gone --
+-- and the toggle has to bite immediately, not on the next mode change.
+-- ---------------------------------------------------------------------------
+do
+  -- reset the scene: earlier blocks leave party members, POI tracking and the
+  -- extras layer switched on, and any of those can hold a frame shown
+  pfQuest_config["pins"] = "1"
+  pfQuest_config["pinsbeam"] = "1"
+  pfQuest_config["pinsmulti"] = "0"
+  pfQuest_config["pinsparty"] = "0"
+  pfQuest_config["poimirror"] = "0"
+  pfQuest_config["compasspoi"] = "0"
+  pfQuest_config["pinsnav"] = "1"
+  partyN = 0
+  wts = nil -- drop the extras scene's per-entity projection override
+  for i = 1, 30 do fire() end
+  -- target behind the camera (WorldToScreen's visibility flag false) is what
+  -- puts the tier into navigator mode
+  scrvis = nil
+  for i = 1, 30 do fire() end
+  check(pins.navigator:IsShown() == true,
+        "navigator: shown by default while the target is off screen")
+
+  pfQuest_config["pinsnav"] = "0"
+  for i = 1, 20 do fire() end
+  check(pins.navigator:IsShown() == false,
+        "navigator: hides live, without waiting for a mode change")
+  check(pins.waypoint:IsShown() == false and pins.pinpoint:IsShown() == false,
+        "navigator: hiding it does not resurrect the other two modes")
+
+  pfQuest_config["pinsnav"] = "1"
+  for i = 1, 20 do fire() end
+  check(pins.navigator:IsShown() == true, "navigator: comes back when re-enabled")
+  scrvis = 1
+  for i = 1, 20 do fire() end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
