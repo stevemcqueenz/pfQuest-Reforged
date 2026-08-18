@@ -823,10 +823,23 @@ check(mf[2].dtext:IsShown() == false and mf[4].dtext:IsShown() == false,
 -- subordinate beams (pinsmultibeam, default on)
 -- ---------------------------------------------------------------------------
 check(mf[1].beam:IsShown() == true, "beams: shown by default on a shown extra")
-check(mf[1].beam:GetHeight() == math.floor(dReady + 0.5),
-      "beams: height follows distance inside the clamp (got %s)", tostring(mf[1].beam:GetHeight()))
-check(mf[4].beam:GetHeight() == T.MULTI_BEAM_MAX,
-      "beams: far extra clamps to the subordinate max height")
+-- the expectation is the CLAMP ITSELF, not a fixture distance: the floor and
+-- ceiling have moved twice now, and a bare "== dReady" silently stops testing
+-- the mapping the moment the scene falls outside the range
+local function expectBeamH(d)
+  local h = math.floor(d + 0.5)
+  if h < T.MULTI_BEAM_MIN then return T.MULTI_BEAM_MIN end
+  if h > T.MULTI_BEAM_MAX then return T.MULTI_BEAM_MAX end
+  return h
+end
+check(mf[1].beam:GetHeight() == expectBeamH(dReady),
+      "beams: height is distance clamped to [%s, %s] (got %s, expected %s)",
+      tostring(T.MULTI_BEAM_MIN), tostring(T.MULTI_BEAM_MAX),
+      tostring(mf[1].beam:GetHeight()), tostring(expectBeamH(dReady)))
+check(mf[4].beam:GetHeight() <= T.MULTI_BEAM_MAX
+      and mf[4].beam:GetHeight() >= T.MULTI_BEAM_MIN,
+      "beams: a far extra stays inside the subordinate clamp (got %s, max %s)",
+      tostring(mf[4].beam:GetHeight()), tostring(T.MULTI_BEAM_MAX))
 -- (b) the beam is a CHILD of the plate frame, so the extra's distance-fade
 -- alpha (checked above on the frame) multiplies its fixed gradient base
 check(mf[1].beam.parent == mf[1] and mf[4].beam.parent == mf[4],
@@ -1386,9 +1399,13 @@ do
         "halo and core share one height (one dirty key)")
 
   -- pulse: constants pinned to the spec band, and the alpha actually animates
-  check(near(T.GLOW_PULSE_MID - T.GLOW_PULSE_AMP, 0.18)
-        and near(T.GLOW_PULSE_MID + T.GLOW_PULSE_AMP, 0.32),
-        "glow pulse bounds are 0.18..0.32")
+  -- halved after QA read the plates as glowing too hard; the band is pinned
+  -- so a future polish pass cannot quietly wind it back up
+  check(near(T.GLOW_PULSE_MID - T.GLOW_PULSE_AMP, 0.07)
+        and near(T.GLOW_PULSE_MID + T.GLOW_PULSE_AMP, 0.13),
+        "glow pulse bounds are 0.07..0.13 (got %s..%s)",
+        tostring(T.GLOW_PULSE_MID - T.GLOW_PULSE_AMP),
+        tostring(T.GLOW_PULSE_MID + T.GLOW_PULSE_AMP))
   check(near(T.GLOW_PULSE_W, 2 * math.pi / 2.5), "glow pulse period is 2.5s")
   local a1g = pins.waypoint.glow:GetAlpha()
   for i = 1, 3 do fire() end
@@ -1561,6 +1578,58 @@ do
   pfQuest_config["pinspartymin"] = "30"
   pfQuest_config["pinsparty"] = "0"
   partyN = 0
+end
+
+-- ---------------------------------------------------------------------------
+-- pinsglow: one multiplier over every glow in the tier. QA read the plates as
+-- glowing too hard, so the defaults were halved AND made tunable -- which is
+-- worth pinning, because a multiplier that silently applies to only some of
+-- the surfaces is exactly the drift this harness exists to catch.
+-- ---------------------------------------------------------------------------
+do
+  pfQuest_config["pins"] = "1"
+  pfQuest_config["pinsmulti"] = "1"
+  pfQuest_config["pinsglow"] = "100"
+  for i = 1, 20 do fire() end
+  local base = pins.waypoint.glow:GetAlpha()
+  check(base > 0, "glow: the main plate carries a halo at 100%% (got %s)", tostring(base))
+
+  pfQuest_config["pinsglow"] = "0"
+  for i = 1, 20 do fire() end
+  check(near(pins.waypoint.glow:GetAlpha(), 0),
+        "glow: 0%% turns the main halo off outright (got %s)",
+        tostring(pins.waypoint.glow:GetAlpha()))
+  check(near(pins.navigator.glow:GetAlpha(), 0) and near(pins.pinpoint.glow:GetAlpha(), 0),
+        "glow: 0%% reaches the navigator and the pinpoint too")
+  if mf[1] then
+    check(near(mf[1].glow:GetAlpha(), 0), "glow: 0%% reaches the extras (got %s)",
+          tostring(mf[1].glow:GetAlpha()))
+  end
+
+  pfQuest_config["pinsglow"] = "200"
+  for i = 1, 20 do fire() end
+  check(pins.navigator.glow:GetAlpha() > base,
+        "glow: 200%% brightens rather than clamping at the default")
+
+  pfQuest_config["pinsglow"] = "100"
+  for i = 1, 20 do fire() end
+end
+
+-- beam length: the same multiplier idea on the other axis. The clamp moves
+-- with it, so a longer setting cannot be swallowed by the old ceiling.
+do
+  pfQuest_config["pinsbeamlength"] = "100"
+  for i = 1, 20 do fire() end
+  local h100 = pins.waypoint.beam:GetHeight()
+  pfQuest_config["pinsbeamlength"] = "200"
+  for i = 1, 20 do fire() end
+  check(pins.waypoint.beam:GetHeight() > h100,
+        "beam length: 200%% makes the shaft taller (got %s from %s)",
+        tostring(pins.waypoint.beam:GetHeight()), tostring(h100))
+  check(pins.waypoint.beam:GetHeight() == pins.waypoint.beam2:GetHeight(),
+        "beam length: halo and core stay the same height")
+  pfQuest_config["pinsbeamlength"] = "100"
+  for i = 1, 20 do fire() end
 end
 
 print(string.format("\n%d checks, %d failure(s)", checks, failures))

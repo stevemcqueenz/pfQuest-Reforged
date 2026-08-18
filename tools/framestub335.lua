@@ -30,6 +30,7 @@ ClearFocus SetFocus HighlightText SetCursorPosition SetPropagateKeyboardInput
 SetParent GetObjectType IsObjectType SetSize GetEffectiveScale SetDrawLayer
 SetVertexColor GetVertexColor SetTexCoord SetBlendMode SetDesaturated SetGradientAlpha
 SetFontObject SetTextInsets SetOrientation SetValueStep SetThumbTexture Click
+SetCheckedTexture
 SetScrollChild SetVerticalScroll GetVerticalScroll GetVerticalScrollRange]]
 
 -- forward declaration: applySize below hands back a texture for a slider
@@ -76,6 +77,12 @@ local function applySize(o)
   function o.GetThumbTexture(s)
     if not s.thumbtex then s.thumbtex = mkTexture(s) end
     return s.thumbtex
+  end
+  -- same rule as the thumb: the caller re-anchors and tints this, so handing
+  -- back nil would crash and a noop would hide a missing method
+  function o.GetCheckedTexture(s)
+    if not s.checktex then s.checktex = mkTexture(s) end
+    return s.checktex
   end
   function o.GetAlpha(s) return s.alpha or 1 end
   function o.ClearAllPoints(s) s.points = {} end

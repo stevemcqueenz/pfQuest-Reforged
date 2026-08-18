@@ -202,6 +202,10 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Navigator Orbit Radius"], default = "140", type = "text", config = "pinsnavradius" })
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Pin Glow"], desc = L["Percent, 0 turns the halo off"], default = "100", type = "text", config = "pinsglow" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Beam Length"], desc = L["Percent, 100 reaches the top of the screen"], default = "100", type = "text", config = "pinsbeamlength" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Beam Width"], desc = L["Percent, 100 is the default thickness"], default = "100", type = "text", config = "pinsbeamwidth" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Light Beam"], default = "1", type = "checkbox", config = "pinsbeam" })
@@ -429,11 +433,12 @@ function pfQuestConfig:ShowSection(index)
     if s.tab then
       if active then
         s.tab.text:SetTextColor(a[1], a[2], a[3], 1)
-        s.tab.bg:SetTexture(1, 1, 1, 1)
-        s.tab.bg:SetGradientAlpha("HORIZONTAL", 0, 0, 0, 0, a[1], a[2], a[3], 0.12)
+        s.tab.bg:SetTexture(a[1], a[2], a[3], 0.10)
+        s.tab.mark:Show()
       else
         s.tab.text:SetTextColor(1, 1, 1, 1)
         s.tab.bg:SetTexture(0, 0, 0, 0)
+        s.tab.mark:Hide()
       end
     end
   end
@@ -526,9 +531,15 @@ local function CreateSection(index, name)
   tab.bg = tab:CreateTexture(nil, "BACKGROUND")
   tab.bg:SetAllPoints()
   tab.bg:SetTexture(0, 0, 0, 0)
+  tab.mark = tab:CreateTexture(nil, "ARTWORK")
+  tab.mark:SetTexture(accent()[1], accent()[2], accent()[3], 1)
+  tab.mark:SetWidth(2)
+  tab.mark:SetPoint("TOPLEFT", 0, 0)
+  tab.mark:SetPoint("BOTTOMLEFT", 0, 0)
+  tab.mark:Hide()
   tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontWhite")
   tab.text:SetFont(pfUI.font_default, pfUI_config.global.font_size)
-  tab.text:SetPoint("LEFT", 6, 0)
+  tab.text:SetPoint("LEFT", 8, 0)
   tab.text:SetJustifyH("LEFT")
   tab.text:SetText(name)
   tab:SetScript("OnClick", function()
@@ -633,6 +644,15 @@ function pfQuestConfig:CreateConfigEntries(config)
         frame.input:SetPushedTexture("")
         frame.input:SetHighlightTexture("")
         pfUI.api.CreateBackdrop(frame.input, nil, true)
+        frame.input:SetCheckedTexture("Interface\\Buttons\\WHITE8X8")
+        local tick = frame.input:GetCheckedTexture()
+        if tick then
+          local a = accent()
+          tick:SetVertexColor(a[1], a[2], a[3], 0.9)
+          tick:ClearAllPoints()
+          tick:SetPoint("TOPLEFT", frame.input, "TOPLEFT", 3, -3)
+          tick:SetPoint("BOTTOMRIGHT", frame.input, "BOTTOMRIGHT", -3, 3)
+        end
         frame.input:SetWidth(16)
         frame.input:SetHeight(16)
         frame.input:SetPoint("RIGHT", -8, 0)
