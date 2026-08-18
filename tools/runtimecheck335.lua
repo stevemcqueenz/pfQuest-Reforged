@@ -770,5 +770,44 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- pfMap.queue_update is a TIMESTAMP, everywhere
+--
+-- map.lua debounces node rebuilds with "queue_update + 0.25 < GetTime()".
+-- route.lua once stored a boolean there, so right-clicking a map node to set
+-- the route target threw on every frame -- and since the throw lands before
+-- the line that clears the field, the flag never cleared and map node updates
+-- stalled for the rest of the session (249 errors in one QA session).
+-- One writer with the wrong TYPE breaks every reader, so check the type at
+-- every write site rather than trusting the one that broke.
+-- ---------------------------------------------------------------------------
+do
+  local sources = {
+    "browser.lua", "compass.lua", "map.lua", "nameplates.lua", "pins.lua",
+    "quest.lua", "route.lua", "slashcmd.lua", "tracker.lua", "waypoint.lua",
+  }
+  local writes, bad = 0, 0
+  for _, name in ipairs(sources) do
+    local fh = io.open(name)
+    if fh then
+      local src = fh:read("*a")
+      fh:close()
+      for rhs in string.gmatch(src, "pfMap%\.queue_update%s*=%s*([^\r\n]+)") do
+        writes = writes + 1
+        -- the only legal values: a fresh timestamp, or nil to clear the flag
+        if not (string.find(rhs, "^GetTime%\(%\)") or string.find(rhs, "^nil")) then
+          bad = bad + 1
+          fail("queue_update: %s writes a non-timestamp (%s)", name, rhs)
+        end
+      end
+    end
+  end
+  if writes < 15 then
+    fail("queue_update: only %d write sites found -- the scan pattern has drifted", writes)
+  elseif bad == 0 then
+    ok("queue_update: all %d write sites store GetTime() or nil", writes)
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
