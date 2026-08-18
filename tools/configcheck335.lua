@@ -134,6 +134,19 @@ local function input(name)
   return f and f.input
 end
 check(input("Harness Toggle") ~= nil, "checkbox row has an input")
+-- the checked state must be the flat accent square, not Blizzard's yellow
+-- tick: that tick was the one piece of 2006 art left on an otherwise flat row
+do
+  local box = input("Harness Toggle")
+  local tick = box and box.GetCheckedTexture and box:GetCheckedTexture()
+  -- NOT "tick and tick:GetVertexColor()": an `and` expression truncates a
+  -- multi-value return to its first value, so g and b would read nil
+  local r, g, b
+  if tick then r, g, b = tick:GetVertexColor() end
+  check(tick ~= nil and r == 0.2 and g == 1 and b == 0.8,
+        "checkbox tick is tinted with the theme accent (got %s,%s,%s)",
+        tostring(r), tostring(g), tostring(b))
+end
 check(input("Harness Size") ~= nil, "text row has an input")
 check(input("Harness Color") ~= nil, "color row has a swatch button")
 check(input("Harness Scale") ~= nil, "slider row has a slider")
@@ -173,6 +186,24 @@ end
 -- ---------------------------------------------------------------------------
 local okshow = pcall(function() pfQuestConfig:ShowSection(2) end)
 check(okshow and pfQuestConfig.activesection == 2, "ShowSection switches the active section")
+
+-- the selected entry is marked by COLOUR and a bar, never by a button-shaped
+-- block: the first attempt painted a solid white quad and modulated it with a
+-- gradient, which rendered as a pale grey slab (QA screenshot)
+do
+  local t1, t2 = _G.pfQuestConfigTab1, _G.pfQuestConfigTab2
+  check(t1 and t2 and t1.mark and t2.mark, "each nav entry owns a selection bar")
+  if t1 and t2 and t1.mark and t2.mark then
+    check(t2.mark:IsShown() == true and t1.mark:IsShown() == false,
+          "only the active entry shows its selection bar")
+    local r, g, b = t2.mark:GetVertexColor()
+    check(t2.mark:GetTexture() ~= nil, "the selection bar is painted, not blank")
+    pfQuestConfig:ShowSection(1)
+    check(t1.mark:IsShown() == true and t2.mark:IsShown() == false,
+          "the bar follows the selection")
+    pfQuestConfig:ShowSection(2)
+  end
+end
 local okupd, uerr = pcall(function() pfQuestConfig:UpdateConfigEntries() end)
 check(okupd, "UpdateConfigEntries runs over every widget type%s", okupd and "" or (" -> " .. tostring(uerr)))
 

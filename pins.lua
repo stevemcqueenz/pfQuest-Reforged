@@ -60,11 +60,20 @@ local PIN_HOLD = 0.25 -- mode hysteresis hold (spec; all three boundaries)
 local NEAR_ENTER, NEAR_LEAVE = 28, 33
 -- beam height clamp (UI units). First in-game contact showed 300 at max
 -- distance renders as a screen-tall pillar on a scaled UI -- the beam is a
--- subtle locator shaft, not the dominant object; shorter and dimmer reads far
--- better against the sky (maintainer screenshots, Barrens night).
-local BEAM_MIN, BEAM_MAX = 40, 170
--- 0.35 base alpha: at 0.75 the first in-game shots read as a solid column
-local BEAM_ALPHA = 0.35
+-- Sized to the WaypointUI reference the maintainer is working from (their own
+-- video stills, docs/PINS-DESIGN.md "Beam"): the shaft leaves the TOP OF THE
+-- SCREEN, bright where it meets the plate and fading out as it rises. The
+-- soft two-layer look is what he wants kept -- the complaint was only that it
+-- was "way too thin and way too short".
+--
+-- History worth keeping, because it was a mistake made twice: this was cut to
+-- 40-170 at alpha 0.35 off a single night screenshot, reasoning that a
+-- screen-tall pillar was too dominant. It is SUPPOSED to be screen-tall. The
+-- vertical gradient is what keeps it from reading as a wall -- alpha falls to
+-- zero long before the top -- so height and loudness are not the same axis.
+-- Both are reachable from the settings now (pinsbeamwidth, pinsbeamlength).
+local BEAM_MIN, BEAM_MAX = 260, 900
+local BEAM_ALPHA = 0.8
 -- visual polish pass (docs/PINS-DESIGN.md "Visual polish"): the soft-edged
 -- beam_soft strip replaces WHITE8X8, ADD-blended so the shaft reads as light,
 -- not a sticker. ADD + the vertical SetGradientAlpha fade COMPOSE on 3.3.5a:
@@ -75,10 +84,10 @@ local BEAM_ALPHA = 0.35
 -- is needed and the height-scaling behavior is unchanged. The MAIN waypoint
 -- gets two layers -- a wide faint halo plus a narrow brighter core; extras
 -- keep a single soft layer at their subordinate alpha discipline.
-local BEAM_CORE_W = 4       -- narrow bright core px (the pre-polish beam width)
-local BEAM_WIDE_W = 12      -- wide faint halo px (main waypoint only)
-local BEAM_WIDE_ALPHA = 0.16 -- halo gradient base; the core keeps BEAM_ALPHA
-local MULTI_BEAM_W = 6      -- extras' single soft-strip width (was 3px solid)
+local BEAM_CORE_W = 7       -- bright core px
+local BEAM_WIDE_W = 20      -- wide faint halo px (main waypoint only)
+local BEAM_WIDE_ALPHA = 0.14 -- halo gradient base; the core keeps BEAM_ALPHA
+local MULTI_BEAM_W = 9      -- extras' single soft-strip width
 -- plate glow (marker_glow, ADD, accent-tinted, behind the plate): subtle
 -- halo slightly larger than the plate. The MAIN pin (waypoint diamond +
 -- pinpoint plate) pulses gently -- cost: one SetAlpha per tick, only while
@@ -86,10 +95,13 @@ local MULTI_BEAM_W = 6      -- extras' single soft-strip width (was 3px solid)
 -- DEAD party member keeps the full-strength glow (its find-the-body
 -- emphasis) -- still accent-tinted, NOT red: the class-tinted skull already
 -- carries identity and a third hue would fight it.
+-- Halved after in-game QA ("too much glow"): every plate wore a bloom that
+-- swallowed the icon inside it. The glow is depth against bright ground, not
+-- an effect. pinsglow scales all of it, 0 turns it off outright.
 local GLOW_SCALE = 1.6      -- glow quad = plate px * this
-local GLOW_ALPHA = 0.25     -- static glow alpha (navigator, dead party)
-local GLOW_EXTRA_ALPHA = 0.125 -- extras/party/POI static glow (half)
-local GLOW_PULSE_MID, GLOW_PULSE_AMP = 0.25, 0.07 -- pulse alpha 0.18..0.32
+local GLOW_ALPHA = 0.10     -- static glow alpha (navigator, dead party)
+local GLOW_EXTRA_ALPHA = 0.05 -- extras/party/POI static glow (half)
+local GLOW_PULSE_MID, GLOW_PULSE_AMP = 0.10, 0.03 -- pulse alpha 0.07..0.13
 local GLOW_PULSE_W = 2.5132741228718 -- 2*pi / 2.5s period
 -- plate drop shadow (marker_fill, black, drawn under everything): depth
 -- against bright ground
@@ -113,7 +125,7 @@ local MULTI_NEAREST_DIST = true -- the single nearest extra shows a distance lin
 -- its base alpha, ~70 percent of its height clamp; the extra's distance-fade
 -- alpha multiplies in on top via frame-alpha inheritance
 local MULTI_BEAM_ALPHA = 0.2
-local MULTI_BEAM_MIN, MULTI_BEAM_MAX = 28, 119
+local MULTI_BEAM_MIN, MULTI_BEAM_MAX = 60, 300
 -- utility POIs (phase B): ambience culls tighter than the quest extras --
 -- a mailbox plate reaching across the whole 300 yd bubble is clutter, not
 -- guidance. In-game QA knob: is 250 right?
@@ -331,7 +343,7 @@ pfQuest.pins = pins
 -- Lua 5.1's 60-upvalue ceiling) reaches it through the already-captured pins
 -- table instead of three new constant upvalues
 function pins.GlowPulse(now)
-  return GLOW_PULSE_MID + GLOW_PULSE_AMP * sin(now * GLOW_PULSE_W)
+  return (GLOW_PULSE_MID + GLOW_PULSE_AMP * sin(now * GLOW_PULSE_W)) * (pins.glowMul or 1)
 end
 
 -- glow quad rides the plate size (GLOW_SCALE); same ceiling rule -- the
@@ -871,6 +883,22 @@ function pins.ApplyBeamWidth(mul)
   end
 end
 
+-- pinsglow, percent: one multiplier over every glow alpha in the tier, so the
+-- setting cannot drift between the main pin, the navigator and the extras.
+-- Zero means zero -- the halo is gone, not merely faint.
+function pins.ApplyGlow(mul)
+  waypoint.glow:SetAlpha(GLOW_ALPHA * mul)
+  pinpoint.glow:SetAlpha(GLOW_ALPHA * mul)
+  navigator.glow:SetAlpha(GLOW_ALPHA * mul)
+  for i = 1, MULTI_MAX do
+    local f = mframes[i]
+    if f then
+      f.lastGlowA = nil -- force the per-tick dirty-check to rewrite it
+      f.glow:SetAlpha(GLOW_EXTRA_ALPHA * mul)
+    end
+  end
+end
+
 local function MultiSleep()
   if not ms.active then return end
   ms.active = nil
@@ -972,7 +1000,8 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
       -- glow emphasis: extras/party/POI carry the quiet half-alpha halo; a
       -- DEAD party member keeps the full-strength one (the frame's distance
       -- fade still multiplies in via alpha inheritance)
-      local ga = e.class == CLASS_PARTY_DEAD and GLOW_ALPHA or GLOW_EXTRA_ALPHA
+      local ga = (e.class == CLASS_PARTY_DEAD and GLOW_ALPHA or GLOW_EXTRA_ALPHA)
+                 * (pins.glowMul or 1)
       if ga ~= f.lastGlowA then
         f.lastGlowA = ga
         f.glow:SetAlpha(ga)
@@ -993,8 +1022,10 @@ local function MultiTick(now, wx, wy, wz, pxf, pyf, uiw, uih, target, rx, ry)
       end
       if wantBeam then
         local bh = floor(e.dist + 0.5)
-        if bh < MULTI_BEAM_MIN then bh = MULTI_BEAM_MIN
-        elseif bh > MULTI_BEAM_MAX then bh = MULTI_BEAM_MAX end
+        local lm = pins.beamLenMul or 1
+        bh = bh * lm
+        if bh < MULTI_BEAM_MIN * lm then bh = MULTI_BEAM_MIN * lm
+        elseif bh > MULTI_BEAM_MAX * lm then bh = MULTI_BEAM_MAX * lm end
         if bh ~= f.lastBeamH then
           f.lastBeamH = bh
           f.beam:SetHeight(bh)
@@ -1106,6 +1137,8 @@ driver:SetScript("OnUpdate", function()
   local cfgColor = pfQuest_config["pinscolor"]
   local cfgBeamW = pfQuest_config["pinsbeamwidth"]
   local cfgPartyMin = pfQuest_config["pinspartymin"]
+  local cfgGlow = pfQuest_config["pinsglow"]
+  local cfgBeamL = pfQuest_config["pinsbeamlength"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
@@ -1113,7 +1146,8 @@ driver:SetScript("OnUpdate", function()
      or cfgMultiBeam ~= ms.cfgBeam or cfgRares ~= ms.cfgRares
      or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon
      or cfgColor ~= ms.cfgColor or cfgBeamW ~= ms.cfgBeamW
-     or cfgPartyMin ~= ms.cfgPartyMin then
+     or cfgPartyMin ~= ms.cfgPartyMin or cfgGlow ~= ms.cfgGlow
+     or cfgBeamL ~= ms.cfgBeamL then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
@@ -1128,6 +1162,14 @@ driver:SetScript("OnUpdate", function()
     ms.cfgBeamW = cfgBeamW
     ms.beamMul = Clamp(cfgBeamW, 25, 400, 100) / 100
     pins.ApplyBeamWidth(ms.beamMul)
+    ms.cfgGlow = cfgGlow
+    pins.glowMul = Clamp(cfgGlow, 0, 300, 100) / 100
+    pins.ApplyGlow(pins.glowMul)
+    ms.cfgBeamL = cfgBeamL
+    -- the height is re-derived on the next distance tick, so nothing to
+    -- re-apply here; clear the memo so that tick is not skipped as unchanged
+    pins.beamLenMul = Clamp(cfgBeamL, 25, 400, 100) / 100
+    lastBeamH = nil
     ms.cfgPartyMin = cfgPartyMin
     local pmin = Clamp(cfgPartyMin, 0, 300, PARTY_MIN_DEFAULT)
     ms.partyMin2 = pmin * pmin
@@ -1316,8 +1358,10 @@ driver:SetScript("OnUpdate", function()
     -- beam: height scales with distance (tall from afar, short up close),
     -- dirty on the rounded clamp
     if pfQuest_config["pinsbeam"] ~= "0" then
-      local bh = floor(dist + 0.5)
-      if bh < BEAM_MIN then bh = BEAM_MIN elseif bh > BEAM_MAX then bh = BEAM_MAX end
+      local lm = pins.beamLenMul or 1
+      local bmin, bmax = BEAM_MIN * lm, BEAM_MAX * lm
+      local bh = floor(dist * lm + 0.5)
+      if bh < bmin then bh = bmin elseif bh > bmax then bh = bmax end
       if bh ~= lastBeamH then
         lastBeamH = bh
         waypoint.beam:SetHeight(bh)
