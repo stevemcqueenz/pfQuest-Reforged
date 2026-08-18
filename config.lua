@@ -406,10 +406,19 @@ end
 -- frames. MouseIsOver exists here (FrameXML/UIParent.lua:2794) but OnEnter/
 -- OnLeave is reliable on 3.3.5a, and ~90 permanent OnUpdate handlers is
 -- exactly what the performance playbook says not to ship.
-local rowheight = 22
-local descheight = 13
-local sidebarwidth = 132
-local panewidth = 322
+-- Layout is DERIVED, never hardcoded in pixels. The first cut fixed these at
+-- 22/13 and the rows overlapped on the maintainer's client: pfUI's font size
+-- is a user setting (and the GW2 theme raises it), so a row sized for a 12pt
+-- label has its hint line running into the row below at 14pt. Everything here
+-- keys off the font instead, and the sidebar is measured from its widest
+-- label rather than guessed -- "Database & Advanced" was overflowing into the
+-- pane at the old fixed 132.
+local fontsize = (pfUI_config and pfUI_config.global and pfUI_config.global.font_size) or 12
+local tabheight = max(22, fontsize + 10)
+local rowheight = max(24, fontsize + 12)
+local descheight = max(14, fontsize + 2)
+local sidebarwidth = 132   -- floor; measured up from the widest section name
+local panewidth = 360
 local topoffset = 58
 local footer = 34
 
@@ -525,9 +534,8 @@ local function CreateSection(index, name)
 
   local tab = CreateFrame("Button", "pfQuestConfigTab" .. index, pfQuestConfig)
   tab:SetID(index)
-  tab:SetHeight(22)
-  tab:SetWidth(sidebarwidth - 12)
-  tab:SetPoint("TOPLEFT", 8, -(topoffset - 4) - (index - 1) * 22)
+  tab:SetHeight(tabheight)
+  tab:SetPoint("TOPLEFT", 8, -(topoffset - 4) - (index - 1) * tabheight)
   tab.bg = tab:CreateTexture(nil, "BACKGROUND")
   tab.bg:SetAllPoints()
   tab.bg:SetTexture(0, 0, 0, 0)
@@ -538,10 +546,12 @@ local function CreateSection(index, name)
   tab.mark:SetPoint("BOTTOMLEFT", 0, 0)
   tab.mark:Hide()
   tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-  tab.text:SetFont(pfUI.font_default, pfUI_config.global.font_size)
+  tab.text:SetFont(pfUI.font_default, fontsize)
   tab.text:SetPoint("LEFT", 8, 0)
   tab.text:SetJustifyH("LEFT")
   tab.text:SetText(name)
+  -- widest label wins: the sidebar is measured, not guessed
+  sidebarwidth = max(sidebarwidth, tab.text:GetStringWidth() + 30)
   tab:SetScript("OnClick", function()
     pfQuestConfig:ShowSection(this:GetID())
   end)
@@ -559,8 +569,6 @@ local function CreateSection(index, name)
   s.tab = tab
 
   local pane = CreateFrame("Frame", nil, pfQuestConfig)
-  pane:SetPoint("TOPLEFT", sidebarwidth + 8, -topoffset - 18)
-  pane:SetPoint("BOTTOMRIGHT", -10, footer + 6)
   pane:Hide()
   s.pane = pane
 
@@ -607,10 +615,11 @@ local function CreateRow(s, data)
   if data.desc then
     frame.tall = true
     frame:SetHeight(rowheight + descheight)
-    frame.caption:SetPoint("TOPLEFT", 6, -3)
+    frame.caption:SetPoint("TOPLEFT", 6, -4)
     frame.desc = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-    frame.desc:SetFont(pfUI.font_default, pfUI_config.global.font_size - 2)
-    frame.desc:SetPoint("TOPLEFT", 6, -17)
+    frame.desc:SetFont(pfUI.font_default, fontsize - 2)
+    -- clears the caption's own line height, whatever the font size is
+    frame.desc:SetPoint("TOPLEFT", 6, -(fontsize + 7))
     frame.desc:SetJustifyH("LEFT")
     frame.desc:SetTextColor(0.55, 0.55, 0.55, 1)
     frame.desc:SetText(data.desc)
@@ -915,11 +924,31 @@ function pfQuestConfig:CreateConfigEntries(config)
   pfQuestConfig.sectionline:SetPoint("TOPLEFT", sidebarwidth + 10, -topoffset - 6)
   pfQuestConfig.sectionline:SetPoint("TOPRIGHT", -10, -topoffset - 6)
 
+  -- FINAL PASS. Every anchor that depends on the measured sidebar is applied
+  -- here, not at section-build time: the width is only known once the last
+  -- section name has been through GetStringWidth.
   pfQuestConfig:SetWidth(sidebarwidth + panewidth + 18)
-  pfQuestConfig:SetHeight(max(topoffset + 24 + getn(sections) * 22, 420))
+  -- tall enough that the sidebar always fits and a section shows a useful
+  -- number of rows before it has to scroll
+  pfQuestConfig:SetHeight(max(topoffset + footer + 30 + getn(sections) * tabheight, 560))
+
+  pfQuestConfig.search:SetWidth(sidebarwidth - 14)
+  pfQuestConfig.separator:ClearAllPoints()
+  pfQuestConfig.separator:SetPoint("TOPLEFT", sidebarwidth, -topoffset + 8)
+  pfQuestConfig.separator:SetPoint("BOTTOMLEFT", sidebarwidth, footer + 6)
+  pfQuestConfig.sectiontitle:ClearAllPoints()
+  pfQuestConfig.sectiontitle:SetPoint("TOPLEFT", sidebarwidth + 12, -34)
+  pfQuestConfig.sectionline:ClearAllPoints()
+  pfQuestConfig.sectionline:SetPoint("TOPLEFT", sidebarwidth + 10, -topoffset - 6)
+  pfQuestConfig.sectionline:SetPoint("TOPRIGHT", -10, -topoffset - 6)
 
   for i = 1, getn(sections) do
-    LayoutSection(sections[i])
+    local sec = sections[i]
+    sec.tab:SetWidth(sidebarwidth - 12)
+    sec.pane:SetPoint("TOPLEFT", sidebarwidth + 8, -topoffset - 18)
+    sec.pane:SetPoint("BOTTOMRIGHT", -10, footer + 6)
+    sec.content:SetWidth(panewidth - 16)
+    LayoutSection(sec)
   end
   pfQuestConfig:ShowSection(1)
 end

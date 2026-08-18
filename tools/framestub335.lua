@@ -56,8 +56,15 @@ local function applySize(o)
   o.frameLevel = 1
   function o.SetFrameLevel(s, lvl) s.frameLevel = tonumber(lvl) or 1 end
   function o.GetFrameLevel(s) return s.frameLevel end
+  -- BOTH call shapes. SetPoint("TOPLEFT", x, y) is as common in this codebase
+  -- as the five-argument form, and reading it as (point, rel, relPoint) threw
+  -- the offsets away -- every x/y assertion against a short-form anchor was
+  -- silently comparing against 0.
   function o.SetPoint(s, point, rel, relPoint, x, y)
     if type(point) ~= "string" then return end
+    if type(rel) == "number" then
+      rel, relPoint, x, y = nil, nil, rel, relPoint
+    end
     s.points[point] = { rel = rel, x = tonumber(x) or 0, y = tonumber(y) or 0 }
     if rel and type(rel) == "table" then s.anchorTo = rel end
   end

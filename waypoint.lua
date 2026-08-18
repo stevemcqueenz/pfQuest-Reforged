@@ -208,9 +208,11 @@ function waypoint.SetNearestPoi(class)
     local yd = sqrt(dx * dx + dy * dy)
     local metric = pfQuest_config["compassmetric"] == "1"
     local shown = floor((metric and yd * 0.9144 or yd) + 0.5)
-    Message(L["Waypoint"] .. ": " .. name .. ", " .. shown .. (metric and " m" or " yd"))
+    Message(L["Waypoint"] .. ": " .. name .. ", " .. shown .. (metric and " m" or " yd")
+            .. " |cff888888(" .. L["/way clears it"] .. ")|r")
   else
-    Message(L["Waypoint"] .. ": " .. name)
+    Message(L["Waypoint"] .. ": " .. name
+            .. " |cff888888(" .. L["/way clears it"] .. ")|r")
   end
 end
 
