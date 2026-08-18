@@ -93,7 +93,6 @@ pfQuest_defconfig = {
   { text = L["Quest Tracker Font Size"], default = "12", type = "text", config = "trackerfontsize" },
   { text = L["Quest Tracker Max Width"], default = "300", type = "text", config = "trackerwidth" },
   { text = L["Quest Tracker Scale"], default = "1", type = "text", config = "trackerscale" },
-  { text = L["Quest Tracker Progress Bars"], default = "1", type = "checkbox", config = "trackerbars" },
   { text = L["Quest Tracker Unfold Objectives"], default = "0", type = "checkbox", config = "trackerexpand" },
 
   { text = L["Map & Minimap"], default = nil, type = "header" },
@@ -187,6 +186,8 @@ if type(WorldToScreen) == "function" then
   for i = 1, getn(pfQuest_defconfig) do
     if pfQuest_defconfig[i].config == "compasscap" then
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Party Pin Minimum Distance"], desc = L["Yards, hides party pins closer than this, dead members always show"], default = "30", type = "text", config = "pinspartymin" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Party Members"], desc = L["Nearby party members, dead ones get a beam and distance"], default = "0", type = "checkbox", config = "pinsparty" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Dungeon Entrance Pins"], desc = L["Meeting stones join the extra pins"], default = "0", type = "checkbox", config = "pinsdungeon" })
@@ -200,6 +201,8 @@ if type(WorldToScreen) == "function" then
         { text = L["Navigator Size"], default = "100", type = "text", config = "pinsnavsize" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Navigator Orbit Radius"], default = "140", type = "text", config = "pinsnavradius" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Beam Width"], desc = L["Percent, 100 is the default thickness"], default = "100", type = "text", config = "pinsbeamwidth" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Light Beam"], default = "1", type = "checkbox", config = "pinsbeam" })
       table.insert(pfQuest_defconfig, i + 1,

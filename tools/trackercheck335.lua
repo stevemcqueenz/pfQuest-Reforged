@@ -46,7 +46,7 @@ end
 -- the addon surface tracker.lua expects, faked at the seams
 -- ---------------------------------------------------------------------------
 _G.pfQuest_config = { trackerfontsize = "12", trackeralpha = "0", trackingmethod = "2",
-                      trackerwidth = "300", trackerscale = "1", trackerbars = "1" }
+                      trackerwidth = "300", trackerscale = "1" }
 _G.pfQuestConfig  = { path = "pfQuest-Reforged" }
 _G.pfQuest_history, _G.pfQuest_colors = {}, {}
 -- GetDifficultyColor must return a TABLE with r/g/b: the tracker indexes it
@@ -135,14 +135,11 @@ for _, b in pairs(tracker.buttons or {}) do
   if b.bar then withBars = withBars + 1 end
 end
 check(rows >= 1, "produced %d live row(s)", rows)
-check(withBars >= 1, "%d row(s) own a progress bar", withBars)
+-- the progress bars were removed after QA (they never rendered correctly);
+-- assert the rows no longer carry one, so a half-revert cannot slip back in
+check(withBars == 0, "no row owns a progress bar (%d found)", withBars)
 check((tracker:GetWidth() or 0) > 0, "tracker sized itself (width %s)", tostring(tracker:GetWidth()))
 
--- NOT asserted here: the bar FILL. ButtonEvent needs richer questlog data than this
--- harness fakes, so any fill assertion at this level would pass without measuring
--- anything, which reads as coverage while testing nothing. The fill arithmetic is
--- covered properly in tools/runtimecheck335.lua, which drives the bar directly with a
--- known track width. Widening the questlog fake to reach it here is the next step.
 check(tracker:GetScale() == 1, "trackerscale applied (scale %s)", tostring(tracker:GetScale()))
 
 -- the setting paths, driven through the real code
@@ -151,56 +148,32 @@ pcall(tracker.DoLayout)
 check(math.abs((tracker:GetScale() or 0) - 1.5) < 0.001,
       "trackerscale=1.5 -> scale %s", tostring(tracker:GetScale()))
 
-pfQuest_config["trackerbars"] = "0"
-local okb = pcall(tracker.DoLayout)
-check(okb, "DoLayout() with progress bars disabled%s", okb and "" or " -> errored")
-pfQuest_config["trackerbars"] = "1"
 pfQuest_config["trackerscale"] = "1"
 
 -- ---------------------------------------------------------------------------
--- enable-mid-session sliver (QA screenshot): tracker.lua hides the tracker at
--- load, and everything above -- ButtonAdd, ButtonEvent, DoLayout with its
--- closing bar-Refresh pass -- ran while it was HIDDEN, exactly like a session
--- where the tracker option is off. On 3.3.5a a two-point-anchored region does
--- not resolve its width inside a hidden hierarchy (GetWidth lies until shown),
--- so every fill painted during that phase is wrong; when the player then
--- enables the tracker, the dark track snaps to full width (it is anchored, it
--- self-heals on show) but the fill keeps its stale explicit width -- the
--- sliver. The tracker must re-apply the bars when it becomes visible.
+-- the tracker survives being shown mid-session
+--
+-- Was the enable-mid-session sliver block: the progress-bar fill painted while
+-- the tracker was hidden kept a stale width once shown. The bars are gone
+-- (removed after QA -- they never rendered correctly), so what remains worth
+-- pinning is that everything above ran with the tracker HIDDEN, and showing it
+-- and firing OnShow neither errors nor leaves the rows empty.
 -- ---------------------------------------------------------------------------
 local byTitle = {}
 for _, b in pairs(tracker.buttons or {}) do
   if not b.empty and b.title then byTitle[b.title] = b end
 end
-local full, partial = byTitle["Distress Call"], byTitle["Nick of Time"]
-
-check(full and full.bar and full.bar.pct and full.bar.pct >= 0.999,
-      "the 8/8 quest carries pct=1 on its bar (got %s)",
-      tostring(full and full.bar and full.bar.pct))
+local full = byTitle["Distress Call"]
+check(full ~= nil, "the 8/8 quest built a row while the tracker was hidden")
 check(not tracker:IsShown(), "tracker is still hidden (the disabled-tracker session)")
-check(full and full.bar.track:GetWidth() == 0,
-      "hidden hierarchy: track width unresolved (got %s)",
-      tostring(full and full.bar.track:GetWidth()))
 
 -- the player enables the tracker mid-session
 tracker:Show()
 _G.this = tracker
-tracker:Fire("OnShow")
+local okshow = pcall(function() tracker:Fire("OnShow") end)
 _G.this = nil
-
-local trackw = full and full.bar.track:GetWidth() or 0
-check(trackw > 50, "shown: track width resolves (got %s)", tostring(trackw))
-local fillw = full and full.bar.fill:GetWidth() or 0
-check(full and full.bar.fill:IsShown() and math.abs(fillw - trackw) < 0.5,
-      "100%% fill spans the track after enabling mid-session (fill %s vs track %s)",
-      tostring(fillw), tostring(trackw))
-if partial then
-  local ptrack = partial.bar.track:GetWidth() or 0
-  local pfill = partial.bar.fill:GetWidth() or 0
-  check(partial.bar.fill:IsShown() and math.abs(pfill - ptrack * 0.3) < 0.5,
-        "3/10 fill is 30%% of the track after enabling (fill %s vs track %s)",
-        tostring(pfill), tostring(ptrack))
-end
+check(okshow, "OnShow after enabling mid-session%s", okshow and "" or " -> errored")
+check(tracker:IsShown(), "tracker is shown after enabling mid-session")
 
 -- ---------------------------------------------------------------------------
 -- alt+click waypoint: an alt+click on a quest row hands the quest's NEAREST

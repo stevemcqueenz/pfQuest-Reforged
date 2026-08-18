@@ -1473,5 +1473,95 @@ do
         "empty pinscolor (Reset) -> theme follow")
 end
 
+-- ---------------------------------------------------------------------------
+-- QA round 1: beam thickness (pinsbeamwidth) and the party near-cutoff
+-- (pinspartymin). Both came straight from in-game reports -- the default beam
+-- read as too thin, and party plates rendered on members standing next to the
+-- player, which is clutter you can already see with your own eyes.
+-- ---------------------------------------------------------------------------
+do
+  -- (a) beam width scales BOTH halves of the main beam, keeping the
+  -- halo/core weighting, and reaches the extras' strip too
+  pfQuest_config["pins"] = "1"
+  pfQuest_config["pinsbeam"] = "1"
+  pfQuest_config["pinsmulti"] = "1"
+  pfQuest_config["pinsbeamwidth"] = "100"
+  fire()
+  local wide100 = pins.waypoint.beam:GetWidth()
+  local core100 = pins.waypoint.beam2:GetWidth()
+  check(wide100 == T.BEAM_WIDE_W and core100 == T.BEAM_CORE_W,
+        "beam width 100%% is the unscaled default (%s/%s)", tostring(wide100), tostring(core100))
+
+  pfQuest_config["pinsbeamwidth"] = "200"
+  fire()
+  check(pins.waypoint.beam:GetWidth() == T.BEAM_WIDE_W * 2
+        and pins.waypoint.beam2:GetWidth() == T.BEAM_CORE_W * 2,
+        "beam width 200%% doubles halo AND core (%s/%s)",
+        tostring(pins.waypoint.beam:GetWidth()), tostring(pins.waypoint.beam2:GetWidth()))
+  if mf[1] then
+    check(mf[1].beam:GetWidth() == T.MULTI_BEAM_W * 2,
+          "beam width reaches the extras' strip (got %s)", tostring(mf[1].beam:GetWidth()))
+  end
+
+  -- out-of-range and garbage fall back to the default rather than erasing the
+  -- beam: a sub-pixel width renders as nothing at all
+  pfQuest_config["pinsbeamwidth"] = "0"
+  fire()
+  check(pins.waypoint.beam2:GetWidth() >= 1,
+        "beam width 0 clamps instead of erasing the beam (got %s)",
+        tostring(pins.waypoint.beam2:GetWidth()))
+  pfQuest_config["pinsbeamwidth"] = "banana"
+  fire()
+  check(pins.waypoint.beam:GetWidth() == T.BEAM_WIDE_W,
+        "garbage beam width -> the default thickness (got %s)",
+        tostring(pins.waypoint.beam:GetWidth()))
+  pfQuest_config["pinsbeamwidth"] = "100"
+  fire()
+
+  -- (b) the party near-cutoff. Same member, two distances.
+  local function partyAlive()
+    local n = 0
+    for i = 1, ml.n do if ml[i].class == CLS.PARTY then n = n + 1 end end
+    return n
+  end
+  partyN = 1
+  partyDead["party1"] = nil
+  pfQuest_config["pinsparty"] = "1"
+  pfQuest_config["pinspartymin"] = "30"
+
+  local function settle() for i = 1, 60 do fire() end end
+  partyWorld["party1"] = { wpx + 8, wpy + 0, wpz } -- 8 yd: right next to you
+  settle()
+  check(partyAlive() == 0, "party near: an ALIVE member inside the cutoff has no pin")
+
+  partyWorld["party1"] = { wpx + 80, wpy + 0, wpz } -- 80 yd: worth a pin
+  settle()
+  check(partyAlive() == 1, "party far: the same member outside the cutoff renders")
+
+  -- a DEAD member is the point of the layer: never held back
+  partyWorld["party1"] = { wpx + 8, wpy + 0, wpz }
+  partyDead["party1"] = 1
+  settle()
+  local deadNear = 0
+  for i = 1, ml.n do
+    if ml[i].class > CLS.AVAIL and ml[i].class < CLS.DUNGEON then deadNear = deadNear + 1 end
+  end
+  check(deadNear == 1, "party near: a DEAD member still shows inside the cutoff")
+  partyDead["party1"] = nil
+
+  -- the cutoff is live and honours the setting
+  partyWorld["party1"] = { wpx + 40, wpy + 0, wpz }
+  pfQuest_config["pinspartymin"] = "60"
+  settle()
+  check(partyAlive() == 0, "party cutoff is live: 40 yd is inside a 60 yd cutoff")
+  pfQuest_config["pinspartymin"] = "10"
+  settle()
+  check(partyAlive() == 1, "party cutoff is live: 40 yd is outside a 10 yd cutoff")
+
+  pfQuest_config["pinspartymin"] = "30"
+  pfQuest_config["pinsparty"] = "0"
+  partyN = 0
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

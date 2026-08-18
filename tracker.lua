@@ -11,7 +11,6 @@ local fontsize = 12
 local panelheight = 18
 local entryheight = 20
 -- Reforged: vertical room for the per-quest progress bar under each title row
-local barpad = 5
 
 local function HideTooltip()
   GameTooltip:Hide()
@@ -598,14 +597,6 @@ function tracker.ButtonEvent(self)
 
   self:SetHeight(entryheight)
 
-  -- Reforged: progress bar off by default; the quest branch re-arms it
-  if self.bar then
-    -- Reforged: the per-quest progress bar is ours, not upstream, so it needs an off
-    -- switch -- some players want the plain text list back (QA request).
-    self.bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    self.bar:SetProgress(nil)
-  end
-
   -- initialize and hide all objectives
   self.objectives = self.objectives or {}
   for id, obj in pairs(self.objectives) do
@@ -695,7 +686,7 @@ function tracker.ButtonEvent(self)
 
     -- expand button to show objectives
     if objectives and (expanded or (percent > 0 and percent < 100)) then
-      self:SetHeight(entryheight + barpad + objectives * fontsize)
+      self:SetHeight(entryheight + objectives * fontsize)
 
       for i = 1, objectives, 1 do
         -- read from cache instead of calling GetQuestLogLeaderBoard again
@@ -707,9 +698,8 @@ function tracker.ButtonEvent(self)
           self.objectives[i] = self:CreateFontString(nil, "HIGH", "GameFontNormal")
           self.objectives[i]:SetFont(pfUI.font_default, fontsize)
           self.objectives[i]:SetJustifyH("LEFT")
-          -- Reforged: shifted down by barpad to clear the quest progress bar
-          self.objectives[i]:SetPoint("TOPLEFT", 20, -fontsize * i - 6 - barpad)
-          self.objectives[i]:SetPoint("TOPRIGHT", -10, -fontsize * i - 6 - barpad)
+          self.objectives[i]:SetPoint("TOPLEFT", 20, -fontsize * i - 6)
+          self.objectives[i]:SetPoint("TOPRIGHT", -10, -fontsize * i - 6)
         end
 
         if objNum and objNeeded then
@@ -726,17 +716,6 @@ function tracker.ButtonEvent(self)
     end
 
     local r, g, b = pfMap.tooltip:GetColor(cur, max)
-
-    -- Reforged: per-quest progress bar under the title, coloured by the same
-    -- red->yellow->green ramp the percent text uses; title-only rows grow by
-    -- barpad so the bar never overlaps the next row.
-    if self.bar then
-      self.bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-      self.bar:SetProgress(percent / 100, r, g, b)
-      if self:GetHeight() <= entryheight + 1 then
-        self:SetHeight(entryheight + barpad)
-      end
-    end
 
     local colorperc = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
     local showlevel = pfQuest_config["trackerlevel"] == "1" and "[" .. (level or "??") .. (tag and "+" or "") .. "] "
@@ -836,12 +815,6 @@ function tracker.DoLayout()
   local scale = tonumber(pfQuest_config["trackerscale"]) or 1
   scale = min(max(scale, 0.5), 2)
   if tracker:GetScale() ~= scale then tracker:SetScale(scale) end
-
-  -- The per-quest bars size their fill from the track width, which only resolves once
-  -- the tracker above has been sized -- so re-apply them now that it has.
-  for _, button in pairs(tracker.buttons) do
-    if button.bar and button.bar.Refresh then button.bar:Refresh() end
-  end
 end
 
 function tracker.RefreshZoneTracker()
@@ -1013,12 +986,6 @@ function tracker.ButtonAdd(title, node)
     tracker.buttons[id].icon:SetPoint("TOPLEFT", 2, -4)
     tracker.buttons[id].icon:SetWidth(12)
     tracker.buttons[id].icon:SetHeight(12)
-
-    -- Reforged: thin per-quest progress bar riding under the title row
-    tracker.buttons[id].bar = pfQuestTheme.CreateProgressBar(tracker.buttons[id], 3)
-    tracker.buttons[id].bar:SetPoint("TOPLEFT", tracker.buttons[id], "TOPLEFT", 16, -(entryheight - 2))
-    tracker.buttons[id].bar:SetPoint("TOPRIGHT", tracker.buttons[id], "TOPRIGHT", -10, -(entryheight - 2))
-    tracker.buttons[id].bar:SetProgress(nil)
 
     tracker.buttons[id]:RegisterEvent("QUEST_WATCH_UPDATE")
     tracker.buttons[id]:RegisterEvent("QUEST_LOG_UPDATE")

@@ -58,49 +58,25 @@ _G.UIParent = _G.CreateFrame()
 print("== pfQuest runtime check (3.3.5a stub) ==")
 
 -- ---------------------------------------------------------------------------
--- theme.lua :: progress bar  (the object that broke in v1.0.30)
+-- theme.lua loads and exposes its API
+--
+-- Was the progress-bar block (the object that broke in v1.0.30). The tracker
+-- progress bars were removed after QA -- they never rendered correctly -- so
+-- what is left to protect is that theme.lua still loads under the stub and
+-- still hands back the table the rest of the addon indexes.
 -- ---------------------------------------------------------------------------
 dofile("theme.lua")
 local T = _G.pfQuestTheme
-if not T or not T.CreateProgressBar then
-  fail("pfQuestTheme.CreateProgressBar missing")
+if type(T) ~= "table" then
+  fail("pfQuestTheme is %s, expected a table", type(T))
 else
-  local bar = T.CreateProgressBar(parent, 3)
-  -- every method tracker.lua calls on a bar
-  requireMethods(bar, "progress bar", { "SetPoint", "SetProgress", "Refresh", "SetEnabled", "Hide" })
-
-  -- ButtonAdd / Reset path: enable, then clear
-  drive("bar: reset path (SetEnabled + SetProgress(nil))", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(nil)
-  end)
-
-  -- percentage path, then the post-layout refresh the tracker performs
-  drive("bar: percentage path + post-layout Refresh", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(1.0, 1, 1, 1)
-    bar.track.w = 180
-    bar:Refresh()
-  end)
-  if bar.fill.w == 180 then ok("bar: 100%% fills the full track (180px)")
-  else fail("bar: 100%% filled %s px, expected 180 (the v1.0.30 sliver bug)", tostring(bar.fill.w)) end
-
-  drive("bar: 25%% fills a quarter", function()
-    bar:SetProgress(0.25); bar:Refresh()
-  end)
-  if bar.fill.w == 45 then ok("bar: 25%% fills 45px")
-  else fail("bar: 25%% filled %s px, expected 45", tostring(bar.fill.w)) end
-
-  -- bars turned off
-  pfQuest_config["trackerbars"] = "0"
-  drive("bar: disabled path", function()
-    bar:SetEnabled(pfQuest_config["trackerbars"] ~= "0")
-    bar:SetProgress(1.0, 1, 1, 1)
-    bar:Refresh()
-  end)
-  if bar.track.shown == false and bar.fill.shown == false then ok("bar: disabled hides both textures")
-  else fail("bar: disabled left track=%s fill=%s shown", tostring(bar.track.shown), tostring(bar.fill.shown)) end
-  pfQuest_config["trackerbars"] = nil
+  ok("theme.lua loads and exposes pfQuestTheme")
+  -- the removal must be complete: a leftover factory means a leftover consumer
+  if T.CreateProgressBar then
+    fail("theme.lua still defines CreateProgressBar -- the tracker bars were removed")
+  else
+    ok("theme.lua no longer defines the removed CreateProgressBar")
+  end
 end
 
 -- ---------------------------------------------------------------------------
