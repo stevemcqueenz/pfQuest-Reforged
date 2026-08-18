@@ -21,7 +21,9 @@ dofile("tools/framestub335.lua").install()
 -- the seams config.lua loads against
 -- ---------------------------------------------------------------------------
 _G.pfUI = { font_default = "Fonts\\FRIZQT__.TTF", api = {} }
-_G.pfUI_config = { global = { font_size = 12 } }
+-- a LARGER font than the default: the overlap bug only appears above the size
+-- the layout was originally tuned for, so testing at 12 tested nothing
+_G.pfUI_config = { global = { font_size = 16 } }
 _G.pfUI.api.CreateBackdrop = function(f) if f then f.backdrop = true end end
 _G.pfUI.api.SkinButton = function(f) if f then f.skinned = true end end
 _G.pfUI.api.CreateScrollFrame = function(_, parent)
@@ -157,6 +159,51 @@ local sizerow = pfQuestConfig:GetRow("Harness Size")
 local plainrow = pfQuestConfig:GetRow("Harness Toggle")
 check(sizerow and plainrow and sizerow:GetHeight() > plainrow:GetHeight(),
       "a row with a hint line is taller than one without")
+
+-- ---------------------------------------------------------------------------
+-- ROWS MUST NOT OVERLAP.
+--
+-- The first build hardcoded 22/13 px and looked fine here while the rows ran
+-- into each other on the maintainer's client, because pfUI's font size is a
+-- user setting and the harness happened to use the size it was tuned for.
+-- Two invariants, both independent of the font: a row's hint line has to fit
+-- INSIDE the row that owns it, and each row has to start exactly where the
+-- previous one ended.
+-- ---------------------------------------------------------------------------
+do
+  local fs = pfUI_config.global.font_size
+  local descrow = pfQuestConfig:GetRow("Harness Size")
+  local descy = descrow and descrow.desc and descrow.desc.points
+                and descrow.desc.points.TOPLEFT and descrow.desc.points.TOPLEFT.y
+  check(descy ~= nil, "the hint line is anchored")
+  if descy then
+    -- the hint starts below the caption's own line, never on top of it
+    check(-descy >= fs + 2,
+          "the hint clears the caption line (offset %s, font %s)", tostring(-descy), tostring(fs))
+    -- ...and ends inside the row, so it cannot bleed into the next one
+    check(-descy + fs <= descrow:GetHeight(),
+          "the hint fits inside its own row (needs %s, row is %s)",
+          tostring(-descy + fs), tostring(descrow:GetHeight()))
+  end
+
+  -- consecutive rows stack exactly: gap == the previous row's height
+  local order = { "Harness Toggle", "Harness Size" }
+  local prev, prevy
+  local stacked = true
+  for _, name in ipairs(order) do
+    local r = pfQuestConfig:GetRow(name)
+    local y = r and r.points and r.points.TOPLEFT and r.points.TOPLEFT.y
+    if prev and y and prevy then
+      if math.abs((prevy - y) - prev:GetHeight()) > 0.5 then
+        stacked = false
+        fail("row %q starts %s below the previous row, which is %s tall",
+             name, tostring(prevy - y), tostring(prev:GetHeight()))
+      end
+    end
+    prev, prevy = r, y
+  end
+  if stacked then ok("rows stack with no overlap and no gap") end
+end
 
 -- ---------------------------------------------------------------------------
 -- search: filters across sections, and an empty result says so
