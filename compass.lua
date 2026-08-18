@@ -1002,12 +1002,6 @@ driver:SetScript("OnUpdate", function()
     return
   end
 
-  if not compass.on then
-    compass.on = true
-    compass:Show()
-    lastFacing = nil -- force a full repaint after any hidden stretch
-  end
-
   local xp, yp = GetPlayerMapPosition("player")
   local facing = GetFacing()
 
@@ -1039,6 +1033,34 @@ driver:SetScript("OnUpdate", function()
     nextRebuild = now + 1
     BuildMarkers(xp, yp, target, dead)
     lastFacing = nil -- marker set may have changed: force a repaint
+  end
+
+  -- Auto-hide (compassautohide, default on). A heading strip with nothing on
+  -- it is clutter: in a dungeon the player's map position reads 0,0 so every
+  -- bearing would lie and the markers hide anyway, leaving a bar of cardinal
+  -- letters and no information (QA: "shouldn't the compass bar disappear in a
+  -- dungeon when the user has no quests there"). Same treatment the taxi case
+  -- already gets. Turn it off to keep a plain compass.
+  local empty = (xp == 0 and yp == 0) or list.n == 0
+  if empty and pfQuest_config["compassautohide"] ~= "0" then
+    if compass.on then
+      compass.on = nil
+      -- put the markers away with the bar. Hiding the parent is enough to
+      -- make them invisible, but leaving them flagged shown at stale
+      -- positions is what produces a flash of last session's markers the
+      -- moment the strip comes back.
+      for i = 1, MAXCAP do
+        markers[i]:Hide()
+      end
+      compass:Hide()
+    end
+    return
+  end
+
+  if not compass.on then
+    compass.on = true
+    compass:Show()
+    lastFacing = nil -- force a full repaint after any hidden stretch
   end
 
   -- dirty-skip: everything below is a pure function of position, facing and

@@ -142,6 +142,7 @@ pfQuest_defconfig = {
 
   { text = L["Compass Bar"], default = nil, type = "header" },
   { text = L["Enable Compass Bar"], desc = L["Quest directions on a bar at the top of the screen"], tip = L["A heading strip across the top of the screen showing which way your objectives lie, like a compass. Shift and drag it to move it."], default = "0", type = "checkbox", config = "compass" },
+  { text = L["Hide When Empty"], desc = L["Hide the bar when there is nothing to point at"], tip = L["In a dungeon your position on the map is unknown, so no bearing can be drawn and the bar would show only cardinal letters. This hides it instead. Turn it off to keep a plain compass at all times."], default = "1", type = "checkbox", config = "compassautohide" },
   { text = L["Bar Width"], default = "420", type = "text", config = "compasswidth" },
   { text = L["Bar Scale"], default = "1", type = "text", config = "compassscale" },
   { text = L["Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
