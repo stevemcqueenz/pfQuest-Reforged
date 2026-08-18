@@ -23,12 +23,18 @@ SetUserPlaced RegisterForClicks RegisterForDrag SetID GetID SetToplevel Raise Lo
 SetHitRectInsets SetResizable SetMinResize SetMaxResize UnregisterAllEvents SetOwner
 AddLine AddDoubleLine ClearLines SetText SetNormalTexture SetHighlightTexture
 SetPushedTexture SetDisabledTexture GetNormalTexture GetHighlightTexture SetChecked
-GetChecked SetValue GetValue SetMinMaxValues SetStatusBarTexture SetStatusBarColor
+GetChecked SetMinMaxValues SetStatusBarTexture SetStatusBarColor
 SetJustifyH SetJustifyV SetFont SetTextColor SetShadowOffset SetShadowColor SetSpacing
 SetNonSpaceWrap SetWordWrap SetIndentedWordWrap SetMultiLine SetAutoFocus SetMaxLetters
 ClearFocus SetFocus HighlightText SetCursorPosition SetPropagateKeyboardInput
 SetParent GetObjectType IsObjectType SetSize GetEffectiveScale SetDrawLayer
-SetVertexColor GetVertexColor SetTexCoord SetBlendMode SetDesaturated SetGradientAlpha]]
+SetVertexColor GetVertexColor SetTexCoord SetBlendMode SetDesaturated SetGradientAlpha
+SetFontObject SetTextInsets SetOrientation SetValueStep SetThumbTexture Click
+SetScrollChild SetVerticalScroll GetVerticalScroll GetVerticalScrollRange]]
+
+-- forward declaration: applySize below hands back a texture for a slider
+-- thumb, and the factory is defined further down
+local mkTexture
 
 local function methodTable(names, extra)
   local t = {}
@@ -58,6 +64,19 @@ local function applySize(o)
   -- GetAlpha, and a nil return would mask a SetAlpha that never ran
   o.alpha = 1
   function o.SetAlpha(s, a) s.alpha = a end
+  -- value round-trips: config.lua compares GetValue() against the stored
+  -- setting before writing, so a noop GetValue reads nil and the comparison
+  -- errors -- the harness would be testing the stub, not the code
+  o.value = 0
+  function o.SetValue(s, v) s.value = tonumber(v) or 0 end
+  function o.GetValue(s) return s.value end
+  -- a slider's thumb is a real texture the caller sizes and tints, so this
+  -- hands back a texture rather than nil (which would crash) or noop (which
+  -- would swallow a genuinely missing method)
+  function o.GetThumbTexture(s)
+    if not s.thumbtex then s.thumbtex = mkTexture(s) end
+    return s.thumbtex
+  end
   function o.GetAlpha(s) return s.alpha or 1 end
   function o.ClearAllPoints(s) s.points = {} end
   function o.SetAllPoints(s, rel) s.anchorTo = rel; s.fullWidth = true end
@@ -111,7 +130,7 @@ local function mkFontString(parent)
   return setmetatable(fs, { __index = methodTable(FRAME_NOOPS) })
 end
 
-local function mkTexture(parent)
+function mkTexture(parent)
   local t = { w = 0, h = 0, shown = true, parent = parent }
   applySize(t)
   function t.SetTexture(s, ...) s.tex = ... end
