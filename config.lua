@@ -5,6 +5,7 @@ local L = pfQuest_Loc
 -- Performance: cache frequently-used globals
 local pairs = pairs
 local getn = table.getn
+local ceil = math.ceil
 
 pfQuest_history = {}
 pfQuest_colors = {}
@@ -140,7 +141,7 @@ pfQuest_defconfig = {
   { text = L["Nameplate Icon Y Offset"], default = "-7", type = "text", config = "plateicony" },
 
   { text = L["Compass Bar"], default = nil, type = "header" },
-  { text = L["Enable Compass Bar"], desc = L["Quest directions on a bar at the top of the screen"], default = "0", type = "checkbox", config = "compass" },
+  { text = L["Enable Compass Bar"], desc = L["Quest directions on a bar at the top of the screen"], tip = L["A heading strip across the top of the screen showing which way your objectives lie, like a compass. Shift and drag it to move it."], default = "0", type = "checkbox", config = "compass" },
   { text = L["Bar Width"], default = "420", type = "text", config = "compasswidth" },
   { text = L["Bar Scale"], default = "1", type = "text", config = "compassscale" },
   { text = L["Metric Distances (meters)"], default = "0", type = "checkbox", config = "compassmetric" },
@@ -153,11 +154,11 @@ pfQuest_defconfig = {
   -- In-world Pins insertion below anchors on compasscap staying this
   -- section's last row. These govern only the AMBIENT mode; the minimap
   -- tracking mirror and /way flight|mail|inn|repair work regardless.
-  { text = L["Show Utility POIs"], desc = L["Ambient flight, mail, inn and repair markers"], default = "0", type = "checkbox", config = "compasspoi" },
+  { text = L["Show Utility POIs"], desc = L["Ambient flight, mail, inn and repair markers"], tip = L["Always mark flight masters, mailboxes, innkeepers and repair vendors, whatever your minimap tracking is set to. Combine with the city option below to keep it to capitals."], default = "0", type = "checkbox", config = "compasspoi" },
   { text = L["Utility POIs Only In Cities"], desc = L["Ambient utility POIs only inside capital cities"], default = "1", type = "checkbox", config = "poicityonly" },
-  { text = L["Mirror Minimap Tracking"], desc = L["Also show the POI class your minimap is tracking"], default = "0", type = "checkbox", config = "poimirror" },
+  { text = L["Mirror Minimap Tracking"], desc = L["Also show the POI class your minimap is tracking"], tip = L["When you set your minimap tracking to flight masters, mailboxes, innkeepers or repair, also mark those in the compass and the world. Off by default so nothing appears that you did not ask for."], default = "0", type = "checkbox", config = "poimirror" },
   { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
-  { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], default = "8", type = "text", config = "compasscap" },
+  { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], tip = L["How many markers the compass may show at once. The nearest ones win, so a lower number keeps it readable in a crowded zone."], default = "8", type = "text", config = "compasscap" },
 
   { text = L["Routes"], default = nil, type = "header" },
   { text = L["Show Route Between Objects"], default = "1", type = "checkbox", config = "routes" },
@@ -189,7 +190,7 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Party Pin Minimum Distance"], desc = L["Yards, hides party pins closer than this, dead members always show"], default = "30", type = "text", config = "pinspartymin" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Show Party Members"], desc = L["Nearby party members, dead ones get a beam and distance"], default = "0", type = "checkbox", config = "pinsparty" })
+        { text = L["Show Party Members"], desc = L["Nearby party members, dead ones get a beam and distance"], tip = L["Marks your party in the world, in class colours. A dead member gets a beam and a distance so you can find the body to resurrect. This works inside dungeons, where the map does not."], default = "0", type = "checkbox", config = "pinsparty" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Dungeon Entrance Pins"], desc = L["Meeting stones join the extra pins"], default = "0", type = "checkbox", config = "pinsdungeon" })
       table.insert(pfQuest_defconfig, i + 1,
@@ -197,33 +198,35 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Multi Waypoint Cap"], desc = L["1 to 8 extra pins, default 4"], default = "4", type = "text", config = "pinsmulticap" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Show Multiple Waypoints"], desc = L["Experimental, adds pins for nearby quest markers"], default = "0", type = "checkbox", config = "pinsmulti" })
+        { text = L["Show Multiple Waypoints"], desc = L["Experimental, adds pins for nearby quest markers"], tip = L["Beyond the single quest you are following, also mark other nearby objectives, quest givers and turn-ins in the world. Useful when clearing an area, noisy when following one quest."], default = "0", type = "checkbox", config = "pinsmulti" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Navigator Size"], default = "100", type = "text", config = "pinsnavsize" })
+        { text = L["Navigator Size"], desc = L["Percent, 100 is the default size"], tip = L["Size of the off-screen arrow only. The world marker has its own Pin Size setting."], default = "100", type = "text", config = "pinsnavsize" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Navigator Orbit Radius"], default = "140", type = "text", config = "pinsnavradius" })
+        { text = L["Show Off-screen Arrow"], desc = L["The chevron that orbits the screen centre"], tip = L["When the target is behind you or off screen, an arrow orbits the screen centre pointing at it. Turn this off if you only want the marker itself, visible when you are looking at it."], default = "1", type = "checkbox", config = "pinsnav" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Pin Glow"], desc = L["Percent, 0 turns the halo off"], default = "100", type = "text", config = "pinsglow" })
+        { text = L["Navigator Orbit Radius"], desc = L["How far from screen centre the arrow sits"], tip = L["Distance in pixels between the screen centre and the off-screen arrow. Larger pushes it out toward the edges."], default = "140", type = "text", config = "pinsnavradius" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Beam Length"], desc = L["Percent, 100 reaches the top of the screen"], default = "100", type = "text", config = "pinsbeamlength" })
+        { text = L["Pin Glow"], desc = L["Percent, 0 turns the halo off"], tip = L["The soft halo behind each marker. It gives the marker depth against bright ground. Set 0 for a completely flat marker."], default = "100", type = "text", config = "pinsglow" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Beam Length"], desc = L["Percent, 100 reaches the top of the screen"], tip = L["How tall the beam is. It also grows with distance, so a far target has a taller beam than a near one."], default = "100", type = "text", config = "pinsbeamlength" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Beam Width"], desc = L["Percent, 100 is the default thickness"], default = "100", type = "text", config = "pinsbeamwidth" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Pin Light Beam"], default = "1", type = "checkbox", config = "pinsbeam" })
+        { text = L["Pin Light Beam"], tip = L["The vertical shaft of light above the marker. It is what makes a target visible across a zone, over buildings and terrain."], default = "1", type = "checkbox", config = "pinsbeam" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pinpoint Size"], default = "100", type = "text", config = "pinspointsize" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Opacity"], default = "100", type = "text", config = "pinsopacity" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Maximum Pin Scale"], default = "150", type = "text", config = "pinsmaxscale" })
+        { text = L["Maximum Pin Scale"], desc = L["Percent, the size cap up close"], tip = L["Markers grow as you approach and shrink with distance. This is the ceiling, reached when the target is right in front of you."], default = "150", type = "text", config = "pinsmaxscale" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Minimum Pin Scale"], default = "50", type = "text", config = "pinsminscale" })
+        { text = L["Minimum Pin Scale"], desc = L["Percent, the size floor far away"], tip = L["The floor of that same scaling, so a distant marker never shrinks to nothing."], default = "50", type = "text", config = "pinsminscale" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Size"], desc = L["Percent, 100 is the default size"], default = "100", type = "text", config = "pinssize" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pylon Color"], desc = L["Empty follows the theme"], default = "", type = "color", config = "pinscolor" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Enable Waypoint Pins"], desc = L["Needs the WorldAPI DLL (WorldToScreen)"], default = "0", type = "checkbox", config = "pins" })
+        { text = L["Enable Waypoint Pins"], desc = L["Needs the WorldAPI DLL (WorldToScreen)"], tip = L["Draws your current quest target in the 3D world as a marker with a light beam, the way modern WoW does. Requires a client with the WorldAPI DLL installed; without it this does nothing at all."], default = "0", type = "checkbox", config = "pins" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["In-world Pins"], default = nil, type = "header" })
       break
@@ -305,7 +308,7 @@ pfQuestConfig.title:SetFontObject(GameFontWhite)
 pfQuestConfig.title:SetPoint("TOP", pfQuestConfig, "TOP", 0, -8)
 pfQuestConfig.title:SetJustifyH("LEFT")
 pfQuestConfig.title:SetFont(pfUI.font_default, 14)
-pfQuestConfig.title:SetText("|cff33ffccpf|rQuest " .. L["Config"])
+pfQuestConfig.title:SetText("|cff33ffccpf|cffffffffQuest|r |cFF888888Reforged|r " .. L["Config"])
 
 pfQuestConfig.close = CreateFrame("Button", "pfQuestConfigClose", pfQuestConfig)
 pfQuestConfig.close:SetPoint("TOPRIGHT", -5, -5)
@@ -317,8 +320,13 @@ pfQuestConfig.close.texture:ClearAllPoints()
 pfQuestConfig.close.texture:SetPoint("TOPLEFT", pfQuestConfig.close, "TOPLEFT", 4, -4)
 pfQuestConfig.close.texture:SetPoint("BOTTOMRIGHT", pfQuestConfig.close, "BOTTOMRIGHT", -4, 4)
 
-pfQuestConfig.close.texture:SetVertexColor(1, 0.25, 0.25, 1)
-pfUI.api.SkinButton(pfQuestConfig.close, 1, 0.5, 0.5)
+pfQuestConfig.close.texture:SetVertexColor(0.8, 0.3, 0.3, 1)
+pfQuestConfig.close:SetScript("OnEnter", function()
+  this.texture:SetVertexColor(1, 0.35, 0.35, 1)
+end)
+pfQuestConfig.close:SetScript("OnLeave", function()
+  this.texture:SetVertexColor(0.8, 0.3, 0.3, 1)
+end)
 pfQuestConfig.close:SetScript("OnClick", function()
   this:GetParent():Hide()
 end)
@@ -333,9 +341,16 @@ pfQuestConfig.welcome:SetScript("OnClick", function()
 end)
 pfQuestConfig.welcome.text = pfQuestConfig.welcome:CreateFontString("Caption", "LOW", "GameFontWhite")
 pfQuestConfig.welcome.text:SetAllPoints(pfQuestConfig.welcome)
-pfQuestConfig.welcome.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+pfQuestConfig.welcome.text:SetFont(pfUI.font_default, pfUI_config.global.font_size)
 pfQuestConfig.welcome.text:SetText(L["Welcome Screen"])
-pfUI.api.SkinButton(pfQuestConfig.welcome)
+pfUI.api.CreateBackdrop(pfQuestConfig.welcome, nil, true)
+pfQuestConfig.welcome:SetScript("OnEnter", function()
+  local a = (pfQuestTheme and pfQuestTheme.accent) or { 0.2, 1, 0.8 }
+  this.text:SetTextColor(a[1], a[2], a[3], 1)
+end)
+pfQuestConfig.welcome:SetScript("OnLeave", function()
+  this.text:SetTextColor(1, 1, 1, 1)
+end)
 
 pfQuestConfig.save = CreateFrame("Button", "pfQuestConfigReload", pfQuestConfig)
 pfQuestConfig.save:SetWidth(160)
@@ -344,9 +359,16 @@ pfQuestConfig.save:SetPoint("BOTTOMRIGHT", -10, 10)
 pfQuestConfig.save:SetScript("OnClick", ReloadUI)
 pfQuestConfig.save.text = pfQuestConfig.save:CreateFontString("Caption", "LOW", "GameFontWhite")
 pfQuestConfig.save.text:SetAllPoints(pfQuestConfig.save)
-pfQuestConfig.save.text:SetFont(pfUI.font_default, pfUI_config.global.font_size, "OUTLINE")
+pfQuestConfig.save.text:SetFont(pfUI.font_default, pfUI_config.global.font_size)
 pfQuestConfig.save.text:SetText(L["Save & Close"])
-pfUI.api.SkinButton(pfQuestConfig.save)
+pfUI.api.CreateBackdrop(pfQuestConfig.save, nil, true)
+pfQuestConfig.save:SetScript("OnEnter", function()
+  local a = (pfQuestTheme and pfQuestTheme.accent) or { 0.2, 1, 0.8 }
+  this.text:SetTextColor(a[1], a[2], a[3], 1)
+end)
+pfQuestConfig.save:SetScript("OnLeave", function()
+  this.text:SetTextColor(1, 1, 1, 1)
+end)
 
 function pfQuestConfig:LoadConfig()
   if not pfQuest_config then
@@ -419,7 +441,11 @@ local tabheight = max(22, fontsize + 10)
 local rowheight = max(24, fontsize + 12)
 local descheight = max(14, fontsize + 2)
 local sidebarwidth = 132   -- floor; measured up from the widest section name
-local panewidth = 360
+-- the control gutter is reserved on EVERY row, so a label or a hint can never
+-- run underneath the value box on its right -- that overlap survived the
+-- first layout fix because only the VERTICAL metrics were derived
+local gutter = 108
+local panewidth = 470
 local topoffset = 58
 local footer = 34
 
@@ -608,14 +634,17 @@ local function CreateRow(s, data)
   frame.hover:SetTexture(1, 1, 1, 0.05)
   frame.hover:Hide()
 
+  -- text stops where the control gutter starts, on both lines
+  local textwidth = panewidth - 16 - gutter
+
   frame.caption = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
-  frame.caption:SetFont(pfUI.font_default, pfUI_config.global.font_size)
+  frame.caption:SetFont(pfUI.font_default, fontsize)
   frame.caption:SetJustifyH("LEFT")
   frame.caption:SetText(data.text)
+  frame.caption:SetWidth(textwidth)
 
   if data.desc then
     frame.tall = true
-    frame:SetHeight(rowheight + descheight)
     frame.caption:SetPoint("TOPLEFT", 6, -4)
     frame.desc = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
     frame.desc:SetFont(pfUI.font_default, fontsize - 2)
@@ -624,12 +653,40 @@ local function CreateRow(s, data)
     frame.desc:SetJustifyH("LEFT")
     frame.desc:SetTextColor(0.55, 0.55, 0.55, 1)
     frame.desc:SetText(data.desc)
+    -- MEASURE FIRST, THEN CONSTRAIN. A hint longer than the gutter leaves it
+    -- wraps to a second line, and the row has to grow to hold it or the next
+    -- row lands on top of the wrap. GetStringWidth reports the unwrapped
+    -- width only while the fontstring has no width of its own, so the order
+    -- here is load-bearing.
+    local lines = 1
+    local sw = frame.desc:GetStringWidth() or 0
+    if sw > textwidth and textwidth > 0 then
+      lines = ceil(sw / textwidth)
+    end
+    frame.desc:SetWidth(textwidth)
+    frame:SetHeight(rowheight + descheight * lines)
   else
     frame.caption:SetPoint("LEFT", 6, 0)
+    frame:SetHeight(rowheight)
   end
 
-  frame:SetScript("OnEnter", function() this.hover:Show() end)
-  frame:SetScript("OnLeave", function() this.hover:Hide() end)
+  -- tooltip: the hint line is one sentence, and several of these settings
+  -- need more than that to be usable by anyone who did not write them
+  frame.tip = data.tip
+  frame.tipTitle = data.text
+  frame:SetScript("OnEnter", function()
+    this.hover:Show()
+    if this.tip then
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText(this.tipTitle, 1, 1, 1)
+      GameTooltip:AddLine(this.tip, 0.8, 0.8, 0.8, 1)
+      GameTooltip:Show()
+    end
+  end)
+  frame:SetScript("OnLeave", function()
+    this.hover:Hide()
+    if this.tip then GameTooltip:Hide() end
+  end)
 
   return frame
 end

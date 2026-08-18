@@ -720,7 +720,7 @@ pfBrowser.title:SetFontObject(GameFontWhite)
 pfBrowser.title:SetPoint("TOP", pfBrowser, "TOP", 0, -8)
 pfBrowser.title:SetJustifyH("LEFT")
 pfBrowser.title:SetFont(pfUI.font_default, 14)
-pfBrowser.title:SetText("|cff33ffccpf|rQuest")
+pfBrowser.title:SetText("|cff33ffccpf|cffffffffQuest|r |cFF888888Reforged|r")
 
 pfBrowser.close = CreateFrame("Button", "pfQuestBrowserClose", pfBrowser)
 pfBrowser.close:SetPoint("TOPRIGHT", -5, -5)

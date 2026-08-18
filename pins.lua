@@ -1139,6 +1139,7 @@ driver:SetScript("OnUpdate", function()
   local cfgPartyMin = pfQuest_config["pinspartymin"]
   local cfgGlow = pfQuest_config["pinsglow"]
   local cfgBeamL = pfQuest_config["pinsbeamlength"]
+  local cfgNav = pfQuest_config["pinsnav"]
   if cfgSize ~= lastCfgSize or cfgPoint ~= lastCfgPoint
      or cfgMin ~= lastCfgMin or cfgMax ~= lastCfgMax or cfgOp ~= lastCfgOp
      or cfgNavR ~= lastCfgNavR or cfgNavS ~= lastCfgNavS
@@ -1147,7 +1148,7 @@ driver:SetScript("OnUpdate", function()
      or cfgParty ~= ms.cfgParty or cfgDungeon ~= ms.cfgDungeon
      or cfgColor ~= ms.cfgColor or cfgBeamW ~= ms.cfgBeamW
      or cfgPartyMin ~= ms.cfgPartyMin or cfgGlow ~= ms.cfgGlow
-     or cfgBeamL ~= ms.cfgBeamL then
+     or cfgBeamL ~= ms.cfgBeamL or cfgNav ~= ms.cfgNav then
     lastCfgSize, lastCfgPoint, lastCfgMin, lastCfgMax = cfgSize, cfgPoint, cfgMin, cfgMax
     lastCfgOp, lastCfgNavR, lastCfgNavS = cfgOp, cfgNavR, cfgNavS
     ms.cfgOn, ms.cfgCap, ms.cfgBeam, ms.cfgRares = cfgMulti, cfgMultiCap, cfgMultiBeam, cfgRares
@@ -1170,6 +1171,11 @@ driver:SetScript("OnUpdate", function()
     -- re-apply here; clear the memo so that tick is not skipped as unchanged
     pins.beamLenMul = Clamp(cfgBeamL, 25, 400, 100) / 100
     lastBeamH = nil
+    -- the mode switch only fires on a mode CHANGE, so toggling the navigator
+    -- while it is already the shown mode would otherwise do nothing until the
+    -- target moved back on screen
+    ms.cfgNav = cfgNav
+    shownMode = nil
     ms.cfgPartyMin = cfgPartyMin
     local pmin = Clamp(cfgPartyMin, 0, 300, PARTY_MIN_DEFAULT)
     ms.partyMin2 = pmin * pmin
@@ -1320,7 +1326,15 @@ driver:SetScript("OnUpdate", function()
     else
       waypoint:Hide()
       pinpoint:Hide()
-      navigator:Show()
+      -- pinsnav: the off-screen chevron is the one element some players find
+      -- noisy -- it orbits the screen centre whenever the target is behind
+      -- you. Hiding it costs nothing else: the waypoint and pinpoint modes
+      -- are untouched, you simply get no cue while the target is off-screen.
+      if pfQuest_config["pinsnav"] ~= "0" then
+        navigator:Show()
+      else
+        navigator:Hide()
+      end
     end
   end
 

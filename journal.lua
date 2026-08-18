@@ -207,7 +207,7 @@ pfJournal.title:SetFontObject(GameFontWhite)
 pfJournal.title:SetPoint("TOP", pfJournal, "TOP", 0, -8)
 pfJournal.title:SetJustifyH("LEFT")
 pfJournal.title:SetFont(pfUI.font_default, 14)
-pfJournal.title:SetText("|cff33ffccpf|rQuest " .. pfQuest_Loc["Journal"])
+pfJournal.title:SetText("|cff33ffccpf|cffffffffQuest|r |cFF888888Reforged|r " .. pfQuest_Loc["Journal"])
 
 pfJournal.close = CreateFrame("Button", "pfQuestJournalClose", pfJournal)
 pfJournal.close:SetPoint("TOPRIGHT", -5, -5)
