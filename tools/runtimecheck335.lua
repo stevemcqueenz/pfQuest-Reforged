@@ -785,5 +785,47 @@ do
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Guidance follows the PLAYER, not the map view.
+--
+-- UpdateNodes runs for whatever zone the world map is showing, and it is also
+-- what rebuilds pfQuest.route -- the single source the arrow, the compass
+-- strip and the in-world pins all read. Upstream rebuilds it unconditionally,
+-- so browsing the map to another continent retargeted all three to quests in
+-- the zone being looked at (QA report). Both halves must be gated: resetting
+-- the route without refilling it would leave NO guidance at all, which is a
+-- worse failure than the one being fixed.
+-- ---------------------------------------------------------------------------
+do
+  local src = io.open("map.lua"):read("*a")
+  local guard = string.find(src, "local routeOwned = %(not pfMap%.playerZone%) or %(map == pfMap%.playerZone%)")
+  if guard then
+    ok("route rebuild is gated on the displayed map being the player's zone")
+  else
+    fail("map.lua rebuilds the route for whatever zone the map is showing")
+  end
+
+  -- the Reset
+  if string.find(src, "if routeOwned then\n    pfQuest%.route:Reset%(%)") then
+    ok("route:Reset() only runs for the player's own zone")
+  else
+    fail("route:Reset() still runs while browsing another zone")
+  end
+
+  -- and the refill, which must be gated by the SAME flag
+  if string.find(src, "if routeOwned then\n            pfQuest%.route:AddPoint") then
+    ok("route:AddPoint() is gated by the same flag as the reset")
+  else
+    fail("route candidates are still added from the browsed map")
+  end
+
+  -- the fallback matters: an unknown player zone must not freeze guidance
+  if string.find(src, "%(not pfMap%.playerZone%) or", 1) then
+    ok("an unidentified player zone falls back to upstream behaviour")
+  else
+    fail("a nil playerZone would freeze the route permanently")
+  end
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)

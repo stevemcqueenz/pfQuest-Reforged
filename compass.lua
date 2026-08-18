@@ -724,7 +724,13 @@ end
 -- ambient setting behind its city gate. Config reads happen at the rebuild
 -- cadence only (~1/s) -- the cheap-settings-read rule, not a per-frame cost.
 local function PoiActive(class, zone)
-  if trackActive[class] then return true end
+  -- B1 mirror, now OPT-IN. It used to be ungated, on the reasoning that
+  -- pfQuest is only surfacing something the minimap is already showing. In
+  -- practice that meant a repair anvil appearing in the world with no pfQuest
+  -- setting switched on, purely because the player had picked repair tracking
+  -- on the MINIMAP (QA report). A pin the user never asked for is a bug even
+  -- when the data behind it is right.
+  if trackActive[class] and pfQuest_config["poimirror"] == "1" then return true end
   if pfQuest_config["compasspoi"] == "1" then
     if pfQuest_config["poicityonly"] ~= "1" or POI_CITIES[zone] then return true end
   end
@@ -733,8 +739,9 @@ end
 
 -- gates the zone-list build so the all-off default path never touches the db
 local function AnyPoiActive(zone)
-  if trackActive["flight"] or trackActive["mail"] or trackActive["inn"]
-     or trackActive["repair"] then
+  if pfQuest_config["poimirror"] == "1"
+     and (trackActive["flight"] or trackActive["mail"] or trackActive["inn"]
+          or trackActive["repair"]) then
     return true
   end
   if pfQuest_config["compasspoi"] == "1" then

@@ -155,6 +155,7 @@ pfQuest_defconfig = {
   -- tracking mirror and /way flight|mail|inn|repair work regardless.
   { text = L["Show Utility POIs"], desc = L["Ambient flight, mail, inn and repair markers"], default = "0", type = "checkbox", config = "compasspoi" },
   { text = L["Utility POIs Only In Cities"], desc = L["Ambient utility POIs only inside capital cities"], default = "1", type = "checkbox", config = "poicityonly" },
+  { text = L["Mirror Minimap Tracking"], desc = L["Also show the POI class your minimap is tracking"], default = "0", type = "checkbox", config = "poimirror" },
   { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
   { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], default = "8", type = "text", config = "compasscap" },
 

@@ -1506,7 +1506,26 @@ function pfMap:UpdateNodes()
   -- (e.g. unknown zone, continent view). Without this the tracker frame
   -- stays at 0px height if UpdateNodes only ever fires with map=nil.
   pfQuest.tracker.Reset()
-  pfQuest.route:Reset()
+
+  -- Reforged divergence from upstream: GUIDANCE FOLLOWS THE PLAYER, NOT THE
+  -- MAP VIEW. UpdateNodes runs for whatever zone the world map happens to be
+  -- showing, and upstream rebuilds the route from those pins -- so opening
+  -- the map and browsing to another continent silently retargeted the arrow,
+  -- the compass strip and the in-world pins to quests in the zone being
+  -- LOOKED AT (QA report: "I would not expect the compass bar to change just
+  -- because I look on the worldmap"). Those coordinates are in the browsed
+  -- map's space anyway, so every distance and bearing derived from them is
+  -- meaningless while the player stands somewhere else.
+  --
+  -- The route is therefore only rebuilt while the displayed map IS the
+  -- player's zone; browsing leaves the previous route standing, and closing
+  -- the map (SetMapToCurrentZone, the event handler below) refreshes it. A
+  -- nil playerZone falls back to upstream behaviour rather than freezing
+  -- guidance forever in a zone we cannot identify.
+  local routeOwned = (not pfMap.playerZone) or (map == pfMap.playerZone)
+  if routeOwned then
+    pfQuest.route:Reset()
+  end
 
   if not map then
     if pfQuest.tracker and pfQuest.tracker.DoLayout then
@@ -1579,7 +1598,9 @@ function pfMap:UpdateNodes()
           end
           -- Route candidates are positional tuples consumed by route.lua:
           -- { x, y, node, distance, watched, questid }.
-          pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid })
+          if routeOwned then
+            pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid })
+          end
         end
 
         -- a node belonging to the parent zone but lying outside this sub-map
