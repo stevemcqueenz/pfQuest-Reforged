@@ -1,0 +1,32 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 980, "h": 700, "title": "Compass strip" },
+    { "file": "Arrow.dc.html", "x": 1060, "y": 0, "w": 900, "h": 700, "title": "Follow arrow" },
+    { "file": "Marker.dc.html", "x": 2040, "y": 0, "w": 960, "h": 620, "title": "Marker housing" },
+    { "file": "Assets.dc.html", "x": 3080, "y": 0, "w": 800, "h": 700, "title": "Asset rules" }
+  ],
+  "annotations": [
+    {
+      "id": "note-read",
+      "x": 0,
+      "y": -170,
+      "w": 320,
+      "text": "Four treatments of the strip, then four arrows, then four marker housings, then the rules any replacement has to satisfy.\n\nEverything is drawn at the shipped sizes over a scene, because a compass that reads on a dark panel and vanishes over Tanaris is not a compass."
+    },
+    {
+      "id": "note-arrow",
+      "x": 1060,
+      "y": -170,
+      "w": 320,
+      "text": "The arrow art here is the REAL arrow-gw2.tga and arrow.tga, decoded out of the addon, not redrawn from memory.\n\nMeasuring it turned up a real defect: the ink sits 8px above the texture centre, so the arrow orbits its own axis as it rotates."
+    },
+    {
+      "id": "note-cost",
+      "x": 3080,
+      "y": -170,
+      "w": 320,
+      "text": "Read this board before picking. Two of the concepts cost NO new art (they remove drawing), one costs a redraw, and one costs a second texture.\n\nThe 8-corner rotation also means a single centred arrow could serve standalone too, deleting the 108-cell sprite sheet."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

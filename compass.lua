@@ -90,6 +90,30 @@ local function YardsTo(xp, yp, tx, ty, mapID)
   return sqrt(dx * dx + dy * dy)
 end
 
+-- Proximity ramp (compassdistsize). The strip tells you WHICH WAY a marker
+-- lies but nothing about how far, so eight identical plates all read as
+-- equally urgent. Size and strength carry the distance instead: a near marker
+-- grows and sits at full alpha, a far one shrinks and fades back, and the
+-- question "which of these is close" is answered without reading a number.
+--
+-- Honest yards, not the percent-space dist2 the cap sorts by: a map percent
+-- is a different number of yards in Azshara than in Elwynn, so the same plate
+-- size would mean two different distances. A zone with no size data returns
+-- nil and the marker keeps the neutral size -- the YardsTo doctrine, never
+-- fabricate a distance.
+local PLATE_NEAR, PLATE_FAR = 60, 600   -- yards: full size at/below, floor at/above
+local PLATE_MIN, PLATE_MAX = 15, 24     -- px (the flat size was 20)
+local PLATE_FADE = 0.55                 -- alpha multiplier at PLATE_FAR
+
+-- 0 = as far as the ramp goes, 1 = near. nil yards means "unknown", which is
+-- NOT the same as far: those sit mid-ramp so nothing is emphasised on a guess.
+local function Proximity(yards)
+  if not yards then return 0.5 end
+  if yards <= PLATE_NEAR then return 1 end
+  if yards >= PLATE_FAR then return 0 end
+  return 1 - (yards - PLATE_NEAR) / (PLATE_FAR - PLATE_NEAR)
+end
+
 -- ---------------------------------------------------------------------------
 -- marker taxonomy (COMPASS-DESIGN.md "Stage 2: the marker taxonomy") --
 -- ascending class number = higher importance; the cap drops the LOWEST class
@@ -939,6 +963,14 @@ local function BuildMarkers(xp, yp, target, dead)
     end
   end
 
+  -- proximity, once per rebuild (~1/s) rather than per frame: YardsTo is a
+  -- table lookup plus a sqrt, and the cap keeps this to at most MAXCAP rows
+  local ramp = pfQuest_config["compassdistsize"] ~= "0"
+  for i = 1, list.n do
+    local e = list[i]
+    e.near = ramp and Proximity(YardsTo(xp, yp, e.x, e.y, zoneID)) or nil
+  end
+
   -- widget bindings go stale on every rebuild
   list.rebind = true
 end
@@ -1157,6 +1189,9 @@ driver:SetScript("OnUpdate", function()
           a = 1 - 0.6 * (absOff - fadeStart) / fadeSpan
         end
       end
+      -- distance fades the plate back, edge-clamping fades it too, and the
+      -- two compose: a far marker at the edge is the faintest thing on the bar
+      if e.near then a = a * (PLATE_FADE + (1 - PLATE_FADE) * e.near) end
       e.a = a
       m:SetAlpha(a)
       m:Show()
@@ -1175,11 +1210,23 @@ driver:SetScript("OnUpdate", function()
     -- position by the scale factor.
     for i = 1, list.n do
       local m = markers[i]
-      local size = (owner == list[i]) and 23 or 20
+      local e = list[i]
+      -- proximity sets the base size; the label owner still grows ~15% on top
+      -- of whatever its distance earned it, so the selection cue survives
+      local base = 20
+      if e.near then
+        base = floor(PLATE_MIN + (PLATE_MAX - PLATE_MIN) * e.near + 0.5)
+      end
+      local size = (owner == e) and floor(base * 1.15 + 0.5) or base
       if m.plateSize ~= size then
         m.plateSize = size
         m:SetWidth(size)
         m:SetHeight(size)
+        -- the icon rides the plate, or a grown marker shows a small icon
+        -- floating in a large diamond
+        local isz = floor(size * 0.6 + 0.5)
+        m.icon:SetWidth(isz)
+        m.icon:SetHeight(isz)
       end
     end
   end
