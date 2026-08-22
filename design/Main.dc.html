@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      background: #17171a;
+      font-family: "Friz Quadrata", Georgia, "Palatino Linotype", "Book Antiqua", serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #ffedba; }
+    a:hover { color: #fff6d8; }
+  </style>
+</helmet>
+
+<div style="padding: 40px; display: flex; justify-content: center">
+
+  <!-- window -->
+  <div style="width: 680px; background: #0a0a0b; border: 1px solid #000000; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.055)">
+
+    <!-- header -->
+    <div style="height: 40px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid rgba(255,255,255,0.07)">
+      <div style="flex-grow: 1; text-align: center; font-size: 15px; letter-spacing: 0.2px">
+        <span style="color: #33ffcc">pf</span><span style="color: #ffffff">Quest</span>
+        <span style="color: #8a8a8a">Reforged</span>
+        <span style="color: #ffffff">Config</span>
+      </div>
+      <div style="width: 18px; height: 18px; display: flex; align-items: center; justify-content: center">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="#c05a5a" stroke-width="1.6" stroke-linecap="round">
+          <path d="M1 1 L10 10 M10 1 L1 10"></path>
+        </svg>
+      </div>
+    </div>
+
+    <!-- body -->
+    <div style="display: flex; align-items: stretch; height: 448px">
+
+      <!-- sidebar -->
+      <div style="width: 176px; display: flex; flex-direction: column; gap: 10px; padding: 12px 0 12px 0; border-right: 1px solid rgba(255,255,255,0.07)">
+
+        <!-- search -->
+        <div style="margin: 0 12px; height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 8px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.13)">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#7a7a7a" stroke-width="1.3" stroke-linecap="round">
+            <circle cx="5" cy="5" r="3.4"></circle>
+            <path d="M7.6 7.6 L11 11"></path>
+          </svg>
+          <span style="font-size: 12px; color: #6e6e6e">Search settings</span>
+        </div>
+
+        <!-- sections -->
+        <div style="display: flex; flex-direction: column">
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px; background: {{soft}}; box-shadow: inset 2px 0 0 0 {{accent}}">
+            <span style="font-size: 13px; color: {{accent}}">General</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Quest Tracker</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Map &amp; Minimap</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Node Appearance</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Tooltips</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Nameplates</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Compass Bar</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">In-world Pins</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Routes</span>
+          </div>
+          <div style="height: 26px; display: flex; align-items: center; padding-left: 12px">
+            <span style="font-size: 13px; color: #d2d2d2">Database &amp; Advanced</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- pane -->
+      <div style="flex-grow: 1; display: flex; flex-direction: column; padding: 14px 14px 0 18px; min-width: 0">
+
+        <div style="font-size: 15px; color: {{accent}}; padding-bottom: 9px">General</div>
+        <div style="height: 1px; background: {{rule}}"></div>
+
+        <div style="padding-top: 8px">
+
+          <div style="display: flex; align-items: center; gap: 16px; height: 30px; border-bottom: 1px solid rgba(255,255,255,0.045)">
+            <div style="flex-grow: 1; min-width: 0; font-size: 13px; color: #f2f2f2">Enable World Map Menu</div>
+            <div style="width: 108px; display: flex; justify-content: flex-end">
+              <div style="width: 16px; height: 16px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.14)">
+                <div style="margin: 3px; height: 8px; background: {{accent}}"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 16px; height: 30px; border-bottom: 1px solid rgba(255,255,255,0.045)">
+            <div style="flex-grow: 1; min-width: 0; font-size: 13px; color: #f2f2f2">Enable Minimap Button</div>
+            <div style="width: 108px; display: flex; justify-content: flex-end">
+              <div style="width: 16px; height: 16px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.14)">
+                <div style="margin: 3px; height: 8px; background: {{accent}}"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 16px; height: 30px; border-bottom: 1px solid rgba(255,255,255,0.045)">
+            <div style="flex-grow: 1; min-width: 0; font-size: 13px; color: #f2f2f2">Enable Quest Log Buttons</div>
+            <div style="width: 108px; display: flex; justify-content: flex-end">
+              <div style="width: 16px; height: 16px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.14)">
+                <div style="margin: 3px; height: 8px; background: {{accent}}"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 16px; height: 44px; border-bottom: 1px solid rgba(255,255,255,0.045)">
+            <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+              <div style="font-size: 13px; color: #f2f2f2">Enable Quest Link Support</div>
+              <div style="font-size: 11px; color: #8a8a8a">Turn quest names in chat into clickable links</div>
+            </div>
+            <div style="width: 108px; display: flex; justify-content: flex-end">
+              <div style="width: 16px; height: 16px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.14)">
+                <div style="margin: 3px; height: 8px; background: {{accent}}"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 16px; height: 30px">
+            <div style="flex-grow: 1; min-width: 0; font-size: 13px; color: #f2f2f2">Show Level On Quest Log</div>
+            <div style="width: 108px; display: flex; justify-content: flex-end">
+              <div style="width: 16px; height: 16px; background: #0d0d0f; border: 1px solid rgba(255,255,255,0.14)"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- footer -->
+    <div style="height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-top: 1px solid rgba(255,255,255,0.07)">
+      <div style="height: 27px; display: flex; align-items: center; padding: 0 16px; border: 1px solid rgba(255,255,255,0.13); background: #0d0d0f">
+        <span style="font-size: 13px; color: #d2d2d2">Welcome Screen</span>
+      </div>
+      <div style="height: 27px; display: flex; align-items: center; padding: 0 16px; border: 1px solid {{rule}}; background: {{soft}}">
+        <span style="font-size: 13px; color: {{accent}}">Save &amp; Close</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#ffedba","options":["#ffedba","#33ffcc"],"section":"Theme"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const hex = this.props.accent ?? '#ffedba';
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const a = (x) => 'rgba(' + r + ',' + g + ',' + b + ',' + x + ')';
+    return { accent: hex, soft: a(0.10), rule: a(0.30), track: a(0.45), group: a(0.62) };
+  }
+}
+</script>
+</body>
+</html>

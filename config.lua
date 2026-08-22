@@ -201,19 +201,27 @@ if type(WorldToScreen) == "function" then
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Multiple Waypoints"], desc = L["Experimental, adds pins for nearby quest markers"], tip = L["Beyond the single quest you are following, also mark other nearby objectives, quest givers and turn-ins in the world. Useful when clearing an area, noisy when following one quest."], default = "0", type = "checkbox", config = "pinsmulti" })
       table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Extras"], type = "group" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Navigator Orbit Radius"], desc = L["How far from screen centre the arrow sits"], tip = L["Distance in pixels between the screen centre and the off-screen arrow. Larger pushes it out toward the edges."], default = "140", type = "text", config = "pinsnavradius" })
+      table.insert(pfQuest_defconfig, i + 1,
         { text = L["Navigator Size"], desc = L["Percent, 100 is the default size"], tip = L["Size of the off-screen arrow only. The world marker has its own Pin Size setting."], default = "100", type = "text", config = "pinsnavsize" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Show Off-screen Arrow"], desc = L["The chevron that orbits the screen centre"], tip = L["When the target is behind you or off screen, an arrow orbits the screen centre pointing at it. Turn this off if you only want the marker itself, visible when you are looking at it."], default = "1", type = "checkbox", config = "pinsnav" })
       table.insert(pfQuest_defconfig, i + 1,
-        { text = L["Navigator Orbit Radius"], desc = L["How far from screen centre the arrow sits"], tip = L["Distance in pixels between the screen centre and the off-screen arrow. Larger pushes it out toward the edges."], default = "140", type = "text", config = "pinsnavradius" })
+        { text = L["Off-screen Arrow"], type = "group" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Glow"], desc = L["Percent, 0 turns the halo off"], tip = L["The soft halo behind each marker. It gives the marker depth against bright ground. Set 0 for a completely flat marker."], default = "100", type = "text", config = "pinsglow" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Glow"], type = "group" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Beam Length"], desc = L["Percent, 100 reaches the top of the screen"], tip = L["How tall the beam is. It also grows with distance, so a far target has a taller beam than a near one."], default = "100", type = "text", config = "pinsbeamlength" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Beam Width"], desc = L["Percent, 100 is the default thickness"], default = "100", type = "text", config = "pinsbeamwidth" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pin Light Beam"], tip = L["The vertical shaft of light above the marker. It is what makes a target visible across a zone, over buildings and terrain."], default = "1", type = "checkbox", config = "pinsbeam" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Beam"], type = "group" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pinpoint Size"], default = "100", type = "text", config = "pinspointsize" })
       table.insert(pfQuest_defconfig, i + 1,
@@ -226,6 +234,8 @@ if type(WorldToScreen) == "function" then
         { text = L["Pin Size"], desc = L["Percent, 100 is the default size"], default = "100", type = "text", config = "pinssize" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Pylon Color"], desc = L["Empty follows the theme"], default = "", type = "color", config = "pinscolor" })
+      table.insert(pfQuest_defconfig, i + 1,
+        { text = L["Marker"], type = "group" })
       table.insert(pfQuest_defconfig, i + 1,
         { text = L["Enable Waypoint Pins"], desc = L["Needs the WorldAPI DLL (WorldToScreen)"], tip = L["Draws your current quest target in the 3D world as a marker with a light beam, the way modern WoW does. Requires a client with the WorldAPI DLL installed; without it this does nothing at all."], default = "0", type = "checkbox", config = "pins" })
       table.insert(pfQuest_defconfig, i + 1,
@@ -451,7 +461,9 @@ local topoffset = 58
 local footer = 34
 
 local configframes = {}
+local groupframes = {}
 local sections = {}
+local searchText = ""
 
 -- accent, resolved once per call site: the theme swaps it (GW2 UI installs a
 -- gold palette), so it is never hardcoded teal the way upstream can afford to.
@@ -482,6 +494,7 @@ function pfQuestConfig:ShowSection(index)
 
   if sections[index] then
     pfQuestConfig.sectiontitle:SetText(sections[index].name)
+    pfQuestConfig:UpdateMatchCount(index)
     pfQuestConfig.activesection = index
   end
 end
@@ -491,6 +504,21 @@ end
 -- which is what makes a filtered pane read as a short list rather than a long
 -- one full of gaps.
 local function LayoutSection(s)
+  -- A group label owns the rows beneath it up to the next label. Under a
+  -- search it has to disappear with them: a lone "BEAM" heading over nothing
+  -- reads as a bug. Walk backwards so each label already knows whether
+  -- anything under it survived.
+  local live = false
+  for j = getn(s.rows), 1, -1 do
+    local row = s.rows[j]
+    if row.isgroup then
+      row.filtered = (not live) or nil
+      live = false
+    elseif not row.filtered then
+      live = true
+    end
+  end
+
   local y = 0
   local shown = 0
   for j = 1, getn(s.rows) do
@@ -502,8 +530,10 @@ local function LayoutSection(s)
       row:ClearAllPoints()
       row:SetPoint("TOPLEFT", s.content, "TOPLEFT", 0, -y)
       row:SetWidth(panewidth - 16)
-      y = y + (row.tall and (rowheight + descheight) or rowheight)
-      shown = shown + 1
+      y = y + row:GetHeight()
+      -- group labels are chrome, not settings: they must not count toward
+      -- "4 of 19 match", or the number stops meaning anything
+      if not row.isgroup then shown = shown + 1 end
     end
   end
   -- the scroll child must be at least as tall as its contents or the range
@@ -515,14 +545,55 @@ local function LayoutSection(s)
   end
 end
 
+-- "4 of 19 settings match" beside the section title. A search that hides rows
+-- without saying how many it found leaves the player wondering whether the
+-- section is short or the filter ate it.
+function pfQuestConfig:UpdateMatchCount(index)
+  local s = sections[index]
+  if not s or not pfQuestConfig.matchcount then return end
+  if not searchText or searchText == "" then
+    pfQuestConfig.matchcount:SetText("")
+    return
+  end
+  local total = 0
+  for j = 1, getn(s.rows) do
+    if not s.rows[j].isgroup then total = total + 1 end
+  end
+  pfQuestConfig.matchcount:SetText(format(L["%d of %d settings match"], s.shown or 0, total))
+end
+
+-- pick the matched run out of the label. Case is preserved -- the query is
+-- lowercased for the search, so the ORIGINAL substring is spliced back in
+-- rather than the typed one, or "BEAM" would come back as "beam".
+local function Highlight(caption, text, query, a)
+  if not query or query == "" then
+    caption:SetText(text)
+    return
+  end
+  local at = strfind(strlower(text), query, 1, true)
+  if not at then
+    caption:SetText(text)
+    return
+  end
+  local stop = at + strlen(query) - 1
+  caption:SetText(strsub(text, 1, at - 1)
+    .. format("|cff%02x%02x%02x", a[1] * 255, a[2] * 255, a[3] * 255)
+    .. strsub(text, at, stop) .. "|r"
+    .. strsub(text, stop + 1))
+end
+
 function pfQuestConfig:ApplySearch(text)
   text = text and strlower(text) or ""
+  searchText = text
   local a = accent()
   for i = 1, getn(sections) do
     local s = sections[i]
     for j = 1, getn(s.rows) do
       local row = s.rows[j]
       row.filtered = (text ~= "" and not strfind(row.haystack, text, 1, true)) or nil
+      if not row.isgroup and row.labeltext then
+        Highlight(row.caption, row.labeltext, text, a)
+      end
     end
     LayoutSection(s)
     -- a section with nothing left to show dims, so the sidebar answers "is it
@@ -551,6 +622,7 @@ function pfQuestConfig:ApplySearch(text)
   if pfQuestConfig.activesection and sections[pfQuestConfig.activesection] then
     local t = sections[pfQuestConfig.activesection].tab
     if t then t.text:SetTextColor(a[1], a[2], a[3], 1) end
+    pfQuestConfig:UpdateMatchCount(pfQuestConfig.activesection)
   end
 end
 
@@ -638,6 +710,34 @@ local function CreateSection(index, name)
   return s
 end
 
+-- a group label inside a section: small, uppercase, accent-dim, with a rule
+-- under it. In-world Pins carries 19 settings; nineteen flat rows is a list
+-- you scan, five labelled groups is one you navigate.
+local function CreateGroup(s, data)
+  local frame = CreateFrame("Frame", nil, s.content)
+  frame:SetHeight(max(22, fontsize + 10))
+  frame.isgroup = true
+  frame.haystack = ""
+  groupframes[data.text] = frame
+  table.insert(s.rows, frame)
+
+  local a = accent()
+  frame.caption = frame:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+  frame.caption:SetFont(pfUI.font_default, max(9, fontsize - 3))
+  frame.caption:SetPoint("BOTTOMLEFT", 6, 5)
+  frame.caption:SetJustifyH("LEFT")
+  frame.caption:SetTextColor(a[1], a[2], a[3], 0.62)
+  frame.caption:SetText(strupper(data.text))
+
+  frame.rule = frame:CreateTexture(nil, "BORDER")
+  frame.rule:SetTexture(1, 1, 1, 0.05)
+  frame.rule:SetHeight(1)
+  frame.rule:SetPoint("BOTTOMLEFT", 6, 1)
+  frame.rule:SetPoint("BOTTOMRIGHT", -6, 1)
+
+  return frame
+end
+
 -- a single settings row: label (plus optional hint line) on the left, the
 -- widget right-aligned. The whole row highlights on hover, pfUI-style.
 local function CreateRow(s, data)
@@ -664,6 +764,7 @@ local function CreateRow(s, data)
   frame.caption:SetJustifyH("LEFT")
   frame.caption:SetText(data.text)
   frame.caption:SetWidth(textwidth)
+  frame.labeltext = data.text -- the clean label, for the search highlighter
 
   if data.desc then
     frame.tall = true
@@ -723,6 +824,9 @@ function pfQuestConfig:CreateConfigEntries(config)
     if data.type == "header" then
       section = CreateSection(getn(sections) + 1, data.text)
       table.insert(sections, section)
+
+    elseif data.type == "group" and section then
+      CreateGroup(section, data)
 
     elseif data.type and section then
       local frame = CreateRow(section, data)
@@ -997,6 +1101,12 @@ function pfQuestConfig:CreateConfigEntries(config)
   pfQuestConfig.sectiontitle:SetJustifyH("LEFT")
   pfQuestConfig.sectiontitle:SetTextColor(a[1], a[2], a[3], 1)
 
+  pfQuestConfig.matchcount = pfQuestConfig:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+  pfQuestConfig.matchcount:SetFont(pfUI.font_default, max(9, fontsize - 3))
+  pfQuestConfig.matchcount:SetPoint("LEFT", pfQuestConfig.sectiontitle, "RIGHT", 8, -1)
+  pfQuestConfig.matchcount:SetJustifyH("LEFT")
+  pfQuestConfig.matchcount:SetTextColor(0.49, 0.49, 0.49, 1)
+
   pfQuestConfig.sectionline = pfQuestConfig:CreateTexture(nil, "BORDER")
   pfQuestConfig.sectionline:SetTexture(a[1], a[2], a[3], 0.25)
   pfQuestConfig.sectionline:SetHeight(1)
@@ -1037,6 +1147,12 @@ end
 -- itself is a file-local.
 function pfQuestConfig:GetRow(caption)
   return configframes[caption]
+end
+
+-- group labels are keyed separately from settings rows: they share the
+-- caption namespace with nothing, and UpdateConfigEntries must never walk one
+function pfQuestConfig:GetGroup(caption)
+  return groupframes[caption]
 end
 
 function pfQuestConfig:UpdateConfigEntries()
