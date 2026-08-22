@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      background: #1b1d21;
+      font-family: "Friz Quadrata", Georgia, "Palatino Linotype", "Book Antiqua", serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #ffedba; } a:hover { color: #fff6d8; }
+    .h { font-size: 12px; color: #e2e2e2 }
+    .sub { font-size: 11px; color: #8a8a8a; line-height: 1.55; text-wrap: pretty }
+    .row { display: flex; align-items: baseline; gap: 10px; height: 26px; border-bottom: 1px solid rgba(255,255,255,0.05) }
+    .k { width: 168px; font-size: 11px; color: #cfcfcf; flex-shrink: 0 }
+    .v { font-size: 11px; color: #8f8f8f }
+    .mono { font-family: Consolas, "DejaVu Sans Mono", Menlo, monospace; font-size: 10px }
+  </style>
+</helmet>
+
+<div style="padding: 28px 30px; display: flex; flex-direction: column; gap: 22px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <div style="font-size: 16px; color: {{accent}}">Asset rules &mdash; what a replacement has to satisfy</div>
+    <div class="sub" style="max-width: 700px">Measured from the shipped files and the code that draws them, not assumed. Anything here that a new asset breaks, breaks silently in game.</div>
+  </div>
+
+  <!-- the rotation safe zone, drawn -->
+  <div style="display: flex; gap: 22px">
+    <div style="width: 190px; height: 190px; background: #0d0e11; border: 1px solid rgba(255,255,255,0.07); position: relative; flex-shrink: 0">
+      <svg width="190" height="190" viewBox="0 0 190 190">
+        <rect x="7" y="7" width="176" height="176" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1"></rect>
+        <circle cx="95" cy="95" r="88" fill="{{soft}}" stroke="{{accent}}" stroke-width="1.5" stroke-dasharray="4 4"></circle>
+        <path d="M7 7 L34 34 M183 7 L156 34 M7 183 L34 156 M183 183 L156 156" stroke="#d98a8a" stroke-width="1"></path>
+        <text x="95" y="99" text-anchor="middle" font-size="11" fill="{{accent}}" font-family="Georgia, serif">safe</text>
+        <text x="20" y="20" font-size="9" fill="#d98a8a" font-family="Georgia, serif">cut</text>
+      </svg>
+    </div>
+    <div style="max-width: 520px; display: flex; flex-direction: column; gap: 7px">
+      <div class="h">The rotation safe zone</div>
+      <div class="sub">GW2 mode free-rotates the arrow with an 8-corner <span class="mono">SetTexCoord</span>. The sampled quad always contains the texture's <b style="color:#c8c8c8">inscribed circle</b> and never more, so art inside the circle is safe at every bearing and the four corners are cut at some of them. Draw to the circle, not the square.</div>
+      <div class="sub">Second rule, and the one today's arrow misses: the art must be <b style="color:#c8c8c8">centred on the texture</b>, because rotation is about the texture's midpoint, not the art's. Today's ink spans y 10&ndash;229 of 256, so its centre sits 8px high and the arrow orbits by about 1.4px at the shipped 44px size as it turns.</div>
+    </div>
+  </div>
+
+  <!-- the numbers -->
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div class="h">Shipped files and sizes</div>
+    <div>
+      <div class="row"><span class="k">arrow-gw2.tga</span><span class="v">256&times;256, free-rotated. Art must fit r=128 and be centred. Drawn at 44px.</span></div>
+      <div class="row"><span class="k">arrow.tga</span><span class="v">512&times;512 sheet, 9&times;12 cells of 56&times;42 = 108 bearings. Standalone only. Drawn at 28px.</span></div>
+      <div class="row"><span class="k">marker_fill / _edge</span><span class="v">64&times;64 each, white, tinted at runtime. Drawn at 20px with a 12px icon.</span></div>
+      <div class="row"><span class="k">marker_glow</span><span class="v">64&times;64, ADD-blended halo behind the plate.</span></div>
+      <div class="row"><span class="k">beam_soft.tga</span><span class="v">32&times;256, horizontal gaussian, vertically uniform &mdash; stretched to any beam height.</span></div>
+      <div class="row" style="border-bottom: none"><span class="k">compass strip</span><span class="v">420&times;22 default, 1&times;6 ticks, 20px plates, 7px badge, 12px description line.</span></div>
+    </div>
+  </div>
+
+  <!-- rules -->
+  <div style="display: flex; gap: 22px; flex-wrap: wrap">
+    <div style="width: 340px; display: flex; flex-direction: column; gap: 7px">
+      <div class="h">Draw white, tint at runtime</div>
+      <div class="sub">Every plate and beam texture ships white and is coloured with <span class="mono">SetVertexColor</span>. That is what lets one file serve GW2 gold and standalone teal. A coloured asset forks into two files and drifts.</div>
+    </div>
+    <div style="width: 340px; display: flex; flex-direction: column; gap: 7px">
+      <div class="h">TGA only, power of two</div>
+      <div class="sub">3.3.5a reads no PNG. Sizes stay powers of two (64, 256, 512); a 20px plate is a 64px texture scaled down, never a 20px file.</div>
+    </div>
+    <div style="width: 340px; display: flex; flex-direction: column; gap: 7px">
+      <div class="h">One arrow could replace two</div>
+      <div class="sub">The 8-corner rotation needs no sprite sheet. A single centred 256&times;256 arrow can serve standalone as well, deleting <span class="mono">arrow.tga</span> and its 108 hand-rendered cells &mdash; 220 KB, and one less thing to redraw next time.</div>
+    </div>
+    <div style="width: 340px; display: flex; flex-direction: column; gap: 7px">
+      <div class="h">What has no art cost</div>
+      <div class="sub">Compass B (Ruler) and Marker D (Bare) ship <b style="color:#c8c8c8">no new textures at all</b> &mdash; they remove drawing rather than add it. If the goal is a better fit rather than a new look, start there.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#ffedba","options":["#ffedba","#33ffcc"],"section":"Theme"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const hex = this.props.accent ?? '#ffedba';
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const a = (x) => 'rgba(' + r + ',' + g + ',' + b + ',' + x + ')';
+    return { accent: hex, soft: a(0.09), rule: a(0.42), dim: a(0.55) };
+  }
+}
+</script>
+</body>
+</html>

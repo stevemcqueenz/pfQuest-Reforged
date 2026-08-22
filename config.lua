@@ -160,6 +160,7 @@ pfQuest_defconfig = {
   { text = L["Mirror Minimap Tracking"], desc = L["Also show the POI class your minimap is tracking"], tip = L["When you set your minimap tracking to flight masters, mailboxes, innkeepers or repair, also mark those in the compass and the world. Off by default so nothing appears that you did not ask for."], default = "0", type = "checkbox", config = "poimirror" },
   { text = L["Show Objective Description"], default = "1", type = "checkbox", config = "compassdesc" },
   { text = L["Marker Cap"], desc = L["4 to 12 markers, default 8"], tip = L["How many markers the compass may show at once. The nearest ones win, so a lower number keeps it readable in a crowded zone."], default = "8", type = "text", config = "compasscap" },
+  { text = L["Size Markers By Distance"], desc = L["Near markers grow, far ones shrink and fade"], tip = L["The compass shows which way a marker lies but not how far. With this on, a nearby marker is drawn larger and at full strength while a distant one shrinks and fades back, so you can see which is close without reading the number."], default = "1", type = "checkbox", config = "compassdistsize" },
 
   { text = L["Routes"], default = nil, type = "header" },
   { text = L["Show Route Between Objects"], default = "1", type = "checkbox", config = "routes" },

@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      background: #1b1d21;
+      font-family: "Friz Quadrata", Georgia, "Palatino Linotype", "Book Antiqua", serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #ffedba; } a:hover { color: #fff6d8; }
+    .cap { font-size: 12px; color: #e2e2e2; }
+    .sub { font-size: 11px; color: #8a8a8a; line-height: 1.5; text-wrap: pretty; }
+    .tag { font-size: 9px; letter-spacing: 1.1px; color: #6f6f6f; }
+    .cell { display: flex; flex-direction: column; gap: 8px; width: 176px }
+    .stage { width: 176px; height: 176px; background: #0d0e11; border: 1px solid rgba(255,255,255,0.07); position: relative }
+    .real { width: 176px; height: 60px; background: linear-gradient(105deg, #33402f 0%, #4a432c 60%, #2b3039 100%); display: flex; align-items: center; justify-content: center; gap: 18px }
+  </style>
+</helmet>
+
+<div style="padding: 28px 30px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <div style="font-size: 16px; color: {{accent}}">Follow arrow &mdash; concepts</div>
+    <div class="sub" style="max-width: 820px">Each drawn inside the rotation safe zone, then shown at the shipped 44px over a scene. The dashed circle is not decoration: the GW2 arrow is free-rotated by an 8-corner SetTexCoord, so anything outside the inscribed circle is cut at some bearings. The square's corners are unusable.</div>
+  </div>
+
+  <div style="display: flex; gap: 22px; flex-wrap: wrap">
+
+    <!-- A: today, the real shipped art -->
+    <div class="cell">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span class="cap">A &mdash; Today</span><span class="tag">SHIPPED</span>
+      </div>
+      <div class="stage">
+        <svg width="176" height="176" viewBox="0 0 176 176" style="position: absolute; left: 0; top: 0">
+          <circle cx="88" cy="88" r="87" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1" stroke-dasharray="3 4"></circle>
+          <path d="M88 0 L88 176 M0 88 L176 88" stroke="rgba(255,255,255,0.09)" stroke-width="1"></path>
+          <circle cx="88" cy="88" r="2" fill="rgba(255,255,255,0.35)"></circle>
+        </svg>
+        <img src="arrow-current.png" style="position: absolute; left: 24px; top: 24px; width: 128px; height: 128px">
+        <div style="position: absolute; left: 24px; top: 29px; width: 128px; height: 1px; background: rgba(255,120,120,0.55)"></div>
+        <div style="position: absolute; left: 156px; top: 22px; font-size: 9px; color: #d98a8a">art top</div>
+      </div>
+      <div class="real">
+        <img src="arrow-current.png" style="width: 44px; height: 44px">
+        <img src="arrow-current.png" style="width: 44px; height: 44px; transform: rotate(38deg)">
+      </div>
+      <div class="sub">Fits with 10.5px to spare &mdash; but its ink sits <b style="color:#d98a8a">8px above centre</b>, so it orbits its own axis as it turns. Body 146&times;219 of a 256 canvas.</div>
+    </div>
+
+    <!-- B: dart -->
+    <div class="cell">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span class="cap">B &mdash; Dart</span><span class="tag">CLOSEST TO TODAY</span>
+      </div>
+      <div class="stage">
+        <svg width="176" height="176" viewBox="0 0 176 176" style="position: absolute; left: 0; top: 0">
+          <circle cx="88" cy="88" r="87" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1" stroke-dasharray="3 4"></circle>
+          <path d="M88 0 L88 176 M0 88 L176 88" stroke="rgba(255,255,255,0.09)" stroke-width="1"></path>
+          <path d="M88 16 L136 132 L88 108 L40 132 Z"
+                fill="{{soft}}" stroke="{{accent}}" stroke-width="4" stroke-linejoin="round"></path>
+          <path d="M88 40 L88 100" stroke="{{accent}}" stroke-width="3" stroke-linecap="round" opacity="0.55"></path>
+          <circle cx="88" cy="88" r="2" fill="rgba(255,255,255,0.35)"></circle>
+        </svg>
+      </div>
+      <div class="real">
+        <svg width="44" height="44" viewBox="0 0 176 176"><path d="M88 16 L136 132 L88 108 L40 132 Z" fill="rgba(10,10,11,0.75)" stroke="{{accent}}" stroke-width="9" stroke-linejoin="round"></path></svg>
+        <svg width="44" height="44" viewBox="0 0 176 176" style="transform: rotate(38deg)"><path d="M88 16 L136 132 L88 108 L40 132 Z" fill="rgba(10,10,11,0.75)" stroke="{{accent}}" stroke-width="9" stroke-linejoin="round"></path></svg>
+      </div>
+      <div class="sub">Same silhouette, <b style="color:#c8c8c8">balanced on the centre</b> and hollow. The dark core keeps it readable over snow and sand, where a solid gold arrow disappears.</div>
+    </div>
+
+    <!-- C: ring needle -->
+    <div class="cell">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span class="cap">C &mdash; Ring needle</span><span class="tag">CARRIES DISTANCE</span>
+      </div>
+      <div class="stage">
+        <svg width="176" height="176" viewBox="0 0 176 176" style="position: absolute; left: 0; top: 0">
+          <circle cx="88" cy="88" r="87" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1" stroke-dasharray="3 4"></circle>
+          <path d="M88 0 L88 176 M0 88 L176 88" stroke="rgba(255,255,255,0.09)" stroke-width="1"></path>
+          <circle cx="88" cy="88" r="72" fill="none" stroke="rgba(255,255,255,0.13)" stroke-width="7"></circle>
+          <circle cx="88" cy="88" r="72" fill="none" stroke="{{accent}}" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="330 452" transform="rotate(-90 88 88)"></circle>
+          <path d="M88 28 L112 104 L88 90 L64 104 Z" fill="{{accent}}"></path>
+          <circle cx="88" cy="88" r="2" fill="rgba(0,0,0,0.5)"></circle>
+        </svg>
+      </div>
+      <div class="real">
+        <svg width="44" height="44" viewBox="0 0 176 176">
+          <circle cx="88" cy="88" r="72" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="10"></circle>
+          <circle cx="88" cy="88" r="72" fill="none" stroke="{{accent}}" stroke-width="10" stroke-linecap="round" stroke-dasharray="330 452" transform="rotate(-90 88 88)"></circle>
+          <path d="M88 28 L112 104 L88 90 L64 104 Z" fill="{{accent}}"></path>
+        </svg>
+        <svg width="44" height="44" viewBox="0 0 176 176" style="transform: rotate(38deg)">
+          <circle cx="88" cy="88" r="72" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="10"></circle>
+          <circle cx="88" cy="88" r="72" fill="none" stroke="{{accent}}" stroke-width="10" stroke-linecap="round" stroke-dasharray="150 452" transform="rotate(-90 88 88)"></circle>
+          <path d="M88 28 L112 104 L88 90 L64 104 Z" fill="{{accent}}"></path>
+        </svg>
+      </div>
+      <div class="sub">The ring is a <b style="color:#c8c8c8">progress arc</b>: full when you accept, closing as you approach, empty on arrival. Distance without reading a number. Costs a second texture &mdash; the ring cannot rotate with the needle.</div>
+    </div>
+
+    <!-- D: pylon -->
+    <div class="cell">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span class="cap">D &mdash; Pylon</span><span class="tag">MATCHES THE WORLD PIN</span>
+      </div>
+      <div class="stage">
+        <svg width="176" height="176" viewBox="0 0 176 176" style="position: absolute; left: 0; top: 0">
+          <circle cx="88" cy="88" r="87" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1" stroke-dasharray="3 4"></circle>
+          <path d="M88 0 L88 176 M0 88 L176 88" stroke="rgba(255,255,255,0.09)" stroke-width="1"></path>
+          <path d="M88 22 L124 58 L88 94 L52 58 Z" fill="rgba(10,10,11,0.85)" stroke="{{accent}}" stroke-width="5" stroke-linejoin="round"></path>
+          <path d="M88 44 L88 72" stroke="{{accent}}" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M88 100 L104 150 L88 140 L72 150 Z" fill="{{accent}}" opacity="0.9"></path>
+          <circle cx="88" cy="88" r="2" fill="rgba(255,255,255,0.35)"></circle>
+        </svg>
+      </div>
+      <div class="real">
+        <svg width="44" height="44" viewBox="0 0 176 176">
+          <path d="M88 22 L124 58 L88 94 L52 58 Z" fill="rgba(10,10,11,0.85)" stroke="{{accent}}" stroke-width="10" stroke-linejoin="round"></path>
+          <path d="M88 100 L104 150 L88 140 L72 150 Z" fill="{{accent}}"></path>
+        </svg>
+        <svg width="44" height="44" viewBox="0 0 176 176" style="transform: rotate(38deg)">
+          <path d="M88 22 L124 58 L88 94 L52 58 Z" fill="rgba(10,10,11,0.85)" stroke="{{accent}}" stroke-width="10" stroke-linejoin="round"></path>
+          <path d="M88 100 L104 150 L88 140 L72 150 Z" fill="{{accent}}"></path>
+        </svg>
+      </div>
+      <div class="sub">The diamond head is the <b style="color:#c8c8c8">same shape as the world pin and the compass plate</b>, so all three read as one system. Busiest of the four at 44px &mdash; the head competes with the tail.</div>
+    </div>
+
+  </div>
+
+  <!-- standalone context -->
+  <div style="display: flex; align-items: center; gap: 20px; padding: 14px 16px; background: #0d0e11; border: 1px solid rgba(255,255,255,0.07)">
+    <img src="arrow-stock.png" style="width: 84px; height: 63px">
+    <div style="max-width: 700px">
+      <div class="cap" style="padding-bottom: 4px">Standalone still runs the sprite sheet</div>
+      <div class="sub">Without GW2 UI the arrow is <b style="color:#c8c8c8">arrow.tga</b>, a 512&times;512 sheet of 108 pre-rendered cells (9&times;12, 56&times;42 each) &mdash; the vanilla technique, one cell per 3.3&deg;. The 8-corner SetTexCoord already used in GW2 mode rotates a single texture freely and needs no sheet, so whichever concept wins can serve BOTH modes from one 256&times;256 file. That is a 220 KB asset deleted, not just replaced.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#ffedba","options":["#ffedba","#33ffcc"],"section":"Theme"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const hex = this.props.accent ?? '#ffedba';
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const a = (x) => 'rgba(' + r + ',' + g + ',' + b + ',' + x + ')';
+    return { accent: hex, soft: a(0.14), rule: a(0.42), dim: a(0.55) };
+  }
+}
+</script>
+</body>
+</html>

@@ -798,5 +798,93 @@ fireTracking()
 compass.BuildMarkers(0.4, 0.6, target, false)
 check(classcount(C.POI) == 0, "poi: all layers off again -> zero POI markers")
 
+-- ---------------------------------------------------------------------------
+-- Proximity ramp (compassdistsize): plate size and strength carry DISTANCE.
+--
+-- The strip says which way a marker lies and nothing about how far, so eight
+-- identical plates all read as equally urgent. Three properties worth pinning:
+-- near is bigger than far, an UNKNOWN distance is not treated as far, and the
+-- distance fade composes with the edge fade rather than replacing it.
+-- ---------------------------------------------------------------------------
+do
+  local sizeOf = function(title)
+    for i = 1, list.n do
+      if list[i].title == title then return compass.markers[i]:GetWidth(), list[i] end
+    end
+  end
+
+  pfQuest_config["compassdistsize"] = "1"
+  posx, posy = 0.4, 0.6
+  facing = facing + 0.01
+  fireOnUpdate()
+
+  -- the harness scene: zone 113 is 5450 x 3633 yards, so a marker a few map
+  -- percent away is genuinely near and one across the zone is genuinely far
+  -- the scene already holds a real pair: zone 113 is 5450 x 3633 yards, so
+  -- the objective 1% away is ~36 yards (near) and the giver at 55|55 is
+  -- ~840 yards (far). No invented fixture needed.
+  local nearW, nearE = sizeOf("Daily Test")
+  local farW, farE = sizeOf("Avail Quest")
+  -- guarded, not assumed: if the ramp never ran these are nil, and comparing
+  -- nils would CRASH the harness -- which reads as silence rather than as a
+  -- failure to anything scanning the output
+  if not (nearE and farE) then
+    fail("ramp: the fixture scene has no near/far pair to compare")
+  elseif not (nearE.near and farE.near) then
+    fail("ramp: markers carry no proximity score with compassdistsize on")
+  else
+    check(nearE.near > farE.near,
+          "ramp: the near marker scores higher than the far one (%.2f vs %.2f)",
+          nearE.near, farE.near)
+    check(nearW > farW,
+          "ramp: the near plate is drawn larger (%s vs %s)", tostring(nearW), tostring(farW))
+
+    -- the fade has to be measured against ITSELF with the ramp off, or the
+    -- edge fade alone satisfies "far is dimmer" and the distance fade could
+    -- be deleted without the gate noticing
+    local rampedFar = farE.a
+    pfQuest_config["compassdistsize"] = "0"
+    facing = facing + 0.01
+    fireOnUpdate()
+    local _, flatEntry = sizeOf("Avail Quest")
+    local flatFar = flatEntry and flatEntry.a
+    pfQuest_config["compassdistsize"] = "1"
+    facing = facing + 0.01
+    fireOnUpdate()
+    check(flatFar and rampedFar < flatFar - 0.001,
+          "ramp: distance fades the far plate BELOW what the edge fade alone gives (%.2f vs %.2f)",
+          rampedFar, flatFar or -1)
+  end
+
+  -- an UNKNOWN distance must not read as "far": a zone with no size data
+  -- returns nil yards, and guessing "far" would quietly de-emphasise every
+  -- marker in it. Mid-ramp is the honest answer.
+  do
+    local saved = pfMap.minimap_sizes[113]
+    pfMap.minimap_sizes[113] = nil
+    facing = facing + 0.01
+    fireOnUpdate()
+    local w, e = sizeOf("Daily Test")
+    check(e and e.near == 0.5, "ramp: unknown yards sit mid-ramp, not at the far end (got %s)",
+          tostring(e and e.near))
+    check(w == 20 or w == 23, "ramp: unknown yards keep the flat size (got %s)", tostring(w))
+    pfMap.minimap_sizes[113] = saved
+    facing = facing + 0.01
+    fireOnUpdate()
+  end
+
+  -- switching it off puts every plate back to the flat size
+  pfQuest_config["compassdistsize"] = "0"
+  facing = facing + 0.01
+  fireOnUpdate()
+  local offW = sizeOf("Daily Test")
+  check(offW == 20 or offW == 23,
+        "ramp off: plates return to the flat 20px (23 for the label owner), got %s",
+        tostring(offW))
+  pfQuest_config["compassdistsize"] = "1"
+  facing = facing + 0.01
+  fireOnUpdate()
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
