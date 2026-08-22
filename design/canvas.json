@@ -1,0 +1,69 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 760,
+      "h": 640,
+      "title": "General"
+    },
+    {
+      "file": "Pins.dc.html",
+      "x": 840,
+      "y": 0,
+      "w": 1000,
+      "h": 640,
+      "title": "In-world Pins + tooltip"
+    },
+    {
+      "file": "Search.dc.html",
+      "x": 1920,
+      "y": 0,
+      "w": 760,
+      "h": 640,
+      "title": "Search"
+    },
+    {
+      "file": "Standalone.dc.html",
+      "x": 2760,
+      "y": 0,
+      "w": 760,
+      "h": 640,
+      "title": "General (standalone, no GW2)"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-structure",
+      "x": 0,
+      "y": -190,
+      "w": 300,
+      "text": "Structure, not decoration.\n\nThe window is 680 wide with a 176px measured sidebar and a 108px control gutter reserved on every row, so a label or hint can never run under its own value box.\n\nRow heights derive from your font size, as they do in the shipped code."
+    },
+    {
+      "id": "note-density",
+      "x": 840,
+      "y": -190,
+      "w": 320,
+      "text": "The real test: 19 settings in one section.\n\nGrouping (MARKER / BEAM / GLOW) is the change that matters here. Nineteen flat rows is a list you scan; five groups is a list you navigate.\n\nHovered row + tooltip shown as they behave in game: GameTooltip anchors to the right of the window."
+    },
+    {
+      "id": "note-search",
+      "x": 1920,
+      "y": -190,
+      "w": 300,
+      "text": "Search already works across every section in the shipped build. What is missing is feedback: match counts, dimmed sections with no hit, and the matched word picked out in the row.\n\nEverything here is buildable on 3.3.5a: flat fills, 1px borders, square corners. No rounded corners, no blur."
+    },
+    {
+      "id": "note-standalone",
+      "x": 2760,
+      "y": -190,
+      "w": 300,
+      "text": "Standalone: no GW2 UI installed.\n\npfQuest keeps its own signature teal #33FFCC, and theme.lua also uses a lighter panel body (#121217 against GW2's #0A0A0B) at 0.85 alpha rather than 0.92.\n\nSame layout, same metrics. Only the palette moves, and the addon already switches automatically on IsAddOnLoaded(\"GW2_UI\")."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
