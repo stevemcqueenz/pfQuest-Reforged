@@ -456,7 +456,7 @@ local sidebarwidth = 132   -- floor; measured up from the widest section name
 -- run underneath the value box on its right -- that overlap survived the
 -- first layout fix because only the VERTICAL metrics were derived
 local gutter = 108
-local panewidth = 470
+local panewidth = 510
 local topoffset = 58
 local footer = 34
 
@@ -596,6 +596,15 @@ function pfQuestConfig:ApplySearch(text)
       end
     end
     LayoutSection(s)
+    -- the count of hits in THIS section, so the sidebar answers "where else?"
+    -- and not merely "not here"
+    if s.tab and s.tab.badge then
+      if text ~= "" and s.shown > 0 then
+        s.tab.badge:SetText("" .. s.shown)
+      else
+        s.tab.badge:SetText("")
+      end
+    end
     -- a section with nothing left to show dims, so the sidebar answers "is it
     -- in here?" without clicking through every entry
     if s.tab and i ~= pfQuestConfig.activesection then
@@ -672,7 +681,18 @@ local function CreateSection(index, name)
   tab.text:SetJustifyH("LEFT")
   tab.text:SetText(name)
   -- widest label wins: the sidebar is measured, not guessed
-  sidebarwidth = max(sidebarwidth, tab.text:GetStringWidth() + 30)
+  sidebarwidth = max(sidebarwidth, tab.text:GetStringWidth() + 44)
+  -- match badge: how many settings in THIS section match the current search.
+  -- Without it the sidebar only says where the hits are NOT (dimmed), which
+  -- answers half the question.
+  tab.badge = tab:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+  tab.badge:SetFont(pfUI.font_default, max(9, fontsize - 3))
+  tab.badge:SetPoint("RIGHT", -8, 0)
+  tab.badge:SetJustifyH("RIGHT")
+  local ba = accent()
+  tab.badge:SetTextColor(ba[1], ba[2], ba[3], 0.62)
+  tab.badge:SetText("")
+
   tab:SetScript("OnClick", function()
     pfQuestConfig:ShowSection(this:GetID())
   end)
