@@ -398,5 +398,31 @@ do
         tostring(beam.caption:GetText()))
 end
 
+-- ---------------------------------------------------------------------------
+-- Sidebar match badges. Dimming a section says "not here"; the count says
+-- "three of them are over there", which is the half that was missing.
+-- ---------------------------------------------------------------------------
+do
+  local t1, t2 = _G.pfQuestConfigTab1, _G.pfQuestConfigTab2
+  check(t1 and t1.badge, "each nav entry owns a match badge")
+
+  pfQuestConfig:ApplySearch("")
+  check(t1.badge:GetText() == "", "no badge while the search is empty")
+
+  -- "beam" appears once, in section one only
+  pfQuestConfig:ApplySearch("beam")
+  check(t1.badge:GetText() == "1",
+        "the section with hits shows its count (got %q)", tostring(t1.badge:GetText()))
+  check(t2.badge:GetText() == "",
+        "a section with no hits shows no badge (got %q)", tostring(t2.badge:GetText()))
+
+  pfQuestConfig:ApplySearch("")
+  check(t1.badge:GetText() == "", "clearing the search clears the badges")
+
+  -- the badge must not be counted as a section name when the sidebar is
+  -- measured, or a long name plus a two-digit count runs off the entry
+  check(t1:GetWidth() > 0, "nav entries are sized")
+end
+
 print(string.format("\n%d checks, %d failure(s)", checks, failures))
 os.exit(failures > 0 and 1 or 0)
