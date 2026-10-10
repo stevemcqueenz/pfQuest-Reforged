@@ -189,11 +189,13 @@ local function minimap_indoor_probe()
   -- SetZoom clamps to 0..5, so stepping off either end and adding the step back
   -- left the minimap one level away from where it started, every probe.
   local zoom = pfMap.drawlayer:GetZoom()
-  indoorprobing = true
+  local nudged = false
 
   if GetCVar("minimapZoom") == GetCVar("minimapInsideZoom") then
     -- the two CVars are equal, so the zoom alone cannot say which one is in
     -- effect: nudge one step, in whichever direction stays in range
+    indoorprobing = true
+    nudged = true
     pfMap.drawlayer:SetZoom(zoom > 0 and zoom - 1 or zoom + 1)
   end
 
@@ -201,8 +203,18 @@ local function minimap_indoor_probe()
     state = 0
   end
 
-  pfMap.drawlayer:SetZoom(zoom)
-  indoorprobing = nil
+  if nudged then
+    -- Only write the zoom back when the probe actually moved it. Re-applying
+    -- the CURRENT zoom is not a no-op: on the 3.3.5a client Minimap:SetZoom
+    -- rebuilds its tiles, and with ElvUI's square minimap the rebuild leaves
+    -- the whole map black -- pins still drawn, terrain and arrow gone (issue
+    -- #64). The old unconditional restore fired exactly this every time the
+    -- player had zoomed, because then the zoom CVars differ and the equal-CVar
+    -- branch, and its nudge, is skipped. When they differ the CVars already
+    -- answer the question, so no write is needed at all.
+    pfMap.drawlayer:SetZoom(zoom)
+    indoorprobing = nil
+  end
   return state
 end
 

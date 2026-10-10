@@ -346,6 +346,40 @@ do
     else
       ok("indoor probe: no arithmetic restore left in the source")
     end
+
+    -- Issue #64: once the player has zoomed, the zoom CVars differ, the probe
+    -- sees no reason to nudge, and the old unconditional restore then wrote the
+    -- CURRENT zoom back. That is not a no-op -- Minimap:SetZoom rebuilds the
+    -- tiles and with ElvUI's square minimap left the whole map black. The probe
+    -- must therefore touch the zoom ZERO times in that case.
+    do
+      local calls, value = 0, 0
+      local real = drawlayer.SetZoom
+      drawlayer.SetZoom = function(_, v)
+        calls = calls + 1
+        value = v
+        real(_, v)
+      end
+      cvars.minimapZoom, cvars.minimapInsideZoom = "5", "1"
+      zoom = 3
+      local state = probe()
+      drawlayer.SetZoom = real
+      if calls ~= 0 then
+        fail("indoor probe: wrote the current zoom %d times (last %d) when the CVars differ", calls, value)
+      elseif zoom ~= 3 or state ~= 1 then
+        fail("indoor probe: differ-CVar case changed zoom to %d and reported state %s", zoom, tostring(state))
+      else
+        ok("indoor probe: leaves the zoom untouched when the CVars already answer")
+      end
+    end
+
+    -- and that untouched path must be guarded by the nudge flag, not a blanket
+    -- restore
+    if string.find(src, "nudged") then
+      ok("indoor probe: the restore is conditional on having nudged")
+    else
+      fail("indoor probe: restore is unconditional, so a same-zoom SetZoom blacks the ElvUI map")
+    end
   end
 end
 
